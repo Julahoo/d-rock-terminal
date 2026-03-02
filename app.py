@@ -15,7 +15,7 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from src.ingestion import load_all_data, load_campaign_data, DATA_DIR, RAW_DIR, CAMPAIGNS_DIR
-from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap
+from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves
 from src.exporter import export_to_excel
 
 # ── Cached wrappers to prevent recomputation on Streamlit rerun ───────────
@@ -34,6 +34,10 @@ def _cached_player_master_list(raw_df):
 @st.cache_data(show_spinner=False)
 def _cached_retention_heatmap(raw_df):
     return generate_retention_heatmap(raw_df)
+
+@st.cache_data(show_spinner=False)
+def _cached_ltv_curves(raw_df):
+    return generate_ltv_curves(raw_df)
 
 # ── Config ───────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
@@ -143,7 +147,7 @@ with st.sidebar:
     if _excel_path.exists():
         with open(_excel_path, "rb") as _fh:
             st.download_button(
-                label="⬇️ DOWNLOAD EXCEL REPORT",
+                label="Download Excel Report",
                 data=_fh.read(),
                 file_name="Summary_Data_Auto.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -352,18 +356,18 @@ if st.session_state["data_loaded"]:
                 b_fin_rows.append(row)
             st.dataframe(pd.DataFrame(b_fin_rows), use_container_width=True, hide_index=True)
 
-            # EOY Projected metrics (brand-level)
-            # These are appended as static rows below the main financials
+            # EOY Projected metrics — Dual Engine (brand-level)
             b_eoy_rows = []
-            for proj_col, proj_label in [("ggr", "EOY Projected GGR"), ("turnover", "EOY Projected Turnover"), ("revenue_share_deduction", "EOY Projected Revenue (15%)")]:
-                eoy_key = f"eoy_projected_{proj_col}"
-                eoy_val = b_latest_m.get(eoy_key, 0) or 0
-                b_eoy_rows.append({"Metric": proj_label, "MoM Δ": "—", "MoM %": "—",
-                                   "YoY Δ": "—", "YoY %": "—",
-                                   "YTD": f"${eoy_val:,.0f}"})
+            for proj_col, proj_label in [("ggr", "GGR"), ("turnover", "Turnover"), ("revenue_share_deduction", "Revenue 15%")]:
+                for engine, prefix in [("Seasonal", "eoy_seasonal"), ("Momentum", "eoy_momentum")]:
+                    eoy_key = f"{prefix}_{proj_col}"
+                    eoy_val = b_latest_m.get(eoy_key, 0) or 0
+                    b_eoy_rows.append({"Metric": f"EOY {proj_label} ({engine})", "MoM Δ": "—", "MoM %": "—",
+                                       "YoY Δ": "—", "YoY %": "—",
+                                       "YTD": f"${eoy_val:,.0f}"})
             if b_eoy_rows:
                 st.dataframe(pd.DataFrame(b_eoy_rows), use_container_width=True, hide_index=True)
-            st.caption("🔮 **EOY PROJECTIONS:** Calculated as a linear run-rate based on current year-to-date performance ((YTD / Current Month) × 12).")
+            st.caption("🔮 **EOY PROJECTIONS:** Seasonal uses prior-year proportional scaling. Momentum uses 3-month rolling average × remaining months.")
 
             # [ PLAYER DEMOGRAPHICS ]
             st.markdown("##### 👥 Player Demographics")
@@ -423,8 +427,8 @@ if st.session_state["data_loaded"]:
             st.dataframe(b_rfm, use_container_width=True, hide_index=True,
                          column_config={
                              "Tier": st.column_config.TextColumn("Tier"),
-                             "Players": st.column_config.NumberColumn("Players", format="%,d"),
-                             "GGR": st.column_config.NumberColumn("GGR", format="$%,.2f"),
+                             "Players": st.column_config.NumberColumn("Players", format="%d"),
+                             "GGR": st.column_config.NumberColumn("GGR", format="$%.2f"),
                          })
 
         # ── Full Data Table ───────────────────────────────────────────────
@@ -436,18 +440,18 @@ if st.session_state["data_loaded"]:
                 column_config={
                     "month": st.column_config.TextColumn("Month"),
                     "brand": st.column_config.TextColumn("Brand"),
-                    "negative_yield_players": st.column_config.NumberColumn("Losers", format="%,d"),
-                    "profitable_players": st.column_config.NumberColumn("Winners", format="%,d"),
-                    "flat": st.column_config.NumberColumn("Flat", format="%,d"),
-                    "total_players": st.column_config.NumberColumn("Total Players", format="%,d"),
+                    "negative_yield_players": st.column_config.NumberColumn("Losers", format="%d"),
+                    "profitable_players": st.column_config.NumberColumn("Winners", format="%d"),
+                    "flat": st.column_config.NumberColumn("Flat", format="%d"),
+                    "total_players": st.column_config.NumberColumn("Total Players", format="%d"),
                     "profitable_pct": st.column_config.NumberColumn("Winners %", format="%.2f%%"),
-                    "ggr": st.column_config.NumberColumn("GGR", format="$%,.2f"),
-                    "total_handle": st.column_config.NumberColumn("Turnover", format="$%,.2f"),
+                    "ggr": st.column_config.NumberColumn("GGR", format="$%.2f"),
+                    "total_handle": st.column_config.NumberColumn("Turnover", format="$%.2f"),
                     "hold_pct": st.column_config.NumberColumn("Hold %", format="%.2f%%"),
-                    "ggr_per_player": st.column_config.NumberColumn("GGR/Player", format="$%,.2f"),
+                    "ggr_per_player": st.column_config.NumberColumn("GGR/Player", format="$%.2f"),
                     "top_10_pct_ggr_share": st.column_config.NumberColumn("Top 10% GGR", format="%.1f%%"),
-                    "new_players": st.column_config.NumberColumn("New Players", format="%,d"),
-                    "returning_players": st.column_config.NumberColumn("Returning", format="%,d"),
+                    "new_players": st.column_config.NumberColumn("New Players", format="%d"),
+                    "returning_players": st.column_config.NumberColumn("Returning", format="%d"),
                     "retention_pct": st.column_config.NumberColumn("Retention %", format="%.2f%%"),
                 },
             )
@@ -468,9 +472,41 @@ if st.session_state["data_loaded"]:
         brand_raw = df[df["brand"] == brand_key]
         heatmap_fig = _cached_retention_heatmap(brand_raw)
         if heatmap_fig is not None:
-            st.plotly_chart(heatmap_fig, use_container_width=True)
+            st.plotly_chart(heatmap_fig, use_container_width=True, config={"scrollZoom": False})
         else:
             st.info("Not enough data to generate a retention heatmap.")
+
+        # ── Cumulative LTV Curves ────────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### > CUMULATIVE LTV TRAJECTORY_")
+        st.markdown("*Insight: Tracks the cumulative revenue generation of player cohorts over time to determine break-even points and long-term value.*")
+        ltv_fig = _cached_ltv_curves(brand_raw)
+        if ltv_fig is not None:
+            st.plotly_chart(ltv_fig, use_container_width=True, config={"scrollZoom": False})
+        else:
+            st.info("Not enough data to generate LTV curves.")
+
+        # ── Segmentation by Program ─────────────────────────────────
+        if program_summary is not None and not program_summary.empty:
+            brand_progs = program_summary[program_summary["brand"] == brand_key]
+            if not brand_progs.empty:
+                st.markdown("---")
+                st.markdown("#### > SEGMENTATION BY PROGRAM_")
+                st.markdown("*Insight: Evaluates the financial efficiency and house edge (Margin) across different marketing programs (ACQ, RET, WB).*")
+                st.dataframe(
+                    brand_progs,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "brand": st.column_config.TextColumn("Brand"),
+                        "month": st.column_config.TextColumn("Month"),
+                        "Program": st.column_config.TextColumn("Program"),
+                        "ggr": st.column_config.NumberColumn("GGR", format="$%d"),
+                        "Turnover": st.column_config.NumberColumn("Turnover", format="$%d"),
+                        "Margin": st.column_config.NumberColumn("Margin", format="%.2f%%"),
+                        "total_players": st.column_config.NumberColumn("Players", format="%d"),
+                    },
+                )
 
     # ── Dashboard tabs ────────────────────────────────────────────────────
     # ── Dashboard tabs ────────────────────────────────────────────────────
@@ -512,6 +548,17 @@ if st.session_state["data_loaded"]:
 
             latest_month = both_business["month"].max()
 
+            # MoM mapping: metric label → financial_summary column name
+            _mom_map = {
+                "Turnover": "total_handle",
+                "GGR": "ggr",
+                "Margin %": "hold_pct",
+                "Revenue (15%)": "revenue_share_deduction",
+                "Conversions": "conversions",
+                "Turnover / Player": "turnover_per_player",
+                "Whale Risk %": None,  # no MoM
+            }
+
             def _brand_snapshot(brand_name: str) -> dict:
                 """Extract key metrics for a brand in the latest month."""
                 bdata = financial_summary[
@@ -531,6 +578,60 @@ if st.session_state["data_loaded"]:
                     "Whale Risk %": float(row.get("top_10_pct_ggr_share", 0)),
                 }
 
+            def _brand_mom(brand_name: str) -> list:
+                """Calculate MoM % change for each metric, formatted as string."""
+                bdata = financial_summary[
+                    financial_summary["brand"] == brand_name
+                ].sort_values("month")
+                if len(bdata) < 2:
+                    return ["N/A"] * len(metrics_list)
+                curr = bdata.iloc[-1]
+                prev = bdata.iloc[-2]
+                results = []
+                for metric in metrics_list:
+                    col = _mom_map.get(metric)
+                    if col is None:
+                        results.append("N/A")
+                        continue
+                    c_val = float(curr.get(col, 0))
+                    p_val = float(prev.get(col, 0))
+                    if p_val == 0:
+                        results.append("N/A")
+                    else:
+                        pct = ((c_val - p_val) / abs(p_val)) * 100
+                        results.append(f"{pct:+.2f}%")
+                return results
+
+            def _bb_mom() -> list:
+                """MoM for Both Business (combined)."""
+                if len(both_business) < 2:
+                    return ["N/A"] * len(metrics_list)
+                curr = both_business.iloc[-1]
+                prev = both_business.iloc[-2]
+                bb_mom_map = {
+                    "Turnover": "turnover",
+                    "GGR": "ggr",
+                    "Margin %": "margin",
+                    "Revenue (15%)": "revenue_share_deduction",
+                    "Conversions": "conversions",
+                    "Turnover / Player": "turnover_per_player",
+                    "Whale Risk %": None,
+                }
+                results = []
+                for metric in metrics_list:
+                    col = bb_mom_map.get(metric)
+                    if col is None:
+                        results.append("N/A")
+                        continue
+                    c_val = float(curr.get(col, 0))
+                    p_val = float(prev.get(col, 0))
+                    if p_val == 0:
+                        results.append("N/A")
+                    else:
+                        pct = ((c_val - p_val) / abs(p_val)) * 100
+                        results.append(f"{pct:+.2f}%")
+                return results
+
             bb_snap = {
                 "Turnover": float(exec_bb.get("turnover", 0)),
                 "GGR": float(exec_bb.get("ggr", 0)),
@@ -543,13 +644,72 @@ if st.session_state["data_loaded"]:
             roja_snap = _brand_snapshot("Rojabet")
             latri_snap = _brand_snapshot("Latribet")
 
+            def _brand_yoy(brand_name: str) -> list:
+                """Extract YoY % from pre-computed time series (_yoy_pct via shift(12))."""
+                bdata = financial_summary[
+                    financial_summary["brand"] == brand_name
+                ].sort_values("month")
+                if bdata.empty:
+                    return ["-"] * len(metrics_list)
+                brand_ts = _cached_time_series(bdata)
+                brand_ts_m = brand_ts.get("monthly", pd.DataFrame())
+                if brand_ts_m.empty:
+                    return ["-"] * len(metrics_list)
+                latest = brand_ts_m.iloc[-1]
+                results = []
+                for metric in metrics_list:
+                    col = _mom_map.get(metric)
+                    if col is None:
+                        results.append("N/A")
+                        continue
+                    yoy_key = f"{col}_yoy_pct"
+                    val = latest.get(yoy_key)
+                    if val is None or pd.isna(val):
+                        results.append("-")
+                    else:
+                        results.append(f"{val:+.1f}%")
+                return results
+
+            def _bb_yoy() -> list:
+                """Extract YoY % from combined time series."""
+                if exec_ts_m.empty:
+                    return ["-"] * len(metrics_list)
+                bb_ts_map = {
+                    "Turnover": "turnover",
+                    "GGR": "ggr",
+                    "Margin %": "margin",
+                    "Revenue (15%)": "revenue_share_deduction",
+                    "Conversions": "conversions",
+                    "Turnover / Player": "turnover_per_player",
+                    "Whale Risk %": None,
+                }
+                results = []
+                for metric in metrics_list:
+                    col = bb_ts_map.get(metric)
+                    if col is None:
+                        results.append("N/A")
+                        continue
+                    yoy_key = f"{col}_yoy_pct"
+                    val = exec_latest.get(yoy_key)
+                    if val is None or pd.isna(val):
+                        results.append("-")
+                    else:
+                        results.append(f"{val:+.1f}%")
+                return results
+
             metrics_list = ["Turnover", "GGR", "Margin %", "Revenue (15%)",
                             "Conversions", "Turnover / Player", "Whale Risk %"]
             matrix_data = {
                 "Metric": metrics_list,
-                "Both Business": [bb_snap.get(m, 0) for m in metrics_list],
+                "Combined": [bb_snap.get(m, 0) for m in metrics_list],
+                "Combined MoM": _bb_mom(),
+                "Combined YoY": _bb_yoy(),
                 "Rojabet": [roja_snap.get(m, 0) for m in metrics_list],
+                "Rojabet MoM": _brand_mom("Rojabet"),
+                "Rojabet YoY": _brand_yoy("Rojabet"),
                 "Latribet": [latri_snap.get(m, 0) for m in metrics_list],
+                "Latribet MoM": _brand_mom("Latribet"),
+                "Latribet YoY": _brand_yoy("Latribet"),
             }
             matrix_df = pd.DataFrame(matrix_data)
 
@@ -559,9 +719,15 @@ if st.session_state["data_loaded"]:
                 hide_index=True,
                 column_config={
                     "Metric": st.column_config.TextColumn("Metric"),
-                    "Both Business": st.column_config.NumberColumn("Both Business", format="%,.2f"),
-                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%,.2f"),
-                    "Latribet": st.column_config.NumberColumn("Latribet", format="%,.2f"),
+                    "Combined": st.column_config.NumberColumn("Combined", format="%.2f"),
+                    "Combined MoM": st.column_config.TextColumn("Combined MoM"),
+                    "Combined YoY": st.column_config.TextColumn("Combined YoY"),
+                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%.2f"),
+                    "Rojabet MoM": st.column_config.TextColumn("Rojabet MoM"),
+                    "Rojabet YoY": st.column_config.TextColumn("Rojabet YoY"),
+                    "Latribet": st.column_config.NumberColumn("Latribet", format="%.2f"),
+                    "Latribet MoM": st.column_config.TextColumn("Latribet MoM"),
+                    "Latribet YoY": st.column_config.TextColumn("Latribet YoY"),
                 },
             )
             st.caption(f"Snapshot: {latest_month}")
@@ -597,7 +763,7 @@ if st.session_state["data_loaded"]:
                 margin=dict(l=0, r=0, t=30, b=0),
                 height=400,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": False})
 
             # ── Cross-Brand Demographics ─────────────────────────────────
             st.markdown("---")
@@ -639,9 +805,9 @@ if st.session_state["data_loaded"]:
                 hide_index=True,
                 column_config={
                     "Metric": st.column_config.TextColumn("Metric"),
-                    "Both Business": st.column_config.NumberColumn("Both Business", format="%,d"),
-                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%,d"),
-                    "Latribet": st.column_config.NumberColumn("Latribet", format="%,d"),
+                    "Both Business": st.column_config.NumberColumn("Both Business", format="%d"),
+                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%d"),
+                    "Latribet": st.column_config.NumberColumn("Latribet", format="%d"),
                 },
             )
 
@@ -675,11 +841,23 @@ if st.session_state["data_loaded"]:
                 hide_index=True,
                 column_config={
                     "Tier": st.column_config.TextColumn("Tier"),
-                    "Both Business": st.column_config.NumberColumn("Both Business", format="%,d"),
-                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%,d"),
-                    "Latribet": st.column_config.NumberColumn("Latribet", format="%,d"),
+                    "Both Business": st.column_config.NumberColumn("Both Business", format="%d"),
+                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%d"),
+                    "Latribet": st.column_config.NumberColumn("Latribet", format="%d"),
                 },
             )
+
+            # ── Cross-Brand Cannibalization ──────────────────────────────
+            st.markdown("---")
+            st.markdown("#### > CROSS-BRAND CANNIBALIZATION (ALL-TIME)_")
+            st.markdown("*Insight: Identifies players active on both platforms to expose duplicate customer acquisition costs and shared revenue dependency.*")
+
+            overlap = generate_overlap_stats(df)
+            ov1, ov2 = st.columns(2)
+            with ov1:
+                st.metric("Shared Players (Overlap)", f"{overlap['overlap_count']:,}")
+            with ov2:
+                st.metric("Shared Lifetime GGR", f"${overlap['overlap_ggr']:,.2f}")
         else:
             st.warning("No financial data available for Executive Summary.")
 
@@ -776,15 +954,17 @@ if st.session_state["data_loaded"]:
                         row["QoQ %"] = _arrow_pct(latest_q.get(f"{col}_qoq_pct"))
                     fin_rows.append(row)
 
-                # EOY Projected metrics (Phase 15)
-                for proj_col, proj_label in [("ggr", "EOY Projected GGR"), ("turnover", "EOY Projected Turnover"), ("revenue_share_deduction", "EOY Projected Revenue (15%)")]:
-                    eoy_key = f"eoy_projected_{proj_col}"
-                    eoy_val = latest_m.get(eoy_key, 0) or 0
-                    fin_rows.append({"Metric": proj_label, "MoM Δ": "—", "MoM %": "—",
-                                     "YoY Δ": "—", "YoY %": "—",
-                                     "YTD": f"${eoy_val:,.0f}"})
+                # EOY Projected metrics — Dual Engine (Phase 15 upgrade)
+                eoy_rows = []
+                for proj_col, proj_label in [("ggr", "GGR"), ("turnover", "Turnover"), ("revenue_share_deduction", "Revenue 15%")]:
+                    for engine, prefix in [("Seasonal", "eoy_seasonal"), ("Momentum", "eoy_momentum")]:
+                        eoy_key = f"{prefix}_{proj_col}"
+                        eoy_val = latest_m.get(eoy_key, 0) or 0
+                        fin_rows.append({"Metric": f"EOY {proj_label} ({engine})", "MoM Δ": "—", "MoM %": "—",
+                                         "YoY Δ": "—", "YoY %": "—",
+                                         "YTD": f"${eoy_val:,.0f}"})
                 st.dataframe(pd.DataFrame(fin_rows), use_container_width=True, hide_index=True)
-                st.caption("🔮 **EOY PROJECTIONS:** Calculated as a linear run-rate based on current year-to-date performance ((YTD / Current Month) × 12).")
+                st.caption("🔮 **EOY PROJECTIONS:** Seasonal uses prior-year proportional scaling. Momentum uses 3-month rolling average × remaining months.")
 
                 # Player Demographics group
                 st.markdown("##### 👥 Player Demographics")
@@ -852,8 +1032,8 @@ if st.session_state["data_loaded"]:
                     hide_index=True,
                     column_config={
                         "Tier": st.column_config.TextColumn("Tier"),
-                        "Players": st.column_config.NumberColumn("Players", format="%,d"),
-                        "GGR": st.column_config.NumberColumn("GGR", format="$%,.2f"),
+                        "Players": st.column_config.NumberColumn("Players", format="%d"),
+                        "GGR": st.column_config.NumberColumn("GGR", format="$%.2f"),
                     },
                 )
 
@@ -865,25 +1045,25 @@ if st.session_state["data_loaded"]:
                     hide_index=True,
                     column_config={
                         "month": st.column_config.TextColumn("Month"),
-                        "turnover": st.column_config.NumberColumn("Turnover", format="$%,.2f"),
-                        "ggr": st.column_config.NumberColumn("GGR", format="$%,.2f"),
+                        "turnover": st.column_config.NumberColumn("Turnover", format="$%.2f"),
+                        "ggr": st.column_config.NumberColumn("GGR", format="$%.2f"),
                         "margin": st.column_config.NumberColumn("Margin %", format="%.2f%%"),
-                        "revenue_share_deduction": st.column_config.NumberColumn("Rev Share (15%)", format="$%,.2f"),
-                        "net_income": st.column_config.NumberColumn("Net Income", format="$%,.2f"),
-                        "new_players": st.column_config.NumberColumn("New Players", format="%,d"),
-                        "returning_players": st.column_config.NumberColumn("Returning", format="%,d"),
-                        "reactivated_players": st.column_config.NumberColumn("Reactivated", format="%,d"),
-                        "conversions": st.column_config.NumberColumn("Conversions", format="%,d"),
-                        "total_players": st.column_config.NumberColumn("Total Players", format="%,d"),
-                        "profitable_players": st.column_config.NumberColumn("Winners", format="%,d"),
-                        "negative_yield_players": st.column_config.NumberColumn("Losers", format="%,d"),
+                        "revenue_share_deduction": st.column_config.NumberColumn("Rev Share (15%)", format="$%.2f"),
+                        "net_income": st.column_config.NumberColumn("Net Income", format="$%.2f"),
+                        "new_players": st.column_config.NumberColumn("New Players", format="%d"),
+                        "returning_players": st.column_config.NumberColumn("Returning", format="%d"),
+                        "reactivated_players": st.column_config.NumberColumn("Reactivated", format="%d"),
+                        "conversions": st.column_config.NumberColumn("Conversions", format="%d"),
+                        "total_players": st.column_config.NumberColumn("Total Players", format="%d"),
+                        "profitable_players": st.column_config.NumberColumn("Winners", format="%d"),
+                        "negative_yield_players": st.column_config.NumberColumn("Losers", format="%d"),
                         "new_players_pct": st.column_config.NumberColumn("New %", format="%.2f%%"),
                         "returning_players_pct": st.column_config.NumberColumn("Returning %", format="%.2f%%"),
-                        "ggr_per_player": st.column_config.NumberColumn("GGR/Player", format="$%,.2f"),
-                        "turnover_per_player": st.column_config.NumberColumn("Turnover/Player", format="$%,.2f"),
-                        "income_per_player": st.column_config.NumberColumn("Income/Player", format="$%,.2f"),
-                        "new_player_ggr": st.column_config.NumberColumn("New Player GGR", format="$%,.2f"),
-                        "returning_player_ggr": st.column_config.NumberColumn("Ret. Player GGR", format="$%,.2f"),
+                        "ggr_per_player": st.column_config.NumberColumn("GGR/Player", format="$%.2f"),
+                        "turnover_per_player": st.column_config.NumberColumn("Turnover/Player", format="$%.2f"),
+                        "income_per_player": st.column_config.NumberColumn("Income/Player", format="$%.2f"),
+                        "new_player_ggr": st.column_config.NumberColumn("New Player GGR", format="$%.2f"),
+                        "returning_player_ggr": st.column_config.NumberColumn("Ret. Player GGR", format="$%.2f"),
                     },
                 )
 
@@ -902,9 +1082,39 @@ if st.session_state["data_loaded"]:
             st.markdown("#### > COHORT RETENTION HEATMAP_")
             heatmap_fig = _cached_retention_heatmap(df)
             if heatmap_fig is not None:
-                st.plotly_chart(heatmap_fig, use_container_width=True)
+                st.plotly_chart(heatmap_fig, use_container_width=True, config={"scrollZoom": False})
             else:
                 st.info("Not enough data to generate a retention heatmap.")
+
+            # ── Cumulative LTV Curves ────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### > CUMULATIVE LTV TRAJECTORY_")
+            st.markdown("*Insight: Tracks the cumulative revenue generation of player cohorts over time to determine break-even points and long-term value.*")
+            ltv_fig = _cached_ltv_curves(df)
+            if ltv_fig is not None:
+                st.plotly_chart(ltv_fig, use_container_width=True, config={"scrollZoom": False})
+            else:
+                st.info("Not enough data to generate LTV curves.")
+
+            # ── Segmentation by Program ─────────────────────────────
+            if program_summary is not None and not program_summary.empty:
+                st.markdown("---")
+                st.markdown("#### > SEGMENTATION BY PROGRAM_")
+                st.markdown("*Insight: Evaluates the financial efficiency and house edge (Margin) across different marketing programs (ACQ, RET, WB).*")
+                st.dataframe(
+                    program_summary,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "brand": st.column_config.TextColumn("Brand"),
+                        "month": st.column_config.TextColumn("Month"),
+                        "Program": st.column_config.TextColumn("Program"),
+                        "ggr": st.column_config.NumberColumn("GGR", format="$%d"),
+                        "Turnover": st.column_config.NumberColumn("Turnover", format="$%d"),
+                        "Margin": st.column_config.NumberColumn("Margin", format="%.2f%%"),
+                        "total_players": st.column_config.NumberColumn("Players", format="%d"),
+                    },
+                )
         else:
             st.warning("No Both Business data available.")
 
@@ -942,12 +1152,12 @@ if st.session_state["data_loaded"]:
                 column_config={
                     "month": st.column_config.TextColumn("Month"),
                     "brand": st.column_config.TextColumn("Brand"),
-                    "total_records": st.column_config.NumberColumn("Records", format="%,d"),
-                    "total_kpi1": st.column_config.NumberColumn("Conversions", format="%,d"),
-                    "total_kpi2": st.column_config.NumberColumn("Logins", format="%,d"),
-                    "total_calls": st.column_config.NumberColumn("Calls", format="%,d"),
-                    "total_emails": st.column_config.NumberColumn("Emails", format="%,d"),
-                    "total_sms": st.column_config.NumberColumn("SMS", format="%,d"),
+                    "total_records": st.column_config.NumberColumn("Records", format="%d"),
+                    "total_kpi1": st.column_config.NumberColumn("Conversions", format="%d"),
+                    "total_kpi2": st.column_config.NumberColumn("Logins", format="%d"),
+                    "total_calls": st.column_config.NumberColumn("Calls", format="%d"),
+                    "total_emails": st.column_config.NumberColumn("Emails", format="%d"),
+                    "total_sms": st.column_config.NumberColumn("SMS", format="%d"),
                     "kpi1_conversion_rate": st.column_config.NumberColumn("Conv Rate %", format="%.2f%%"),
                     "kpi2_login_rate": st.column_config.NumberColumn("Login Rate %", format="%.2f%%"),
                 },
@@ -984,12 +1194,12 @@ if st.session_state["data_loaded"]:
             _lb_col_config = {
                 "id": st.column_config.TextColumn("Player ID"),
                 "brand": st.column_config.TextColumn("Brand"),
-                "Lifetime_GGR": st.column_config.NumberColumn("Lifetime GGR", format="$%,.2f"),
-                "Lifetime_Turnover": st.column_config.NumberColumn("Lifetime Turnover", format="$%,.2f"),
+                "Lifetime_GGR": st.column_config.NumberColumn("Lifetime GGR", format="$%.2f"),
+                "Lifetime_Turnover": st.column_config.NumberColumn("Lifetime Turnover", format="$%.2f"),
                 "First_Month": st.column_config.TextColumn("First Month"),
                 "Last_Month": st.column_config.TextColumn("Last Month"),
-                "Months_Active": st.column_config.NumberColumn("Months Active", format="%,d"),
-                "Months_Inactive": st.column_config.NumberColumn("Months Inactive", format="%,d"),
+                "Months_Active": st.column_config.NumberColumn("Months Active", format="%d"),
+                "Months_Inactive": st.column_config.NumberColumn("Months Inactive", format="%d"),
             }
 
             lb1, lb2 = st.columns(2)
@@ -1058,9 +1268,9 @@ if st.session_state["data_loaded"]:
                         "id": st.column_config.TextColumn("Player ID"),
                         "brand": st.column_config.TextColumn("Brand"),
                         "Last_Month": st.column_config.TextColumn("Last Month"),
-                        "Months_Inactive": st.column_config.NumberColumn("Months Inactive", format="%,d"),
-                        "Lifetime_GGR": st.column_config.NumberColumn("Lifetime GGR", format="$%,.2f"),
-                        "Lifetime_Turnover": st.column_config.NumberColumn("Lifetime Turnover", format="$%,.2f"),
+                        "Months_Inactive": st.column_config.NumberColumn("Months Inactive", format="%d"),
+                        "Lifetime_GGR": st.column_config.NumberColumn("Lifetime GGR", format="$%.2f"),
+                        "Lifetime_Turnover": st.column_config.NumberColumn("Lifetime Turnover", format="$%.2f"),
                         "Recommended_Campaign": st.column_config.TextColumn("Campaign"),
                     },
                 )
@@ -1084,22 +1294,18 @@ if st.session_state["data_loaded"]:
             campaign_counts = (
                 special_campaigns["Recommended_Campaign"]
                 .value_counts()
-                .reindex(["🛑 Promo Exclusion", "🚨 Early Churn VIP", "🌟 Rising Star", "🎯 Cold Crown Jewel", "👑 Active Crown Jewel", "📉 Cooling Down"], fill_value=0)
+                .reindex(["🏆 Ironman Legend", "🛑 Promo Exclusion", "🚨 Early Churn VIP", "🌟 Rising Star", "🎯 Cold Crown Jewel", "👑 Active Crown Jewel", "📉 Cooling Down"], fill_value=0)
             )
 
-            cp1, cp2, cp3, cp4, cp5, cp6 = st.columns(6)
-            with cp1:
-                st.metric("🛑 Promo Exclusion", f"{campaign_counts.get('🛑 Promo Exclusion', 0):,}")
-            with cp2:
-                st.metric("🚨 Early Churn VIP", f"{campaign_counts.get('🚨 Early Churn VIP', 0):,}")
-            with cp3:
-                st.metric("🌟 Rising Star", f"{campaign_counts.get('🌟 Rising Star', 0):,}")
-            with cp4:
-                st.metric("🎯 Cold Crown Jewel", f"{campaign_counts.get('🎯 Cold Crown Jewel', 0):,}")
-            with cp5:
-                st.metric("👑 Active Crown Jewel", f"{campaign_counts.get('👑 Active Crown Jewel', 0):,}")
-            with cp6:
-                st.metric("📉 Cooling Down", f"{campaign_counts.get('📉 Cooling Down', 0):,}")
+            row1 = st.columns(4)
+            row1[0].metric("🏆 Ironman Legend", f"{campaign_counts.get('🏆 Ironman Legend', 0):,}")
+            row1[1].metric("🛑 Promo Exclusion", f"{campaign_counts.get('🛑 Promo Exclusion', 0):,}")
+            row1[2].metric("🚨 Early Churn VIP", f"{campaign_counts.get('🚨 Early Churn VIP', 0):,}")
+            row1[3].metric("🌟 Rising Star", f"{campaign_counts.get('🌟 Rising Star', 0):,}")
+            row2 = st.columns(4)
+            row2[0].metric("🎯 Cold Crown Jewel", f"{campaign_counts.get('🎯 Cold Crown Jewel', 0):,}")
+            row2[1].metric("👑 Active Crown Jewel", f"{campaign_counts.get('👑 Active Crown Jewel', 0):,}")
+            row2[2].metric("📉 Cooling Down", f"{campaign_counts.get('📉 Cooling Down', 0):,}")
 
             st.caption(f"{len(special_campaigns):,} players flagged for specialized campaigns out of {len(filtered_master):,} total.")
 
@@ -1109,7 +1315,7 @@ if st.session_state["data_loaded"]:
             selected_campaign = st.selectbox(
                 "Select Campaign",
                 all_campaigns,
-                key="campaign_extract_select",
+                key="crm_campaign_dropdown",
             )
             campaign_extract_df = filtered_master[
                 filtered_master["Recommended_Campaign"] == selected_campaign
@@ -1128,10 +1334,10 @@ if st.session_state["data_loaded"]:
                         "brand": st.column_config.TextColumn("Brand"),
                         "First_Month": st.column_config.TextColumn("First Month"),
                         "Last_Month": st.column_config.TextColumn("Last Month"),
-                        "Months_Active": st.column_config.NumberColumn("Active", format="%,d"),
-                        "Months_Inactive": st.column_config.NumberColumn("Inactive", format="%,d"),
-                        "Lifetime_GGR": st.column_config.NumberColumn("Lifetime GGR", format="$%,.2f"),
-                        "Lifetime_Turnover": st.column_config.NumberColumn("Lifetime Turnover", format="$%,.2f"),
+                        "Months_Active": st.column_config.NumberColumn("Active", format="%d"),
+                        "Months_Inactive": st.column_config.NumberColumn("Inactive", format="%d"),
+                        "Lifetime_GGR": st.column_config.NumberColumn("Lifetime GGR", format="$%.2f"),
+                        "Lifetime_Turnover": st.column_config.NumberColumn("Lifetime Turnover", format="$%.2f"),
                         "Recommended_Campaign": st.column_config.TextColumn("Campaign"),
                     },
                 )

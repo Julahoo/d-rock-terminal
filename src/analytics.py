@@ -460,17 +460,35 @@ def generate_time_series(summary_df: pd.DataFrame) -> dict:
     for col in avail:
         ts[f"{col}_ytd"] = ts.groupby("_year")[col].cumsum()
 
-    # ── EOY Projected (Phase 15): (YTD / month_number) * 12 ───────────
+    # ── EOY Projections: Dual Momentum + Seasonal Engine ───────────────
     for proj_col in ["ggr", "turnover"]:
         ytd_col = f"{proj_col}_ytd"
-        if ytd_col in ts.columns:
-            ts[f"eoy_projected_{proj_col}"] = (
-                (ts[ytd_col] / ts["_month_int"]) * 12
-            ).round(2)
+        if ytd_col not in ts.columns:
+            continue
 
-    # EOY Projected Revenue (15% of EOY Projected GGR)
-    if "eoy_projected_ggr" in ts.columns:
-        ts["eoy_projected_revenue_share_deduction"] = (ts["eoy_projected_ggr"] * 0.15).round(2)
+        # Naive fallback
+        naive_eoy = ((ts[ytd_col] / ts["_month_int"]) * 12).round(2)
+
+        # Momentum: YTD + rolling_3m_avg * remaining_months
+        rolling_3m = ts[proj_col].rolling(3, min_periods=1).mean()
+        remaining = 12 - ts["_month_int"]
+        ts[f"eoy_momentum_{proj_col}"] = (ts[ytd_col] + rolling_3m * remaining).round(2)
+
+        # Seasonal: current_YTD * (prev_year_total / prev_year_YTD_same_month)
+        prev_ytd_same_month = ts[ytd_col].shift(12)
+        prev_year_total = ts.groupby("_year")[proj_col].transform("sum").shift(12)
+        seasonal_ratio = prev_year_total / prev_ytd_same_month
+        ts[f"eoy_seasonal_{proj_col}"] = np.where(
+            (prev_ytd_same_month.notna()) & (prev_ytd_same_month != 0),
+            (ts[ytd_col] * seasonal_ratio).round(2),
+            naive_eoy,
+        )
+
+    # Revenue (15% of GGR projections)
+    if "eoy_momentum_ggr" in ts.columns:
+        ts["eoy_momentum_revenue_share_deduction"] = (ts["eoy_momentum_ggr"] * 0.15).round(2)
+    if "eoy_seasonal_ggr" in ts.columns:
+        ts["eoy_seasonal_revenue_share_deduction"] = (ts["eoy_seasonal_ggr"] * 0.15).round(2)
 
     ts.drop(columns=["_year", "_month_int"], inplace=True)
 
@@ -608,16 +626,17 @@ def generate_smart_narrative(
 def generate_program_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Group raw data by brand, report_month, and wb_tag.
 
-    Produces a summary with total GGR and player count per lifecycle
-    program tag (ACQ, RET, WB, etc.) for each brand × month.
+    Produces a summary with total GGR, Turnover, Margin, and player count per
+    lifecycle program tag (ACQ, RET, WB, etc.) for each brand × month.
     """
     if df.empty or "wb_tag" not in df.columns:
-        return pd.DataFrame(columns=["brand", "month", "Program", "ggr", "total_players"])
+        return pd.DataFrame(columns=["brand", "month", "Program", "ggr", "Turnover", "Margin", "total_players"])
 
     prog = (
         df.groupby(["brand", "report_month", "wb_tag"])
         .agg(
             ggr=("revenue", "sum"),
+            Turnover=("bet", "sum"),
             total_players=("id", "nunique"),
         )
         .reset_index()
@@ -628,6 +647,9 @@ def generate_program_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     # Round
     prog["ggr"] = prog["ggr"].round(2)
+    prog["Turnover"] = prog["Turnover"].round(2)
+    prog["Margin"] = np.where(prog["Turnover"] != 0, (prog["ggr"] / prog["Turnover"]) * 100, 0.0)
+    prog["Margin"] = prog["Margin"].round(2)
 
     logger.info("Program summary: %d rows, %d tags", len(prog), prog["Program"].nunique())
     return prog
@@ -683,8 +705,15 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
         master["Lifetime_Turnover"] / master["Months_Active"].clip(lower=1)
     ).round(2)
 
+    # Tenure: total months from first to last activity (inclusive)
+    master["Tenure_Months"] = master.apply(
+        lambda r: (pd.Period(r["Last_Month"], freq="M") - pd.Period(r["First_Month"], freq="M")).n + 1,
+        axis=1,
+    )
+
     # Recommended Campaign classification (Phase 17.4)
     conditions = [
+        (master["Months_Active"] >= 6) & (master["Months_Inactive"] == 0) & (master["Months_Active"] == master["Tenure_Months"]),
         (master["Lifetime_GGR"] < 0) & (master["Lifetime_Turnover"] > 5000),
         (master["Months_Inactive"] == 1) & (master["Lifetime_GGR"] > 500),
         (master["Months_Active"] <= 2) & (master["Lifetime_Turnover"] > 1000) & (master["Months_Inactive"] == 0),
@@ -693,6 +722,7 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
         (master["Months_Inactive"] == 0) & (master["Last_Month_Turnover"] < (master["Avg_Monthly_Turnover"] * 0.5)) & (master["Lifetime_Turnover"] >= 1000),
     ]
     choices = [
+        "🏆 Ironman Legend",
         "🛑 Promo Exclusion",
         "🚨 Early Churn VIP",
         "🌟 Rising Star",
@@ -704,6 +734,70 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
 
     logger.info("Player master list: %d players", len(master))
     return master
+
+
+def generate_overlap_stats(raw_df: pd.DataFrame) -> dict:
+    """Identify players active on both brands and their combined GGR."""
+    roja_ids = set(raw_df.loc[raw_df["brand"] == "Rojabet", "id"].unique())
+    latri_ids = set(raw_df.loc[raw_df["brand"] == "Latribet", "id"].unique())
+    shared_ids = roja_ids & latri_ids
+    overlap_ggr = float(raw_df.loc[raw_df["id"].isin(shared_ids), "revenue"].sum())
+    return {"overlap_count": len(shared_ids), "overlap_ggr": round(overlap_ggr, 2)}
+
+
+def generate_ltv_curves(df: pd.DataFrame):
+    """Build cumulative LTV curves per cohort as a Plotly line chart."""
+    import plotly.express as px
+
+    if df.empty:
+        return None
+
+    # 1. Cohort month per player
+    first_months = df.groupby("id")["report_month"].min().reset_index(name="cohort_month")
+    merged = df.merge(first_months, on="id", how="left")
+
+    # 2. Month index
+    merged["cohort_dt"] = pd.to_datetime(merged["cohort_month"])
+    merged["report_dt"] = pd.to_datetime(merged["report_month"])
+    merged["month_index"] = (
+        (merged["report_dt"].dt.year - merged["cohort_dt"].dt.year) * 12
+        + merged["report_dt"].dt.month - merged["cohort_dt"].dt.month
+    )
+
+    # 3. Revenue per cohort × month_index
+    cohort_rev = (
+        merged.groupby(["cohort_month", "month_index"])["revenue"]
+        .sum()
+        .reset_index()
+        .sort_values(["cohort_month", "month_index"])
+    )
+
+    # 4. Cumulative revenue
+    cohort_rev["cumulative_revenue"] = (
+        cohort_rev.groupby("cohort_month")["revenue"].cumsum()
+    )
+
+    # 5. Plotly line chart
+    fig = px.line(
+        cohort_rev,
+        x="month_index",
+        y="cumulative_revenue",
+        color="cohort_month",
+        markers=True,
+        labels={"month_index": "Month Index", "cumulative_revenue": "Cumulative GGR", "cohort_month": "Cohort"},
+    )
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font_color="#00FF41",
+        legend=dict(font=dict(color="#00FF41")),
+        xaxis=dict(gridcolor="#1a1a1a"),
+        yaxis=dict(gridcolor="#1a1a1a", tickprefix="$", tickformat=",.0f"),
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=450,
+        dragmode=False,
+    )
+    return fig
 
 
 def generate_retention_heatmap(df: pd.DataFrame):
@@ -755,6 +849,7 @@ def generate_retention_heatmap(df: pd.DataFrame):
         font_color="#00FF41",
         margin=dict(l=0, r=0, t=30, b=0),
         height=450,
+        dragmode=False,
     )
     fig.update_xaxes(side="top")
 
