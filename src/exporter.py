@@ -45,6 +45,13 @@ COLUMN_HEADERS: list[str] = [
     "New Players",
     "Returning Players",
     "Retention %",
+    "NGR",
+    "Turnover (Casino)",
+    "GGR (Casino)",
+    "NGR (Casino)",
+    "Turnover (Sports)",
+    "GGR (Sports)",
+    "NGR (Sports)",
 ]
 
 # Internal DataFrame column names (same order as COLUMN_HEADERS)
@@ -64,6 +71,13 @@ DF_COLS: list[str] = [
     "new_players",
     "returning_players",
     "retention_pct",
+    "ngr",
+    "turnover_casino",
+    "ggr_casino",
+    "ngr_casino",
+    "turnover_sports",
+    "ggr_sports",
+    "ngr_sports",
 ]
 
 # Formatting specs  (0-based column index → openpyxl number format)
@@ -86,6 +100,13 @@ _FORMAT_MAP: dict[int, str] = {
     12: _INT_FMT,   # new_players
     13: _INT_FMT,   # returning_players
     14: _PCT_FMT,   # retention_pct
+    15: _NUM_FMT,   # ngr
+    16: _NUM_FMT,   # turnover_casino
+    17: _NUM_FMT,   # ggr_casino
+    18: _NUM_FMT,   # ngr_casino
+    19: _NUM_FMT,   # turnover_sports
+    20: _NUM_FMT,   # ggr_sports
+    21: _NUM_FMT,   # ngr_sports
 }
 
 # ── Campaign tab config ──────────────────────────────────────────────────
@@ -170,6 +191,13 @@ BOTH_BUSINESS_HEADERS: list[str] = [
     "Income / Player",
     "New Player GGR",
     "Returning Player GGR",
+    "NGR",
+    "Turnover (Casino)",
+    "GGR (Casino)",
+    "NGR (Casino)",
+    "Turnover (Sports)",
+    "GGR (Sports)",
+    "NGR (Sports)",
 ]
 
 BOTH_BUSINESS_DF_COLS: list[str] = [
@@ -193,6 +221,13 @@ BOTH_BUSINESS_DF_COLS: list[str] = [
     "income_per_player",
     "new_player_ggr",
     "returning_player_ggr",
+    "ngr",
+    "turnover_casino",
+    "ggr_casino",
+    "ngr_casino",
+    "turnover_sports",
+    "ggr_sports",
+    "ngr_sports",
 ]
 
 _BOTH_BUSINESS_FORMAT_MAP: dict[int, str] = {
@@ -215,6 +250,13 @@ _BOTH_BUSINESS_FORMAT_MAP: dict[int, str] = {
     17: _NUM_FMT,  # income_per_player
     18: _NUM_FMT,  # new_player_ggr
     19: _NUM_FMT,  # returning_player_ggr
+    20: _NUM_FMT,  # ngr
+    21: _NUM_FMT,  # turnover_casino
+    22: _NUM_FMT,  # ggr_casino
+    23: _NUM_FMT,  # ngr_casino
+    24: _NUM_FMT,  # turnover_sports
+    25: _NUM_FMT,  # ggr_sports
+    26: _NUM_FMT,  # ngr_sports
 }
 
 # Header styling

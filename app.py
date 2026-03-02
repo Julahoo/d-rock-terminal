@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+import plotly.express as px
 
 from src.ingestion import load_all_data_from_uploads, load_campaign_data_from_uploads
 from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves
@@ -79,48 +80,11 @@ st.caption("Upload CSVs → Run Pipeline → Download Intel.")
 if "data_loaded" not in st.session_state:
     st.session_state["data_loaded"] = False
 
-
 # ═══════════════════════════════════════════════════════════════════════════
-#  Sidebar: File Uploaders
+#  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.header("📁 Upload Data Files")
-    st.markdown("---")
-
-    # ── Financial Data ───────────────────────────────────────────────────
-    st.subheader("Financial Data")
-    all_raw_uploads = []
-    for brand in BRANDS:
-        with st.expander(f"**{brand.title()}**", expanded=False):
-            uploaded = st.file_uploader(
-                f"Upload {brand.title()} financial CSVs",
-                type="csv",
-                accept_multiple_files=True,
-                key=f"fin_{brand}",
-            )
-            if uploaded:
-                all_raw_uploads.extend(uploaded)
-                st.success(f"{len(uploaded)} file(s) ready")
-
-    st.markdown("---")
-
-    # ── Campaign Data ────────────────────────────────────────────────────
-    st.subheader("Campaign Data")
-    all_camp_uploads = []
-    for brand in BRANDS:
-        with st.expander(f"**{brand.title()}**", expanded=False):
-            uploaded = st.file_uploader(
-                f"Upload {brand.title()} campaign CSVs",
-                type="csv",
-                accept_multiple_files=True,
-                key=f"camp_{brand}",
-            )
-            if uploaded:
-                all_camp_uploads.extend(uploaded)
-                st.success(f"{len(uploaded)} file(s) ready")
-
-    # ── Excel Report Download (from session state) ────────────────
-    st.markdown("---")
+    st.header("⚙️ System Controls")
     if "excel_buffer" in st.session_state and st.session_state["excel_buffer"] is not None:
         st.download_button(
             label="Download Excel Report",
@@ -131,24 +95,109 @@ with st.sidebar:
             use_container_width=True,
         )
 
+# 🌍 GLOBAL INTELLIGENCE FILTERS
+st.markdown("### 🌍 GLOBAL INTELLIGENCE FILTERS")
+gf1, gf2, gf3, gf4 = st.columns(4)
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  Main Area: Pipeline Execution
-# ═══════════════════════════════════════════════════════════════════════════
-st.markdown("---")
+# Safely get unique lists if data is loaded, otherwise default to "All"
+unique_clients = list(st.session_state["df"]["client"].unique()) if st.session_state.get("data_loaded") else []
+selected_client = gf1.selectbox("Client", ["All"] + unique_clients)
 
-run_clicked = st.button("🚀 Run Analytics Pipeline", type="primary", use_container_width=True)
+# --- PATCH: Dynamically load all brands if Client is "All" ---
+if st.session_state.get("data_loaded"):
+    if selected_client == "All":
+        unique_brands = list(st.session_state["df"]["brand"].unique())
+    else:
+        unique_brands = list(st.session_state["df"][st.session_state["df"]["client"] == selected_client]["brand"].unique())
+else:
+    unique_brands = []
+    
+selected_brand = gf2.selectbox("Brand", ["All"] + unique_brands)
+
+unique_countries = list(st.session_state["df"]["country"].unique()) if st.session_state.get("data_loaded") else []
+selected_country = gf3.selectbox("Country", ["All"] + unique_countries)
+
+revenue_mode = gf4.radio("Revenue Metric", ["GGR", "NGR"], horizontal=True)
+rev_col = "ggr" if revenue_mode == "GGR" else "ngr"
+
+# ── UN-NESTED TABS (Always visible) ──
+tab_control, tab_exec, tab_financials, tab_crm, tab_campaigns = st.tabs([
+    "🗄️ Data Control Room", 
+    "📊 Executive Summary", 
+    "🏦 Financial Deep-Dive", 
+    "🕵️ CRM Intelligence",
+    "📈 Campaigns"
+])
+
+with tab_control:
+    st.markdown("### > SYSTEM STATUS: DETECTING DATA PACKETS...")
+    st.markdown("---")
+    
+    st.markdown("#### 📅 COMPLIANCE & IMPORT GRID")
+    st.markdown("*Insight: Tracks expected monthly deliveries against actual files.*")
+    
+    # --- ADD THIS: Load from disk if RAM was cleared by a browser refresh ---
+    if "registry" not in st.session_state or st.session_state["registry"] is None:
+        from src.ingestion import IngestionRegistry
+        st.session_state["registry"] = IngestionRegistry.load()
+
+    # --- DYNAMIC COMPLIANCE GRID ---
+    registry = st.session_state.get("registry")
+    if registry and registry._entries:
+        all_months = set()
+        for brand, months in registry._entries.items():
+            all_months.update(months.keys())
+        
+        # Sort months chronologically
+        sorted_months = sorted(list(all_months), reverse=True)
+        
+        grid_data = {"Month": sorted_months}
+        for brand in sorted(registry._entries.keys()):
+            statuses = []
+            for m in sorted_months:
+                status = registry._entries[brand].get(m, {}).get("status", "MISSING")
+                statuses.append("🟢 IMPORTED" if status == "COMPLETE" else "🔴 PENDING")
+            grid_data[f"{brand.title()} (Financials)"] = statuses
+            
+        st.dataframe(pd.DataFrame(grid_data), use_container_width=True, hide_index=True)
+        
+        # Check for gaps using the backend registry logic
+        gaps = registry.missing_entries()
+        if gaps:
+            st.error(f"⚠️ DETECTED {len(gaps)} DATA GAP(S): Missing months detected in the timeline. Please upload them to ensure accurate Time-Series and YoY tracking.")
+    else:
+        st.info("Awaiting Data. Upload files below and click 'Run Analytics Pipeline' to populate the tracking grid.")
+
+    st.markdown("---")
+    st.markdown("#### 📥 DATA INGESTION ZONES")
+    
+    st.markdown("##### 📁 OFFSIDE GAMING")
+    c1, c2 = st.columns(2)
+    up_offside_fin = c1.file_uploader("Financial CSV/XLSX (Latribet, Rojabet)", type=["csv", "xlsx"], accept_multiple_files=True, key="up_offside_fin")
+    up_offside_crm = c2.file_uploader("Internal CRM CSV/XLSX", type=["csv", "xlsx"], accept_multiple_files=True, key="up_offside_crm")
+    
+    st.markdown("---")
+    st.markdown("##### 📁 LEOVEGAS GROUP")
+    c3, c4 = st.columns(2)
+    up_leovegas_fin = c3.file_uploader("Financial CSV/XLSX (Bet UK, BetMGM, LV)", type=["csv", "xlsx"], accept_multiple_files=True, key="up_leovegas_fin")
+    up_leovegas_crm = c4.file_uploader("Internal CRM CSV/XLSX", type=["csv", "xlsx"], accept_multiple_files=True, key="up_leovegas_crm")
+
+    run_clicked = st.button("🚀 Run Analytics Pipeline", type="primary", use_container_width=True)
 
 if run_clicked:
     with st.status("⏳ Executing ETL Pipeline...", expanded=True) as status:
+        
+        # Combine the uploaded RAM buffers
+        fin_files = (st.session_state.get("up_offside_fin") or []) + (st.session_state.get("up_leovegas_fin") or [])
+        crm_files = (st.session_state.get("up_offside_crm") or []) + (st.session_state.get("up_leovegas_crm") or [])
 
         # ── Phase 2: Ingestion ───────────────────────────────────────────
         st.write("> Ingesting financial data...")
-        if not all_raw_uploads:
-            st.warning("No financial data uploaded. Upload CSVs in the sidebar first.")
+        if not fin_files:
+            st.warning("No financial data uploaded.")
             st.stop()
         try:
-            df, registry = load_all_data_from_uploads(all_raw_uploads)
+            df, registry = load_all_data_from_uploads(fin_files)
         except Exception as exc:
             st.error(f"Ingestion failed: {exc}")
             st.stop()
@@ -163,9 +212,9 @@ if run_clicked:
         st.write("> Computing financial summaries...")
         financial_summary = generate_monthly_summaries(df)
 
-        # ── Phase 5: Campaigns ───────────────────────────────────────────
+        # ── Phase 5: Campaigns (BUG FIXED HERE) ──────────────────────────
         st.write("> Processing campaign data...")
-        campaign_raw = load_campaign_data_from_uploads(all_camp_uploads)
+        campaign_raw = load_campaign_data_from_uploads(crm_files)
         campaign_summary: pd.DataFrame | None = None
 
         if campaign_raw.empty:
@@ -213,6 +262,9 @@ if run_clicked:
     st.session_state["program_summary"] = program_summary
     st.session_state["excel_buffer"] = excel_buffer
     st.session_state["data_loaded"] = True
+    
+    # Instantly show the grid
+    st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  BI Dashboard — reads from session state
@@ -226,7 +278,6 @@ if st.session_state["data_loaded"]:
     segmentation = st.session_state["segmentation"]
     both_business = st.session_state["both_business"]
     program_summary = st.session_state["program_summary"]
-    output_path = st.session_state["output_path"]
 
     # ══════════════════════════════════════════════════════════════════════
     #  BI Dashboard (Phase 9)
@@ -486,16 +537,7 @@ if st.session_state["data_loaded"]:
                     },
                 )
 
-    # ── Dashboard tabs ────────────────────────────────────────────────────
-    # ── Dashboard tabs ────────────────────────────────────────────────────
-    tab_exec, tab_both, tab_roja, tab_latri, tab_campaigns, tab_crm = st.tabs([
-        "📊 Executive Summary",
-        "🏦 Combined Deep-Dive",
-        "🔴 Rojabet",
-        "🟢 Latribet",
-        "📈 Campaigns",
-        "🕵️ CRM Intelligence",
-    ])
+
 
     # ═════════════════════════════════════════════════════════════════════
     #  TAB: Executive Summary (Phase 16)
@@ -520,308 +562,216 @@ if st.session_state["data_loaded"]:
                 else:
                     st.info(e_narrative)
 
-            # ── Cross-Brand Comparison Matrix ─────────────────────────────
+            # --- DYNAMIC BRAND DETECTION ---
+            active_brands = sorted([b for b in financial_summary["brand"].unique() if b != "Combined"])
+            combined_label = "All Business" if len(active_brands) > 2 else "Both Business"
+
+            # ── Cross-Brand Executive Matrix ─────────────────────────────
             st.markdown("#### > CROSS-BRAND EXECUTIVE MATRIX_")
             st.markdown("*Insight: Tracks core revenue generation, operating margin safety, and top-line agency commissions across all entities.*")
 
             latest_month = both_business["month"].max()
 
-            # MoM mapping: metric label → financial_summary column name
             _mom_map = {
-                "Turnover": "total_handle",
-                "GGR": "ggr",
-                "Margin %": "hold_pct",
-                "Revenue (15%)": "revenue_share_deduction",
-                "Conversions": "conversions",
-                "Turnover / Player": "turnover_per_player",
-                "Whale Risk %": None,  # no MoM
+                "Turnover": "total_handle", "GGR": "ggr", "Margin %": "hold_pct",
+                "Revenue (15%)": "revenue_share_deduction", "Conversions": "conversions",
+                "Turnover / Player": "turnover_per_player", "Whale Risk %": None,
             }
 
             def _brand_snapshot(brand_name: str) -> dict:
-                """Extract key metrics for a brand in the latest month."""
-                bdata = financial_summary[
-                    (financial_summary["brand"] == brand_name)
-                    & (financial_summary["month"] == latest_month)
-                ]
-                if bdata.empty:
-                    return {}
+                bdata = financial_summary[(financial_summary["brand"] == brand_name) & (financial_summary["month"] == latest_month)]
+                if bdata.empty: return {}
                 row = bdata.iloc[0]
                 return {
-                    "Turnover": float(row.get("total_handle", 0)),
-                    "GGR": float(row.get("ggr", 0)),
-                    "Margin %": float(row.get("hold_pct", 0)),
-                    "Revenue (15%)": float(row.get("revenue_share_deduction", 0)),
-                    "Conversions": int(row.get("conversions", 0)),
-                    "Turnover / Player": float(row.get("turnover_per_player", 0)),
+                    "Turnover": float(row.get("total_handle", 0)), "GGR": float(row.get("ggr", 0)),
+                    "Margin %": float(row.get("hold_pct", 0)), "Revenue (15%)": float(row.get("revenue_share_deduction", 0)),
+                    "Conversions": int(row.get("conversions", 0)), "Turnover / Player": float(row.get("turnover_per_player", 0)),
                     "Whale Risk %": float(row.get("top_10_pct_ggr_share", 0)),
                 }
 
             def _brand_mom(brand_name: str) -> list:
-                """Extract MoM % from pre-computed time series (_mom_pct via shift(1))."""
-                bdata = financial_summary[
-                    financial_summary["brand"] == brand_name
-                ].sort_values("month")
-                if bdata.empty:
-                    return ["-"] * len(metrics_list)
-                brand_ts = _cached_time_series(bdata)
-                brand_ts_m = brand_ts.get("monthly", pd.DataFrame())
-                if brand_ts_m.empty:
-                    return ["-"] * len(metrics_list)
+                bdata = financial_summary[financial_summary["brand"] == brand_name].sort_values("month")
+                if bdata.empty: return ["-"] * len(metrics_list)
+                brand_ts_m = _cached_time_series(bdata).get("monthly", pd.DataFrame())
+                if brand_ts_m.empty: return ["-"] * len(metrics_list)
                 latest = brand_ts_m.iloc[-1]
-                results = []
-                for metric in metrics_list:
-                    col = _mom_map.get(metric)
-                    if col is None:
-                        results.append("N/A")
-                        continue
-                    mom_key = f"{col}_mom_pct"
-                    val = latest.get(mom_key)
-                    if val is None or pd.isna(val):
-                        results.append("-")
-                    else:
-                        results.append(f"{val:+.1f}%")
-                return results
+                return [f"{latest.get(f'{_mom_map.get(m)}_mom_pct'):+.1f}%" if pd.notna(latest.get(f"{_mom_map.get(m)}_mom_pct")) else "-" for m in metrics_list]
 
             def _bb_mom() -> list:
-                """Extract MoM % from combined time series."""
-                if exec_ts_m.empty:
-                    return ["-"] * len(metrics_list)
-                bb_ts_map = {
-                    "Turnover": "turnover",
-                    "GGR": "ggr",
-                    "Margin %": "margin",
-                    "Revenue (15%)": "revenue_share_deduction",
-                    "Conversions": "conversions",
-                    "Turnover / Player": "turnover_per_player",
-                    "Whale Risk %": None,
-                }
-                results = []
-                for metric in metrics_list:
-                    col = bb_ts_map.get(metric)
-                    if col is None:
-                        results.append("N/A")
-                        continue
-                    mom_key = f"{col}_mom_pct"
-                    val = exec_latest.get(mom_key)
-                    if val is None or pd.isna(val):
-                        results.append("-")
-                    else:
-                        results.append(f"{val:+.1f}%")
-                return results
-
-            bb_snap = {
-                "Turnover": float(exec_bb.get("turnover", 0)),
-                "GGR": float(exec_bb.get("ggr", 0)),
-                "Margin %": float(exec_bb.get("margin", 0)),
-                "Revenue (15%)": float(exec_bb.get("revenue_share_deduction", 0)),
-                "Conversions": int(exec_bb.get("conversions", 0)),
-                "Turnover / Player": float(exec_bb.get("turnover_per_player", 0)),
-                "Whale Risk %": e_whale,
-            }
-            roja_snap = _brand_snapshot("Rojabet")
-            latri_snap = _brand_snapshot("Latribet")
+                if exec_ts_m.empty: return ["-"] * len(metrics_list)
+                bb_ts_map = {"Turnover": "turnover", "GGR": "ggr", "Margin %": "margin", "Revenue (15%)": "revenue_share_deduction", "Conversions": "conversions", "Turnover / Player": "turnover_per_player"}
+                return [f"{exec_latest.get(f'{bb_ts_map.get(m)}_mom_pct'):+.1f}%" if pd.notna(exec_latest.get(f"{bb_ts_map.get(m)}_mom_pct")) else "-" for m in metrics_list]
 
             def _brand_yoy(brand_name: str) -> list:
-                """Extract YoY % from pre-computed time series (_yoy_pct via shift(12))."""
-                bdata = financial_summary[
-                    financial_summary["brand"] == brand_name
-                ].sort_values("month")
-                if bdata.empty:
-                    return ["-"] * len(metrics_list)
-                brand_ts = _cached_time_series(bdata)
-                brand_ts_m = brand_ts.get("monthly", pd.DataFrame())
-                if brand_ts_m.empty:
-                    return ["-"] * len(metrics_list)
+                bdata = financial_summary[financial_summary["brand"] == brand_name].sort_values("month")
+                if bdata.empty: return ["-"] * len(metrics_list)
+                brand_ts_m = _cached_time_series(bdata).get("monthly", pd.DataFrame())
+                if brand_ts_m.empty: return ["-"] * len(metrics_list)
                 latest = brand_ts_m.iloc[-1]
-                results = []
-                for metric in metrics_list:
-                    col = _mom_map.get(metric)
-                    if col is None:
-                        results.append("N/A")
-                        continue
-                    yoy_key = f"{col}_yoy_pct"
-                    val = latest.get(yoy_key)
-                    if val is None or pd.isna(val):
-                        results.append("-")
-                    else:
-                        results.append(f"{val:+.1f}%")
-                return results
+                return [f"{latest.get(f'{_mom_map.get(m)}_yoy_pct'):+.1f}%" if pd.notna(latest.get(f"{_mom_map.get(m)}_yoy_pct")) else "-" for m in metrics_list]
 
             def _bb_yoy() -> list:
-                """Extract YoY % from combined time series."""
-                if exec_ts_m.empty:
-                    return ["-"] * len(metrics_list)
-                bb_ts_map = {
-                    "Turnover": "turnover",
-                    "GGR": "ggr",
-                    "Margin %": "margin",
-                    "Revenue (15%)": "revenue_share_deduction",
-                    "Conversions": "conversions",
-                    "Turnover / Player": "turnover_per_player",
-                    "Whale Risk %": None,
-                }
-                results = []
-                for metric in metrics_list:
-                    col = bb_ts_map.get(metric)
-                    if col is None:
-                        results.append("N/A")
-                        continue
-                    yoy_key = f"{col}_yoy_pct"
-                    val = exec_latest.get(yoy_key)
-                    if val is None or pd.isna(val):
-                        results.append("-")
-                    else:
-                        results.append(f"{val:+.1f}%")
-                return results
+                if exec_ts_m.empty: return ["-"] * len(metrics_list)
+                bb_ts_map = {"Turnover": "turnover", "GGR": "ggr", "Margin %": "margin", "Revenue (15%)": "revenue_share_deduction", "Conversions": "conversions", "Turnover / Player": "turnover_per_player"}
+                return [f"{exec_latest.get(f'{bb_ts_map.get(m)}_yoy_pct'):+.1f}%" if pd.notna(exec_latest.get(f"{bb_ts_map.get(m)}_yoy_pct")) else "-" for m in metrics_list]
 
-            metrics_list = ["Turnover", "GGR", "Margin %", "Revenue (15%)",
-                            "Conversions", "Turnover / Player", "Whale Risk %"]
+            bb_snap = {
+                "Turnover": float(exec_bb.get("turnover", 0)), "GGR": float(exec_bb.get("ggr", 0)),
+                "Margin %": float(exec_bb.get("margin", 0)), "Revenue (15%)": float(exec_bb.get("revenue_share_deduction", 0)),
+                "Conversions": int(exec_bb.get("conversions", 0)), "Turnover / Player": float(exec_bb.get("turnover_per_player", 0)),
+                "Whale Risk %": e_whale,
+            }
+
+            metrics_list = ["Turnover", "GGR", "Margin %", "Revenue (15%)", "Conversions", "Turnover / Player", "Whale Risk %"]
+            
+            # Dynamically build the dictionary
             matrix_data = {
                 "Metric": metrics_list,
-                "Combined": [bb_snap.get(m, 0) for m in metrics_list],
-                "Combined MoM": _bb_mom(),
-                "Combined YoY": _bb_yoy(),
-                "Rojabet": [roja_snap.get(m, 0) for m in metrics_list],
-                "Rojabet MoM": _brand_mom("Rojabet"),
-                "Rojabet YoY": _brand_yoy("Rojabet"),
-                "Latribet": [latri_snap.get(m, 0) for m in metrics_list],
-                "Latribet MoM": _brand_mom("Latribet"),
-                "Latribet YoY": _brand_yoy("Latribet"),
+                combined_label: [bb_snap.get(m, 0) for m in metrics_list],
+                f"{combined_label} MoM": _bb_mom(),
+                f"{combined_label} YoY": _bb_yoy(),
             }
-            matrix_df = pd.DataFrame(matrix_data)
+            
+            for brand in active_brands:
+                snap = _brand_snapshot(brand)
+                matrix_data[brand] = [snap.get(m, 0) for m in metrics_list]
+                matrix_data[f"{brand} MoM"] = _brand_mom(brand)
+                matrix_data[f"{brand} YoY"] = _brand_yoy(brand)
 
-            st.dataframe(
-                matrix_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Metric": st.column_config.TextColumn("Metric"),
-                    "Combined": st.column_config.NumberColumn("Combined", format="%.2f"),
-                    "Combined MoM": st.column_config.TextColumn("Combined MoM"),
-                    "Combined YoY": st.column_config.TextColumn("Combined YoY"),
-                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%.2f"),
-                    "Rojabet MoM": st.column_config.TextColumn("Rojabet MoM"),
-                    "Rojabet YoY": st.column_config.TextColumn("Rojabet YoY"),
-                    "Latribet": st.column_config.NumberColumn("Latribet", format="%.2f"),
-                    "Latribet MoM": st.column_config.TextColumn("Latribet MoM"),
-                    "Latribet YoY": st.column_config.TextColumn("Latribet YoY"),
-                },
-            )
-            st.caption(f"Snapshot: {latest_month}")
-            st.caption("🐳 **WHALE RISK %:** The percentage of total monthly GGR generated by the top 10% of players. Values > 70% indicate extreme revenue concentration risk.")
+            # Dynamic column config mapping
+            cfg = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="%.2f")}
+            for brand in active_brands:
+                cfg[brand] = st.column_config.NumberColumn(brand, format="%.2f")
+
+            st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True, column_config=cfg)
 
             # ── Brand vs Brand Trajectory ─────────────────────────────────
             st.markdown("#### > BRAND vs BRAND TRAJECTORY_")
-
-            roja_ts = financial_summary[
-                financial_summary["brand"] == "Rojabet"
-            ][["month", "ggr"]].sort_values("month")
-            latri_ts = financial_summary[
-                financial_summary["brand"] == "Latribet"
-            ][["month", "ggr"]].sort_values("month")
-
             fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=roja_ts["month"], y=roja_ts["ggr"],
-                name="Rojabet", marker_color="#FF4444",
-            ))
-            fig.add_trace(go.Bar(
-                x=latri_ts["month"], y=latri_ts["ggr"],
-                name="Latribet", marker_color="#00FF41",
-            ))
+            
+            # Expanded color palette for 6+ brands
+            colors = ["#FF4444", "#00FF41", "#1E90FF", "#FFD700", "#FF1493", "#9400D3"]
+            
+            # Fix the unpacking crash by using enumerate()
+            for i, brand in enumerate(active_brands):
+                b_ts = financial_summary[financial_summary["brand"] == brand][["month", "ggr"]].sort_values("month")
+                fig.add_trace(go.Bar(
+                    x=b_ts["month"], 
+                    y=b_ts["ggr"], 
+                    name=brand, 
+                    marker_color=colors[i % len(colors)]
+                ))
+                
+            # Dynamic Barmode: Group for 1-3 brands, Stack for 4+ brands
+            dynamic_barmode = "stack" if len(active_brands) > 3 else "group"
+                
             fig.update_layout(
-                barmode="group",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
+                barmode=dynamic_barmode, 
+                paper_bgcolor="rgba(0,0,0,0)", 
+                plot_bgcolor="rgba(0,0,0,0)", 
                 font_color="#00FF41",
-                legend=dict(font=dict(color="#00FF41")),
-                xaxis=dict(gridcolor="#1a1a1a"),
-                yaxis=dict(gridcolor="#1a1a1a", tickprefix="$", tickformat=",.0f"),
-                margin=dict(l=0, r=0, t=30, b=0),
-                height=400,
+                legend=dict(font=dict(color="#00FF41")), 
+                xaxis=dict(gridcolor="#1a1a1a"), 
+                yaxis=dict(gridcolor="#1a1a1a", tickprefix="$", tickformat=",.0f"), 
+                margin=dict(l=0, r=0, t=30, b=0), 
+                height=400
             )
             st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": False})
 
             # ── Cross-Brand Demographics ─────────────────────────────────
             st.markdown("---")
             st.markdown("#### > CROSS-BRAND DEMOGRAPHICS_")
-            st.markdown("*Insight: Evaluates acquisition velocity, retention strength, and the balance of players winning vs. losing against the house.*")
+            demo_metrics = [("Total Active", "total_players"), ("Conversions", "conversions"), ("New Players", "new_players"), 
+                            ("Reactivated", "reactivated_players"), ("Retained", "returning_players"), ("Profitable", "profitable_players"), ("Neg. Yield", "negative_yield_players")]
 
-            demo_metrics = [
-                ("Total Active", "total_players"),
-                ("Conversions", "conversions"),
-                ("New Players", "new_players"),
-                ("Reactivated", "reactivated_players"),
-                ("Retained", "returning_players"),
-                ("Profitable", "profitable_players"),
-                ("Neg. Yield", "negative_yield_players"),
-            ]
-
-            def _demo_snap(brand_name: str) -> list:
-                bdata = financial_summary[
-                    (financial_summary["brand"] == brand_name)
-                    & (financial_summary["month"] == latest_month)
-                ]
-                if bdata.empty:
-                    return [0] * len(demo_metrics)
-                row = bdata.iloc[0]
-                return [int(row.get(col, 0)) for _, col in demo_metrics]
-
-            # BB uses both_business which has different column names
-            bb_demo = [int(exec_bb.get(col, 0)) for _, col in demo_metrics]
-
-            demo_matrix = pd.DataFrame({
-                "Metric": [label for label, _ in demo_metrics],
-                "Both Business": bb_demo,
-                "Rojabet": _demo_snap("Rojabet"),
-                "Latribet": _demo_snap("Latribet"),
-            })
-            st.dataframe(
-                demo_matrix,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Metric": st.column_config.TextColumn("Metric"),
-                    "Both Business": st.column_config.NumberColumn("Both Business", format="%d"),
-                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%d"),
-                    "Latribet": st.column_config.NumberColumn("Latribet", format="%d"),
-                },
-            )
+            demo_data = {"Metric": [label for label, _ in demo_metrics], combined_label: [int(exec_bb.get(col, 0)) for _, col in demo_metrics]}
+            for brand in active_brands:
+                bdata = financial_summary[(financial_summary["brand"] == brand) & (financial_summary["month"] == latest_month)]
+                demo_data[brand] = [int(bdata.iloc[0].get(col, 0)) if not bdata.empty else 0 for _, col in demo_metrics]
+            
+            cfg_demo = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
+            for brand in active_brands: cfg_demo[brand] = st.column_config.NumberColumn(brand, format="%d")
+            st.dataframe(pd.DataFrame(demo_data), use_container_width=True, hide_index=True, column_config=cfg_demo)
 
             # ── Cross-Brand VIP Health ────────────────────────────────────
             st.markdown("---")
             st.markdown("#### > CROSS-BRAND VIP HEALTH_")
-            st.markdown("*Insight: Assesses long-term revenue sustainability by tracking active VIPs against high-value players at risk of churning.*")
-
-            tier_labels = ["True VIPs", "Churn Risk VIPs", "Casuals"]
-            tier_search = ["True VIP", "Churn Risk", "Casual"]
+            tier_labels, tier_search = ["True VIPs", "Churn Risk VIPs", "Casuals"], ["True VIP", "Churn Risk", "Casual"]
 
             def _vip_snap(raw_subset):
                 rfm = _cached_rfm_summary(raw_subset, latest_month)
-                if rfm.empty:
-                    return [0] * len(tier_labels)
-                results = []
-                for search in tier_search:
-                    mask = rfm.iloc[:, 0].str.contains(search, na=False, case=False)
-                    results.append(int(rfm.loc[mask, rfm.columns[1]].sum()) if mask.any() else 0)
-                return results
+                if rfm.empty: return [0] * len(tier_labels)
+                return [int(rfm.loc[rfm.iloc[:, 0].str.contains(s, na=False, case=False), rfm.columns[1]].sum()) if rfm.iloc[:, 0].str.contains(s, na=False, case=False).any() else 0 for s in tier_search]
 
-            vip_matrix = pd.DataFrame({
-                "Tier": tier_labels,
-                "Both Business": _vip_snap(df),
-                "Rojabet": _vip_snap(df[df["brand"] == "Rojabet"]),
-                "Latribet": _vip_snap(df[df["brand"] == "Latribet"]),
-            })
+            vip_data = {"Tier": tier_labels, combined_label: _vip_snap(df)}
+            for brand in active_brands:
+                vip_data[brand] = _vip_snap(df[df["brand"] == brand])
+
+            cfg_vip = {"Tier": st.column_config.TextColumn("Tier"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
+            for brand in active_brands: cfg_vip[brand] = st.column_config.NumberColumn(brand, format="%d")
+            st.dataframe(pd.DataFrame(vip_data), use_container_width=True, hide_index=True, column_config=cfg_vip)
+
+            # ── Cross-Brand Cash Flow & Promo ─────────────────────────────
+            if "LeoVegas Group" in df["client"].unique():
+                st.markdown("---")
+                st.markdown("#### > CASH FLOW & PROMO EFFICIENCY_")
+                st.markdown("*Insight: Tracks actual liquidity (Net Deposits) vs. the Bonus Cost required to acquire the revenue.*")
+
+                cf_metrics = [("Net Deposits", "net_deposits"), ("Total Deposits", "deposits"), ("Withdrawals", "withdrawals"), ("Bonus Cost", "bonus_total")]
+
+                cf_data = {"Metric": [label for label, _ in cf_metrics], combined_label: [float(exec_bb.get(col, 0)) for _, col in cf_metrics]}
+                for brand in active_brands:
+                    bdata = financial_summary[(financial_summary["brand"] == brand) & (financial_summary["month"] == latest_month)]
+                    cf_data[brand] = [float(bdata.iloc[0].get(col, 0)) if not bdata.empty else 0.0 for _, col in cf_metrics]
+
+                cfg_cf = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="$%.2f")}
+                for brand in active_brands: cfg_cf[brand] = st.column_config.NumberColumn(brand, format="$%.2f")
+                st.dataframe(pd.DataFrame(cf_data), use_container_width=True, hide_index=True, column_config=cfg_cf)
+                st.caption("⚠️ **Note:** Cash Flow and Promo data is currently only provided by LeoVegas Group. Offside Gaming brands will reflect $0.00.")
+
+            # ── Geographic Intelligence ─────────────────────────────
+            st.markdown("---")
+            st.markdown("#### > GEOGRAPHIC MARKET MATRIX_")
+            st.markdown("*Insight: Evaluates market penetration, player volume, and net profitability by country.*")
+            
+            from src.analytics import generate_geographic_summary
+            geo_df = generate_geographic_summary(df)
+            
+            if not geo_df.empty and len(geo_df[geo_df["country"] != "Global"]) > 0:
+                # Filter out the 'Global' fallback from Offside Gaming for the visual
+                visual_geo = geo_df[geo_df["country"] != "Global"].copy()
+                
+                # 1. The Treemap
+                fig_tree = px.treemap(
+                    visual_geo, 
+                    path=["country"], 
+                    values="ngr",
+                    color="margin",
+                    color_continuous_scale="Viridis",
+                    title="True NGR by Market (Color = House Margin %)"
+                )
+                fig_tree.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", 
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font_color="#00FF41",
+                    margin=dict(t=30, l=0, r=0, b=0)
+                )
+                st.plotly_chart(fig_tree, use_container_width=True)
+                
+            # 2. The Market Leaderboard
             st.dataframe(
-                vip_matrix,
+                geo_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Tier": st.column_config.TextColumn("Tier"),
-                    "Both Business": st.column_config.NumberColumn("Both Business", format="%d"),
-                    "Rojabet": st.column_config.NumberColumn("Rojabet", format="%d"),
-                    "Latribet": st.column_config.NumberColumn("Latribet", format="%d"),
-                },
+                    "country": st.column_config.TextColumn("Market"),
+                    "total_players": st.column_config.NumberColumn("Active Players", format="%d"),
+                    "turnover": st.column_config.NumberColumn("Turnover", format="$%.2f"),
+                    "ggr": st.column_config.NumberColumn("GGR", format="$%.2f"),
+                    "ngr": st.column_config.NumberColumn("NGR", format="$%.2f"),
+                    "deposits": st.column_config.NumberColumn("Deposits", format="$%.2f"),
+                    "margin": st.column_config.NumberColumn("Margin", format="%.2f%%"),
+                }
             )
 
             # ── Cross-Brand Cannibalization ──────────────────────────────
@@ -838,17 +788,26 @@ if st.session_state["data_loaded"]:
         else:
             st.warning("No financial data available for Executive Summary.")
 
-    with tab_both:
-        if not both_business.empty:
-            bb_latest = both_business.iloc[-1]
-            bb_prev = both_business.iloc[-2] if len(both_business) > 1 else None
+    with tab_financials:
+        _raw_df = st.session_state["df"].copy()
+        if selected_client != "All": _raw_df = _raw_df[_raw_df["client"] == selected_client]
+        if selected_brand != "All": _raw_df = _raw_df[_raw_df["brand"] == selected_brand]
+        if selected_country != "All": _raw_df = _raw_df[_raw_df["country"] == selected_country]
+        
+        # Recalculate summaries for the specific slice
+        filtered_monthly = generate_monthly_summaries(_raw_df)
+        filtered_both = generate_both_business_summary(filtered_monthly)
+        
+        if not filtered_both.empty:
+            bb_latest = filtered_both.iloc[-1]
+            bb_prev = filtered_both.iloc[-2] if len(filtered_both) > 1 else None
 
             def _bb_delta(col: str):
-                if bb_prev is not None and col in both_business.columns:
+                if bb_prev is not None and col in filtered_both.columns:
                     return float(bb_latest[col] - bb_prev[col])
                 return None
 
-            # KPI cards
+            # --- 1. KPI CARDS ---
             k1, k2, k3, k4, k5 = st.columns(5)
             with k1:
                 st.metric("Turnover", f"${bb_latest['turnover']:,.2f}",
@@ -857,22 +816,120 @@ if st.session_state["data_loaded"]:
                 st.metric("GGR", f"${bb_latest['ggr']:,.2f}",
                           delta=f"${_bb_delta('ggr'):,.2f}" if _bb_delta('ggr') is not None else None)
             with k3:
-                st.metric("Revenue (15%)", f"${bb_latest['revenue_share_deduction']:,.2f}",
-                          delta=f"${_bb_delta('revenue_share_deduction'):,.2f}" if _bb_delta('revenue_share_deduction') is not None else None)
+                st.metric("Margin", f"{bb_latest.get('margin', 0):.2f}%")
             with k4:
-                st.metric("Margin", f"{bb_latest['margin']:.2f}%")
-            with k5:
                 st.metric("Total Players", f"{int(bb_latest['total_players']):,}",
                           delta=f"{int(_bb_delta('total_players')):,}" if _bb_delta('total_players') is not None else None)
+            with k5:
+                st.metric("Turnover Per Player", f"${bb_latest.get('turnover_per_player', 0):,.2f}")
 
-            # GGR trend chart
-            st.markdown("#### 📈 Combined GGR Month-over-Month")
-            chart_data = both_business[["month", "ggr"]].set_index("month")
+            # --- 2. REVENUE TREND ---
+            st.markdown("#### 📈 Revenue Trend (Month-over-Month)")
+            chart_data = filtered_both[["month", rev_col]].set_index("month")
             st.bar_chart(chart_data, use_container_width=True)
+
+            # --- 3. VERTICAL COMPOSITION (CASINO VS SPORTS) ---
+            # Only show the vertical chart if LeoVegas data actually exists in the current slice
+            if "LeoVegas Group" in _raw_df["client"].unique():
+                st.markdown("#### > VERTICAL COMPOSITION (CASINO vs SPORTS)_")
+                v_casino = "ggr_casino" if revenue_mode == "GGR" else "ngr_casino"
+                v_sports = "ggr_sports" if revenue_mode == "GGR" else "ngr_sports"
+                
+                if v_casino in filtered_both.columns and v_sports in filtered_both.columns:
+                    vert_df = filtered_both[["month", v_casino, v_sports]].copy()
+                    vert_df.rename(columns={"month": "Month", v_casino: "Casino", v_sports: "Sportsbook"}, inplace=True)
+                    st.bar_chart(vert_df, x="Month", y=["Casino", "Sportsbook"], color=["#00FF41", "#1E90FF"])
+
+            # --- 3.5 GROSS TO NET WATERFALL (TAX & BONUS) ---
+            if "LeoVegas Group" in _raw_df["client"].unique():
+                st.markdown("---")
+                st.markdown("#### > GROSS-TO-NET REVENUE WATERFALL_")
+                st.markdown("*Insight: Visualizes the capital bleed from Gross Gaming Revenue down to True Net Income.*")
+                
+                # Get the latest month's totals from the filtered slice
+                ggr_val = bb_latest.get("ggr", 0)
+                bonus_val = -bb_latest.get("bonus_total", 0)
+                tax_val = -bb_latest.get("tax_total", 0)
+                ngr_val = bb_latest.get("ngr", 0)
+                
+                fig_waterfall = go.Figure(go.Waterfall(
+                    name="Revenue Flow", orientation="v",
+                    measure=["relative", "relative", "relative", "total"],
+                    x=["Gross Revenue (GGR)", "Bonus Cost", "Tax Burden", "Net Income (NGR)"],
+                    textposition="outside",
+                    text=[f"${ggr_val:,.0f}", f"${bonus_val:,.0f}", f"${tax_val:,.0f}", f"${ngr_val:,.0f}"],
+                    y=[ggr_val, bonus_val, tax_val, ngr_val],
+                    connector={"line": {"color": "#333333", "width": 2}},
+                    decreasing={"marker": {"color": "#FF4444"}},
+                    increasing={"marker": {"color": "#00FF41"}},
+                    totals={"marker": {"color": "#1E90FF"}}
+                ))
+                
+                fig_waterfall.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", 
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font_color="#00FF41",
+                    margin=dict(t=30, l=0, r=0, b=0),
+                    height=450,
+                    yaxis=dict(gridcolor="#1a1a1a", tickprefix="$")
+                )
+                st.plotly_chart(fig_waterfall, use_container_width=True, config={"scrollZoom": False})
+
+            # --- 3.6 PRODUCT AFFINITY & CROSS-SELLING ---
+            if "LeoVegas Group" in _raw_df["client"].unique():
+                st.markdown("---")
+                st.markdown("#### > PRODUCT AFFINITY & CROSS-SELLING_")
+                st.markdown("*Insight: Categorizes players by their betting behavior to reveal the high-value Omnichannel segment.*")
+
+                from src.analytics import generate_affinity_matrix
+                affinity_df = generate_affinity_matrix(_raw_df)
+
+                if not affinity_df.empty:
+                    aff1, aff2 = st.columns([1, 1.5])
+
+                    with aff1:
+                        fig_donut = px.pie(
+                            affinity_df,
+                            names="Affinity",
+                            values="Players",
+                            hole=0.6,
+                            color="Affinity",
+                            color_discrete_map={
+                                "Omnichannel": "#FFD700", 
+                                "Casino Only": "#00FF41", 
+                                "Sportsbook Only": "#1E90FF", 
+                                "Inactive": "#555555"
+                            }
+                        )
+                        fig_donut.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="#00FF41",
+                            margin=dict(t=30, l=0, r=0, b=0),
+                            showlegend=True
+                        )
+                        st.plotly_chart(fig_donut, use_container_width=True)
+
+                    with aff2:
+                        st.dataframe(
+                            affinity_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Affinity": st.column_config.TextColumn("Segment"),
+                                "Players": st.column_config.NumberColumn("Player Count", format="%d"),
+                                "Total_NGR": st.column_config.NumberColumn("Total NGR", format="$%.2f"),
+                                "Avg_NGR_per_Player": st.column_config.NumberColumn("Avg NGR / Player", format="$%.2f")
+                            }
+                        )
+
+            # --- 4. FULL DATA TABLE ---
+            with st.expander(f"📋 Raw Data Table ({len(filtered_both)} months)", expanded=True):
+                st.dataframe(filtered_both, use_container_width=True, hide_index=True)
 
             # ── Player Demographics Chart ───────────────────────────────
             st.markdown("#### > COMBINED PLAYER DEMOGRAPHICS (MONTH OVER MONTH)_")
-            demo_bb = both_business[["month", "total_players", "profitable_players", "negative_yield_players"]].copy()
+            demo_bb = filtered_both[["month", "total_players", "profitable_players", "negative_yield_players"]].copy()
             demo_bb = demo_bb.rename(columns={
                 "total_players": "Total Players",
                 "profitable_players": "Profitable (Winners)",
@@ -885,7 +942,7 @@ if st.session_state["data_loaded"]:
             )
 
             # ── Comparative Intelligence (Phase 11) ───────────────────
-            ts = _cached_time_series(both_business)
+            ts = _cached_time_series(filtered_both)
             ts_m = ts["monthly"]
             ts_q = ts["quarterly"]
 
@@ -976,7 +1033,7 @@ if st.session_state["data_loaded"]:
 
             # Revenue Composition chart
             st.markdown("##### 📊 Revenue Composition: New vs Returning Player GGR")
-            rev_comp = both_business[["month", "new_player_ggr", "returning_player_ggr"]].copy()
+            rev_comp = filtered_both[["month", "new_player_ggr", "returning_player_ggr"]].copy()
             rev_comp = rev_comp.rename(columns={"month": "Month", "new_player_ggr": "New_Player_GGR", "returning_player_ggr": "Returning_Player_GGR"})
             rev_comp["New (Profit)"] = rev_comp["New_Player_GGR"].clip(lower=0)
             rev_comp["New (Loss)"] = rev_comp["New_Player_GGR"].clip(upper=0)
@@ -987,8 +1044,8 @@ if st.session_state["data_loaded"]:
                          color=["#00FF41", "#FF0000", "#CCCCCC", "#804040"])
 
             # ── VIP Tiering (Phase 15 - RFM) ─────────────────────────
-            latest_month_str = both_business["month"].max()
-            rfm = _cached_rfm_summary(df, latest_month_str)
+            latest_month_str = filtered_both["month"].max()
+            rfm = _cached_rfm_summary(_raw_df, latest_month_str)
             if not rfm.empty:
                 st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({latest_month_str})")
                 t1, t2, t3 = st.columns(3)
@@ -1015,9 +1072,9 @@ if st.session_state["data_loaded"]:
                 )
 
             # Full Both Business table
-            with st.expander(f"📋 Both Business Summary ({len(both_business)} months)", expanded=True):
+            with st.expander(f"📋 Both Business Summary ({len(filtered_both)} months)", expanded=True):
                 st.dataframe(
-                    both_business,
+                    filtered_both,
                     use_container_width=True,
                     hide_index=True,
                     column_config={
@@ -1057,7 +1114,7 @@ if st.session_state["data_loaded"]:
             # ── Cohort Retention Heatmap (Phase 18) ──────────────────────
             st.markdown("---")
             st.markdown("#### > COHORT RETENTION HEATMAP_")
-            heatmap_fig = _cached_retention_heatmap(df)
+            heatmap_fig = _cached_retention_heatmap(_raw_df)
             if heatmap_fig is not None:
                 st.plotly_chart(heatmap_fig, use_container_width=True, config={"scrollZoom": False})
             else:
@@ -1067,7 +1124,7 @@ if st.session_state["data_loaded"]:
             st.markdown("---")
             st.markdown("#### > CUMULATIVE LTV TRAJECTORY_")
             st.markdown("*Insight: Tracks the cumulative revenue generation of player cohorts over time to determine break-even points and long-term value.*")
-            ltv_fig = _cached_ltv_curves(df)
+            ltv_fig = _cached_ltv_curves(_raw_df)
             if ltv_fig is not None:
                 st.plotly_chart(ltv_fig, use_container_width=True, config={"scrollZoom": False})
             else:
@@ -1092,80 +1149,105 @@ if st.session_state["data_loaded"]:
                         "total_players": st.column_config.NumberColumn("Players", format="%d"),
                     },
                 )
+
+            # --- 3.7 WHALE CONCENTRATION MATRIX (PARETO RISK) ---
+            st.markdown("---")
+            st.markdown("#### > 🐋 WHALE CONCENTRATION MATRIX (PARETO RISK)_")
+            st.markdown("*Insight: Analyzes the revenue dependency on your top percentile VIPs to expose structural churn risk.*")
+
+            from src.analytics import generate_pareto_distribution
+            pareto_df = generate_pareto_distribution(_raw_df)
+
+            if not pareto_df.empty:
+                p1, p2 = st.columns([1, 1])
+
+                with p1:
+                    fig_pareto = px.bar(
+                        pareto_df, 
+                        y="Tier", 
+                        x="Revenue_Share", 
+                        orientation='h',
+                        color="Tier",
+                        color_discrete_map={
+                            "Top 1% (Super Whales)": "#FF4444", 
+                            "Next 4% (Core VIPs)": "#FFD700", 
+                            "Next 15% (Mid-Tier)": "#1E90FF", 
+                            "Bottom 80% (Casuals)": "#00FF41"
+                        },
+                        text_auto='.1f'
+                    )
+                    fig_pareto.update_traces(textposition='outside', texttemplate='%{x:.1f}%')
+                    fig_pareto.update_layout(
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        font_color="#00FF41",
+                        xaxis_title="Share of Total NGR (%)",
+                        yaxis_title="",
+                        showlegend=False,
+                        margin=dict(l=0, r=0, t=10, b=0)
+                    )
+                    st.plotly_chart(fig_pareto, use_container_width=True)
+
+                with p2:
+                    st.dataframe(
+                        pareto_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Tier": st.column_config.TextColumn("Player Tier"),
+                            "Player_Count": st.column_config.NumberColumn("Player Count", format="%d"),
+                            "NGR_Generated": st.column_config.NumberColumn("NGR Generated", format="$%.2f"),
+                            "Revenue_Share": st.column_config.NumberColumn("Revenue Share", format="%.2f%%")
+                        }
+                    )
+            else:
+                st.info("Not enough profitable players to calculate a distribution.")
+
         else:
             st.warning("No Both Business data available.")
 
-    with tab_roja:
-        _render_financial_tab("Rojabet", "🔴")
+    with tab_crm:
+        # ── Early-Warning VIP Churn Radar ────────────────────────────────
+        st.markdown("#### > 📉 EARLY-WARNING VIP CHURN RADAR_")
+        st.markdown("*Insight: Proactively flags high-value VIPs whose month-over-month NGR trajectory has crashed by >30%. Call them before they leave.*")
 
-    with tab_latri:
-        _render_financial_tab("Latribet", "🟢")
+        from src.analytics import generate_vip_churn_radar
+        churn_df = generate_vip_churn_radar(_raw_df)
 
-    with tab_campaigns:
-        if campaign_summary is not None and not campaign_summary.empty:
-            # Show Combined campaign KPIs for latest month
-            camp_combined = (
-                campaign_summary[campaign_summary["brand"] == "Combined"]
-                .sort_values("month")
-            )
-            if not camp_combined.empty:
-                camp_latest = camp_combined.iloc[-1]
-                c1, c2, c3, c4, c5 = st.columns(5)
-                with c1:
-                    st.metric("Records", f"{int(camp_latest['total_records']):,}")
-                with c2:
-                    st.metric("Conversions", f"{int(camp_latest['total_kpi1']):,}")
-                with c3:
-                    st.metric("Logins", f"{int(camp_latest['total_kpi2']):,}")
-                with c4:
-                    st.metric("Conversion Rate", f"{camp_latest['kpi1_conversion_rate']:.1f}%")
-                with c5:
-                    st.metric("Login Rate", f"{camp_latest['kpi2_login_rate']:.1f}%")
-
+        if not churn_df.empty:
+            st.error(f"🚨 {len(churn_df)} VIPs are exhibiting severe flight risk behaviors in the latest month.")
             st.dataframe(
-                campaign_summary.sort_values(["month", "brand"]).reset_index(drop=True),
+                churn_df[["id", "brand", "Prev_Month_NGR", "Curr_Month_NGR", "NGR_Drop_Value", "NGR_Drop_Pct"]],
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "month": st.column_config.TextColumn("Month"),
+                    "id": st.column_config.TextColumn("VIP Player ID"),
                     "brand": st.column_config.TextColumn("Brand"),
-                    "total_records": st.column_config.NumberColumn("Records", format="%d"),
-                    "total_kpi1": st.column_config.NumberColumn("Conversions", format="%d"),
-                    "total_kpi2": st.column_config.NumberColumn("Logins", format="%d"),
-                    "total_calls": st.column_config.NumberColumn("Calls", format="%d"),
-                    "total_emails": st.column_config.NumberColumn("Emails", format="%d"),
-                    "total_sms": st.column_config.NumberColumn("SMS", format="%d"),
-                    "kpi1_conversion_rate": st.column_config.NumberColumn("Conv Rate %", format="%.2f%%"),
-                    "kpi2_login_rate": st.column_config.NumberColumn("Login Rate %", format="%.2f%%"),
-                },
+                    "Prev_Month_NGR": st.column_config.NumberColumn("Previous Month NGR", format="$%.2f"),
+                    "Curr_Month_NGR": st.column_config.NumberColumn("Current Month NGR", format="$%.2f"),
+                    "NGR_Drop_Value": st.column_config.NumberColumn("Absolute NGR Lost", format="-$%.2f"),
+                    "NGR_Drop_Pct": st.column_config.NumberColumn("Flight Risk Severity", format="%.1f%%")
+                }
             )
         else:
-            st.info("No campaign data available. Upload campaign CSVs in the sidebar.")
+            if "month" not in _raw_df.columns or _raw_df["month"].nunique() < 2:
+                st.info("Requires at least 2 months of data to calculate month-over-month churn trajectories.")
+            else:
+                st.success("✅ All VIPs are maintaining stable or growing month-over-month trajectories. No immediate flight risks detected.")
+        
+        st.markdown("---")
 
-
-    # ═════════════════════════════════════════════════════════════════════
-    #  TAB: CRM Intelligence (Phase 17.1)
-    # ═════════════════════════════════════════════════════════════════════
-    with tab_crm:
         st.markdown("#### > VIP & RISK LEADERBOARDS_")
-
-        # Generate master list
-        master_df = _cached_player_master_list(df)
-
-        if master_df.empty:
+        st.caption(f"Currently viewing CRM targets for: {selected_client} | {selected_brand} | {selected_country}")
+        
+        # Use the globally filtered raw data
+        _raw_df = st.session_state["df"]
+        master_df = _cached_player_master_list(_raw_df)
+        filtered_master = master_df.copy()
+        
+        if filtered_master.empty:
             st.warning("No player data available.")
         else:
-            # Brand filter
-            crm_brand = st.selectbox(
-                "Filter by Brand",
-                ["Both Business", "Rojabet", "Latribet"],
-                key="crm_brand_filter",
-            )
-            if crm_brand != "Both Business":
-                filtered_master = master_df[master_df["brand"] == crm_brand].copy()
-            else:
-                filtered_master = master_df.copy()
-
             st.caption(f"{len(filtered_master):,} players loaded")
 
             _lb_col_config = {
@@ -1206,13 +1288,125 @@ if st.session_state["data_loaded"]:
                         column_config=_lb_col_config,
                     )
 
+            # ── Advanced Promo Exploitation Radar (LeoVegas Only) ────────────────
+            if "LeoVegas Group" in filtered_master["client"].unique():
+                st.markdown("---")
+                st.markdown("#### > 🚨 PROMO EXPLOITATION RADAR (LEOVEGAS)_")
+                st.markdown("*Insight: Flags toxic players who extract high bonus value, successfully withdraw cash, and generate negative Net Gaming Revenue for the house.*")
+
+                # Define a toxic player: Negative NGR, >$50 in Bonuses, and >$0 Withdrawn
+                promo_abusers = filtered_master[
+                    (filtered_master["Lifetime_NGR"] < 0) & 
+                    (filtered_master["Lifetime_Bonus"] > 50) & 
+                    (filtered_master["Lifetime_Withdrawals"] > 0)
+                ].sort_values("Lifetime_NGR", ascending=True).head(50)
+
+                if promo_abusers.empty:
+                    st.success("✅ No critical promo abusers detected matching the toxic profile.")
+                else:
+                    st.dataframe(
+                        promo_abusers[["id", "brand", "Lifetime_NGR", "Lifetime_Bonus", "Lifetime_Withdrawals", "Lifetime_Turnover", "Months_Active"]],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "id": st.column_config.TextColumn("Player ID"),
+                            "brand": st.column_config.TextColumn("Brand"),
+                            "Lifetime_NGR": st.column_config.NumberColumn("Net Loss to House", format="$%.2f"),
+                            "Lifetime_Bonus": st.column_config.NumberColumn("Bonus Extracted", format="$%.2f"),
+                            "Lifetime_Withdrawals": st.column_config.NumberColumn("Cash Withdrawn", format="$%.2f"),
+                            "Lifetime_Turnover": st.column_config.NumberColumn("Turnover", format="$%.2f"),
+                            "Months_Active": st.column_config.NumberColumn("Months Active", format="%d")
+                        }
+                    )
+
+            # ── Payment Gateway Friction Radar (LeoVegas Only) ────────────────
+            if "LeoVegas Group" in filtered_master["client"].unique():
+                st.markdown("---")
+                st.markdown("#### > 💳 PAYMENT GATEWAY FRICTION (FEE BLEED)_")
+                st.markdown("*Insight: Flags players making excessive micro-deposits. Every transaction incurs a fixed payment provider fee, eroding true margins.*")
+
+                # Define High Friction: >= 10 total deposits with an average value of <= $25
+                high_friction = filtered_master[
+                    (filtered_master["Lifetime_Deposit_Count"] >= 10) & 
+                    (filtered_master["Avg_Deposit_Value"] <= 25) &
+                    (filtered_master["Avg_Deposit_Value"] > 0)
+                ].sort_values("Lifetime_Deposit_Count", ascending=False).head(50)
+
+                if high_friction.empty:
+                    st.success("✅ No high-friction micro-depositors detected.")
+                else:
+                    st.warning(f"⚠️ {len(high_friction)} players flagged for high transaction fee bleed. (>=10 deposits, avg <= $25)")
+                    st.dataframe(
+                        high_friction[["id", "brand", "Lifetime_Deposit_Count", "Lifetime_Deposits", "Avg_Deposit_Value", "Lifetime_NGR"]],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "id": st.column_config.TextColumn("Player ID"),
+                            "brand": st.column_config.TextColumn("Brand"),
+                            "Lifetime_Deposit_Count": st.column_config.NumberColumn("Total Transactions", format="%d"),
+                            "Lifetime_Deposits": st.column_config.NumberColumn("Total Deposited", format="$%.2f"),
+                            "Avg_Deposit_Value": st.column_config.NumberColumn("Avg Deposit Value (ADV)", format="$%.2f"),
+                            "Lifetime_NGR": st.column_config.NumberColumn("Net Income (NGR)", format="$%.2f")
+                        }
+                    )
+
+            # ── Reactivation Velocity (LeoVegas Only) ────────────────
+            if "LeoVegas Group" in filtered_master["client"].unique():
+                st.markdown("---")
+                st.markdown("#### > ⏳ CAMPAIGN REACTIVATION VELOCITY_")
+                st.markdown("*Insight: Measures the exact time delay between a Campaign Start Date and the player's actual Reactivation Date.*")
+
+                from src.analytics import generate_reactivation_velocity
+                # We use the raw df for this because it needs the un-aggregated dates
+                vel_df = generate_reactivation_velocity(_raw_df[_raw_df["client"] == "LeoVegas Group"])
+
+                if not vel_df.empty:
+                    v1, v2 = st.columns([1.5, 1])
+                    
+                    with v1:
+                        fig_vel = px.bar(
+                            vel_df, 
+                            x="Velocity", 
+                            y="Reactivated_Players",
+                            color="Total_NGR",
+                            color_continuous_scale="Blues",
+                            text="Reactivated_Players",
+                            title="Players Reactivated by Time Delay"
+                        )
+                        fig_vel.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="#00FF41",
+                            xaxis_title="",
+                            yaxis_title="Player Count"
+                        )
+                        st.plotly_chart(fig_vel, use_container_width=True)
+                        
+                    with v2:
+                        st.dataframe(
+                            vel_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Velocity": st.column_config.TextColumn("Response Speed"),
+                                "Reactivated_Players": st.column_config.NumberColumn("Players", format="%d"),
+                                "Total_Deposits": st.column_config.NumberColumn("Deposits Generated", format="$%.2f"),
+                                "Total_NGR": st.column_config.NumberColumn("NGR Generated", format="$%.2f")
+                            }
+                        )
+                else:
+                    st.info("No valid Campaign/Reactivation date pairs found in the current dataset.")
+
             # ── Churn Targeting Generator (Phase 17.2) ────────────────────
             st.markdown("---")
             st.markdown("#### > CHURN TARGETING GENERATOR_")
 
             max_inactive = int(filtered_master["Months_Inactive"].max()) if not filtered_master.empty else 12
-            if max_inactive < 1:
-                max_inactive = 1
+
+            # Streamlit sliders crash if min_value == max_value. 
+            # This forces the slider to have a minimum range of 1 to 2, even for 1-month datasets.
+            if max_inactive <= 1:
+                max_inactive = 2
 
             ct1, ct2 = st.columns(2)
             with ct1:
@@ -1274,17 +1468,92 @@ if st.session_state["data_loaded"]:
                 .reindex(["🏆 Ironman Legend", "🛑 Promo Exclusion", "🚨 Early Churn VIP", "🌟 Rising Star", "🎯 Cold Crown Jewel", "👑 Active Crown Jewel", "📉 Cooling Down"], fill_value=0)
             )
 
-            row1 = st.columns(4)
-            row1[0].metric("🏆 Ironman Legend", f"{campaign_counts.get('🏆 Ironman Legend', 0):,}")
-            row1[1].metric("🛑 Promo Exclusion", f"{campaign_counts.get('🛑 Promo Exclusion', 0):,}")
-            row1[2].metric("🚨 Early Churn VIP", f"{campaign_counts.get('🚨 Early Churn VIP', 0):,}")
-            row1[3].metric("🌟 Rising Star", f"{campaign_counts.get('🌟 Rising Star', 0):,}")
-            row2 = st.columns(4)
-            row2[0].metric("🎯 Cold Crown Jewel", f"{campaign_counts.get('🎯 Cold Crown Jewel', 0):,}")
-            row2[1].metric("👑 Active Crown Jewel", f"{campaign_counts.get('👑 Active Crown Jewel', 0):,}")
-            row2[2].metric("📉 Cooling Down", f"{campaign_counts.get('📉 Cooling Down', 0):,}")
+            tab_profiling, tab_campaigns = st.tabs(["Smart Campaign Profiling", "Campaign ROI"])
 
-            st.caption(f"{len(special_campaigns):,} players flagged for specialized campaigns out of {len(filtered_master):,} total.")
+            with tab_profiling:
+                # ── Smart Campaign Profiling (Phase 17.4) ─────────────────────
+                st.markdown("---")
+                st.markdown("#### > SMART CAMPAIGN PROFILING_")
+
+                special_campaigns = filtered_master[
+                    filtered_master["Recommended_Campaign"] != "✉️ Standard Lifecycle"
+                ]
+                campaign_counts = (
+                    special_campaigns["Recommended_Campaign"]
+                    .value_counts()
+                    .reindex(["🏆 Ironman Legend", "🛑 Promo Exclusion", "🚨 Early Churn VIP", "🌟 Rising Star", "🎯 Cold Crown Jewel", "👑 Active Crown Jewel", "📉 Cooling Down"], fill_value=0)
+                )
+
+                row1 = st.columns(4)
+                row1[0].metric("🏆 Ironman Legend", f"{campaign_counts.get('🏆 Ironman Legend', 0):,}")
+                row1[1].metric("🛑 Promo Exclusion", f"{campaign_counts.get('🛑 Promo Exclusion', 0):,}")
+                row1[2].metric("🚨 Early Churn VIP", f"{campaign_counts.get('🚨 Early Churn VIP', 0):,}")
+                row1[3].metric("🌟 Rising Star", f"{campaign_counts.get('🌟 Rising Star', 0):,}")
+                row2 = st.columns(4)
+                row2[0].metric("🎯 Cold Crown Jewel", f"{campaign_counts.get('🎯 Cold Crown Jewel', 0):,}")
+                row2[1].metric("👑 Active Crown Jewel", f"{campaign_counts.get('👑 Active Crown Jewel', 0):,}")
+                row2[2].metric("📉 Cooling Down", f"{campaign_counts.get('📉 Cooling Down', 0):,}")
+                row2[3].write("")
+
+                st.dataframe(
+                    special_campaigns[["id", "brand", "Last_Month", "Months_Inactive", "Lifetime_GGR", "Recommended_Campaign"]].sort_values("Lifetime_GGR", ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                st.caption(f"{len(special_campaigns):,} players flagged for specialized campaigns out of {len(filtered_master):,} total.")
+
+            with tab_campaigns:
+                # ==========================================
+                # 📈 TAB: CAMPAIGNS & SEGMENT ROI
+                # ==========================================
+                st.markdown("#### > 🎯 SEGMENT & CAMPAIGN ROI MATRIX_")
+                st.markdown("*Insight: Evaluates the true profitability and player quality of distinct marketing segments and acquisition channels.*")
+
+                from src.analytics import generate_segment_roi_matrix
+                segment_df = generate_segment_roi_matrix(_raw_df)
+
+                if not segment_df.empty:
+                    s1, s2 = st.columns([1, 1.5])
+                    
+                    with s1:
+                        # Color scale shifts from Red (Negative NGR) to Green (Highly Profitable)
+                        fig_seg = px.bar(
+                            segment_df,
+                            x="segment",
+                            y="Total_NGR",
+                            color="Total_NGR",
+                            color_continuous_scale="RdYlGn",
+                            title="True Net Profit by Segment"
+                        )
+                        fig_seg.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="#00FF41",
+                            xaxis_title="",
+                            yaxis_title="Total NGR ($)",
+                            coloraxis_showscale=False,
+                            margin=dict(l=0, r=0, t=40, b=0)
+                        )
+                        st.plotly_chart(fig_seg, use_container_width=True)
+                        
+                    with s2:
+                        st.dataframe(
+                            segment_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "segment": st.column_config.TextColumn("Marketing Segment"),
+                                "Total_Players": st.column_config.NumberColumn("Acquired Players", format="%d"),
+                                "Total_Turnover": st.column_config.NumberColumn("Turnover", format="$%.2f"),
+                                "Total_NGR": st.column_config.NumberColumn("Net Income (NGR)", format="$%.2f"),
+                                "Total_Bonus": st.column_config.NumberColumn("Bonus Burn", format="$%.2f"),
+                                "Avg_NGR_per_Player": st.column_config.NumberColumn("Avg NGR / Player", format="$%.2f"),
+                                "Margin_%": st.column_config.NumberColumn("House Margin", format="%.2f%%")
+                            }
+                        )
+                else:
+                    st.info("No segment data available in the current slice.")
 
             # ── Campaign Extraction (Phase 17.5) ──────────────────────────
             st.markdown("### 📥 Extract Campaign List")

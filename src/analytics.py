@@ -107,10 +107,25 @@ def _compute_financial_metrics(df: pd.DataFrame) -> pd.DataFrame:
         flat=("revenue", lambda s: (s == 0).sum()),
         total_players=("id", "count"),
         ggr=("revenue", "sum"),
+        ngr=("ngr", "sum"),
         total_handle=("bet", "sum"),
+        turnover_casino=("bet_casino", "sum"),
+        ggr_casino=("revenue_casino", "sum"),
+        ngr_casino=("ngr_casino", "sum"),
+        turnover_sports=("bet_sports", "sum"),
+        ggr_sports=("revenue_sports", "sum"),
+        ngr_sports=("ngr_sports", "sum"),
+        deposit_count=("deposit_count", "sum"),
+        deposits=("deposits", "sum"),
+        withdrawals=("withdrawals", "sum"),
+        bonus_total=("bonus_total", "sum"),
+        bonus_casino=("bonus_casino", "sum"),
+        bonus_sports=("bonus_sports", "sum"),
+        tax_total=("tax_total", "sum"),
     ).reset_index()
 
     agg.rename(columns={"report_month": "month"}, inplace=True)
+    agg["net_deposits"] = agg["deposits"] - agg["withdrawals"]
 
     # profitable_pct = (profitable_players / total_players) * 100
     agg["profitable_pct"] = _safe_pct(agg["profitable_players"], agg["total_players"])
@@ -217,7 +232,11 @@ def _compute_cohort_metrics(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════════════════
 _ADDITIVE_FINANCIAL_COLS = [
     "negative_yield_players", "profitable_players", "flat",
-    "total_players", "ggr", "total_handle",
+    "total_players", "ggr", "ngr", "total_handle",
+    "turnover_casino", "ggr_casino", "ngr_casino",
+    "turnover_sports", "ggr_sports", "ngr_sports",
+    "deposit_count", "deposits", "withdrawals", "net_deposits",
+    "bonus_total", "bonus_casino", "bonus_sports", "tax_total",
     "new_players", "returning_players",
     "reactivated_players", "conversions",
     "new_player_ggr", "returning_player_ggr",
@@ -284,7 +303,14 @@ BOTH_BUSINESS_COLS = [
     "month",
     "turnover",
     "ggr",
+    "ngr",
     "margin",
+    "turnover_casino",
+    "ggr_casino",
+    "ngr_casino",
+    "turnover_sports",
+    "ggr_sports",
+    "ngr_sports",
     "revenue_share_deduction",
     "net_income",
     "new_players",
@@ -301,6 +327,14 @@ BOTH_BUSINESS_COLS = [
     "income_per_player",
     "new_player_ggr",
     "returning_player_ggr",
+    "deposit_count",
+    "deposits",
+    "withdrawals",
+    "net_deposits",
+    "bonus_total",
+    "bonus_casino",
+    "bonus_sports",
+    "tax_total",
 ]
 
 REV_SHARE_RATE = 0.15  # 15% revenue share deduction
@@ -341,6 +375,13 @@ def generate_both_business_summary(
         .agg(
             turnover=("total_handle", "sum"),
             ggr=("ggr", "sum"),
+            ngr=("ngr", "sum"),
+            turnover_casino=("turnover_casino", "sum"),
+            ggr_casino=("ggr_casino", "sum"),
+            ngr_casino=("ngr_casino", "sum"),
+            turnover_sports=("turnover_sports", "sum"),
+            ggr_sports=("ggr_sports", "sum"),
+            ngr_sports=("ngr_sports", "sum"),
             new_players=("new_players", "sum"),
             returning_players=("returning_players", "sum"),
             reactivated_players=("reactivated_players", "sum"),
@@ -349,11 +390,20 @@ def generate_both_business_summary(
             negative_yield_players=("negative_yield_players", "sum"),
             new_player_ggr=("new_player_ggr", "sum"),
             returning_player_ggr=("returning_player_ggr", "sum"),
+            deposit_count=("deposit_count", "sum"),
+            deposits=("deposits", "sum"),
+            withdrawals=("withdrawals", "sum"),
+            bonus_total=("bonus_total", "sum"),
+            bonus_casino=("bonus_casino", "sum"),
+            bonus_sports=("bonus_sports", "sum"),
+            tax_total=("tax_total", "sum"),
         )
         .reset_index()
         .sort_values("month")
         .reset_index(drop=True)
     )
+    
+    bb["net_deposits"] = bb["deposits"] - bb["withdrawals"]
 
     # Derived fields
     bb["margin"] = _safe_pct(bb["ggr"], bb["turnover"])  # as percentage
@@ -381,7 +431,7 @@ def generate_both_business_summary(
     )
 
     # Round all float columns to eliminate precision artifacts
-    _float_cols = ["turnover", "ggr", "margin", "revenue_share_deduction",
+    _float_cols = ["turnover", "ggr", "ngr", "margin", "revenue_share_deduction",
                    "net_income", "new_players_pct", "returning_players_pct",
                    "ggr_per_player", "turnover_per_player", "income_per_player",
                    "new_player_ggr", "returning_player_ggr"]
@@ -405,6 +455,7 @@ def generate_both_business_summary(
 _TS_METRICS = [
     "turnover",
     "ggr",
+    "ngr",
     "revenue_share_deduction",
     "total_players",
     "new_players",
@@ -680,8 +731,14 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
     master = (
         raw_df.groupby(["id", "brand"])
         .agg(
+            client=("client", "first"),
             Lifetime_GGR=("revenue", "sum"),
+            Lifetime_NGR=("ngr", "sum"),
             Lifetime_Turnover=("bet", "sum"),
+            Lifetime_Deposits=("deposits", "sum"),
+            Lifetime_Deposit_Count=("deposit_count", "sum"),
+            Lifetime_Withdrawals=("withdrawals", "sum"),
+            Lifetime_Bonus=("bonus_total", "sum"),
             First_Month=("report_month", "min"),
             Last_Month=("report_month", "max"),
             Months_Active=("report_month", "nunique"),
@@ -689,7 +746,16 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     master["Lifetime_GGR"] = master["Lifetime_GGR"].round(2)
+    master["Lifetime_NGR"] = master["Lifetime_NGR"].round(2)
     master["Lifetime_Turnover"] = master["Lifetime_Turnover"].round(2)
+    master["Lifetime_Deposits"] = master["Lifetime_Deposits"].round(2)
+    master["Lifetime_Withdrawals"] = master["Lifetime_Withdrawals"].round(2)
+    master["Lifetime_Bonus"] = master["Lifetime_Bonus"].round(2)
+
+    master["Avg_Deposit_Value"] = master.apply(
+        lambda x: x["Lifetime_Deposits"] / x["Lifetime_Deposit_Count"] if x.get("Lifetime_Deposit_Count", 0) > 0 else 0, 
+        axis=1
+    )
 
     # Months_Inactive: how many months since they last played
     global_max = raw_df["report_month"].max()
@@ -874,7 +940,14 @@ SUMMARY_COLS = [
     "total_players",
     "profitable_pct",
     "ggr",
+    "ngr",
     "total_handle",
+    "turnover_casino",
+    "ggr_casino",
+    "ngr_casino",
+    "turnover_sports",
+    "ggr_sports",
+    "ngr_sports",
     "hold_pct",
     "ggr_per_player",
     "turnover_per_player",
@@ -887,6 +960,14 @@ SUMMARY_COLS = [
     "new_player_ggr",
     "returning_player_ggr",
     "revenue_share_deduction",
+    "deposit_count",
+    "deposits",
+    "withdrawals",
+    "net_deposits",
+    "bonus_total",
+    "bonus_casino",
+    "bonus_sports",
+    "tax_total",
 ]
 
 
@@ -1234,3 +1315,209 @@ def generate_cohort_matrix(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     )
 
     return result
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Geographic Intelligence (Phase 9)
+# ═══════════════════════════════════════════════════════════════════════════
+def generate_geographic_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Group by country to evaluate market penetration and net profitability."""
+    if df.empty or "country" not in df.columns:
+        return pd.DataFrame()
+
+    agg_dict = {
+        "id": "nunique",
+        "bet": "sum",
+        "revenue": "sum",
+        "ngr": "sum"
+    }
+    
+    # Safely include deposits if the dataset has cash flow mapping
+    has_deposits = "deposits" in df.columns
+    if has_deposits:
+        agg_dict["deposits"] = "sum"
+
+    geo = df.groupby("country", sort=False).agg(agg_dict).reset_index()
+    
+    rename_cols = {
+        "id": "total_players",
+        "bet": "turnover",
+        "revenue": "ggr"
+    }
+    geo.rename(columns=rename_cols, inplace=True)
+
+    if not has_deposits:
+        geo["deposits"] = 0.0
+
+    geo["margin"] = np.where(
+        geo["turnover"] != 0,
+        (geo["ggr"] / geo["turnover"]) * 100,
+        0.0
+    ).round(2)
+
+    return geo.sort_values("ngr", ascending=False).reset_index(drop=True)
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Product Affinity Matrix (Phase 12)
+# ═══════════════════════════════════════════════════════════════════════════
+def generate_affinity_matrix(df: pd.DataFrame) -> pd.DataFrame:
+    """Segment players into Omnichannel, Casino Only, or Sportsbook Only."""
+    if df.empty:
+        return pd.DataFrame(columns=["Affinity", "Players", "Total_NGR", "Avg_NGR_per_Player"])
+
+    # Group by id to capture their total interaction with each vertical
+    pl = df.groupby("id", sort=False).agg(
+        bet_casino=("bet_casino", "sum"),
+        bet_sports=("bet_sports", "sum"),
+        ngr=("ngr", "sum")
+    ).reset_index()
+
+    # Apply strictly defined categorization logic
+    def get_affinity(row):
+        if row["bet_casino"] > 0 and row["bet_sports"] > 0:
+            return "Omnichannel"
+        elif row["bet_casino"] > 0:
+            return "Casino Only"
+        elif row["bet_sports"] > 0:
+            return "Sportsbook Only"
+        else:
+            return "Inactive"
+
+    pl["Affinity"] = pl.apply(get_affinity, axis=1)
+
+    # Summarize segments
+    summary = pl.groupby("Affinity", sort=False).agg(
+        Players=("id", "count"),
+        Total_NGR=("ngr", "sum")
+    ).reset_index()
+
+    summary["Avg_NGR_per_Player"] = np.where(
+        summary["Players"] > 0,
+        summary["Total_NGR"] / summary["Players"],
+        0.0
+    ).round(2)
+
+    return summary.sort_values("Avg_NGR_per_Player", ascending=False).reset_index(drop=True)
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  True Lifecycle & Reactivation Velocity (Phase 13)
+# ═══════════════════════════════════════════════════════════════════════════
+def generate_reactivation_velocity(df: pd.DataFrame) -> pd.DataFrame:
+    """Measure the exact time delay between Campaign Start Date and Reactivation."""
+    react_df = df[df["reactivation_days"].notna()].copy()
+    if react_df.empty:
+        return pd.DataFrame()
+
+    def bucket_velocity(days):
+        if days <= 1: return "1. Immediate (0-1 Days)"
+        elif days <= 7: return "2. Fast (2-7 Days)"
+        elif days <= 14: return "3. Warm (8-14 Days)"
+        elif days <= 30: return "4. Slow (15-30 Days)"
+        else: return "5. Delayed (31+ Days)"
+
+    react_df["Velocity"] = react_df["reactivation_days"].apply(bucket_velocity)
+
+    summary = react_df.groupby("Velocity", sort=True).agg(
+        Reactivated_Players=("id", "nunique"),
+        Total_Deposits=("deposits", "sum"),
+        Total_NGR=("ngr", "sum")
+    ).reset_index().sort_values("Velocity")
+
+    return summary
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Whale Concentration Matrix (Phase 14)
+# ═══════════════════════════════════════════════════════════════════════════
+def generate_pareto_distribution(df: pd.DataFrame) -> pd.DataFrame:
+    # Group by player to get total NGR generated in this dataset slice
+    pl = df.groupby("id").agg({"ngr": "sum"}).reset_index()
+    
+    # Isolate profitable players to calculate true revenue concentration
+    pl = pl[pl["ngr"] > 0].sort_values("ngr", ascending=False)
+    
+    if pl.empty: 
+        return pd.DataFrame()
+        
+    total_players = len(pl)
+    total_ngr = pl["ngr"].sum()
+    
+    # Index thresholds
+    top_1_idx = max(1, int(total_players * 0.01))
+    top_5_idx = max(top_1_idx + 1, int(total_players * 0.05))
+    top_20_idx = max(top_5_idx + 1, int(total_players * 0.20))
+    
+    # Summing the NGR for each bracket
+    top_1_ngr = pl.iloc[:top_1_idx]["ngr"].sum()
+    top_5_ngr = pl.iloc[top_1_idx:top_5_idx]["ngr"].sum()
+    top_20_ngr = pl.iloc[top_5_idx:top_20_idx]["ngr"].sum()
+    bottom_80_ngr = pl.iloc[top_20_idx:]["ngr"].sum()
+    
+    data = [
+        {"Tier": "Top 1% (Super Whales)", "Player_Count": top_1_idx, "NGR_Generated": top_1_ngr, "Revenue_Share": (top_1_ngr / total_ngr) * 100},
+        {"Tier": "Next 4% (Core VIPs)", "Player_Count": top_5_idx - top_1_idx, "NGR_Generated": top_5_ngr, "Revenue_Share": (top_5_ngr / total_ngr) * 100},
+        {"Tier": "Next 15% (Mid-Tier)", "Player_Count": top_20_idx - top_5_idx, "NGR_Generated": top_20_ngr, "Revenue_Share": (top_20_ngr / total_ngr) * 100},
+        {"Tier": "Bottom 80% (Casuals)", "Player_Count": total_players - top_20_idx, "NGR_Generated": bottom_80_ngr, "Revenue_Share": (bottom_80_ngr / total_ngr) * 100},
+    ]
+    return pd.DataFrame(data)
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Early-Warning VIP Churn Radar (Phase 17)
+# ═══════════════════════════════════════════════════════════════════════════
+def generate_vip_churn_radar(df: pd.DataFrame) -> pd.DataFrame:
+    if "month" not in df.columns or df["month"].nunique() < 2:
+        return pd.DataFrame()
+        
+    # Get the last two months available in the current slice
+    sorted_months = sorted(df["month"].unique())
+    latest_month = sorted_months[-1]
+    prev_month = sorted_months[-2]
+    
+    # Aggregate player stats strictly for these two months
+    monthly_pl = df[df["month"].isin([latest_month, prev_month])].groupby(["id", "brand", "month"]).agg(
+        Turnover=("bet", "sum"),
+        NGR=("ngr", "sum")
+    ).reset_index()
+    
+    # Pivot to compare Prev vs Latest side-by-side
+    pivot_df = monthly_pl.pivot_table(index=["id", "brand"], columns="month", values=["Turnover", "NGR"], fill_value=0).reset_index()
+    pivot_df.columns = ["_".join(col).strip("_") if type(col) is tuple else col for col in pivot_df.columns]
+    
+    prev_ngr_col, curr_ngr_col = f"NGR_{prev_month}", f"NGR_{latest_month}"
+    prev_turn_col = f"Turnover_{prev_month}"
+    
+    if prev_ngr_col not in pivot_df.columns or curr_ngr_col not in pivot_df.columns:
+        return pd.DataFrame()
+        
+    # Define VIP: Generated >= $500 NGR or >= $5000 Turnover in the PREVIOUS month
+    vips = pivot_df[(pivot_df[prev_ngr_col] >= 500) | (pivot_df[prev_turn_col] >= 5000)].copy()
+    
+    # Calculate the drop
+    vips["NGR_Drop_Value"] = vips[prev_ngr_col] - vips[curr_ngr_col]
+    vips["NGR_Drop_Pct"] = vips.apply(lambda x: (x["NGR_Drop_Value"] / x[prev_ngr_col]) * 100 if x[prev_ngr_col] > 0 else 0, axis=1)
+    
+    # Flag Churn Risk: Dropped by >= 30% AND lost at least $200 in absolute NGR value
+    churn_risk = vips[(vips["NGR_Drop_Pct"] >= 30) & (vips["NGR_Drop_Value"] >= 200)].copy()
+    
+    churn_risk.rename(columns={prev_ngr_col: "Prev_Month_NGR", curr_ngr_col: "Curr_Month_NGR"}, inplace=True)
+    
+    return churn_risk.sort_values("NGR_Drop_Value", ascending=False).head(50)
+
+def generate_segment_roi_matrix(df: pd.DataFrame) -> pd.DataFrame:
+    if "segment" not in df.columns:
+        return pd.DataFrame()
+        
+    seg = df.groupby("segment").agg(
+        Total_Players=("id", "nunique"),
+        Total_Turnover=("bet", "sum"),
+        Total_GGR=("revenue", "sum"),
+        Total_NGR=("ngr", "sum"),
+        Total_Bonus=("bonus_total", "sum") if "bonus_total" in df.columns else ("bet", "min")
+    ).reset_index()
+    
+    # Fallback if bonus_total was missing/dummy
+    if "bonus_total" not in df.columns:
+        seg["Total_Bonus"] = 0.0
+        
+    seg["Avg_NGR_per_Player"] = seg.apply(lambda x: x["Total_NGR"] / x["Total_Players"] if x["Total_Players"] > 0 else 0, axis=1)
+    seg["Margin_%"] = seg.apply(lambda x: (x["Total_GGR"] / x["Total_Turnover"] * 100) if x["Total_Turnover"] > 0 else 0, axis=1)
+    
+    return seg.sort_values("Total_NGR", ascending=False)

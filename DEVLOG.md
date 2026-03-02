@@ -1,5 +1,5 @@
 # DEVELOPMENT LOG
-**Status:** V1.1 Production Ready (Phases 1-18 + Enterprise Optimizations Complete)
+**Status:** V2.0 Enterprise Ready (Multi-Client Architecture Deployed)
 **Started:** 2026-03-01
 
 ## LOG ENTRIES
@@ -416,3 +416,19 @@
 - **`src/exporter.py`:** Refactored `export_to_excel` to write the workbook to an in-memory `io.BytesIO()` buffer instead of the local `data/output/` directory.
 - **`app.py`:** Updated file uploaders and download buttons to pass and receive buffer objects.
 - **Impact:** The terminal is now 100% stateless and safe for simultaneous multi-user web deployment. No files are written to the server's hard drive.
+### [Rebuild] - 2026-03-02 - COMPLETED
+- Executed \docker build -t drock-financial-terminal .\ to package Phase 4 (True Profitability) and Phase 5 (Geographic Intelligence) updates.
+- Stopped conflicting \inancial-terminal\ container mapped to port 8502.
+- Deployed fresh \drock-financial-terminal\ container detached on port 8502 (\ .0.0.0:8502->8501/tcp\).
+- Application is actively serving the latest updates.
+
+### [Phase 16 - Segment & Campaign ROI Matrix] - 2026-03-02 - COMPLETED
+- **`src/ingestion.py`:** Added dynamic column mapping to safely locate `Segment` or `WB tag/flag` and map it uniformly to `segment`.
+- **`src/analytics.py`:** Engineered `generate_segment_roi_matrix(df)` to calculate House Margin, NGR per player, and Total NGR by segment.
+- **`app.py`:** Built entirely new 📈 Campaigns tab showcasing true segmented profitability with a dynamic color-scaled Plotly bar chart.
+- Docker rebuilt and redeployed on port 8503.
+
+### [Phase 17 - Early-Warning VIP Churn Radar] - 2026-03-02 - COMPLETED
+- **`src/analytics.py`:** Added `generate_vip_churn_radar(df)` to detect VIPs (>500 NGR or >5000 Turnover last month) whose NGR strictly crashed by >30% and >200 absolute value MoM.
+- **`app.py`:** Injected the 📉 EARLY-WARNING VIP CHURN RADAR at the very top of the CRM intelligence tab to instantly alert retention teams of high-value flight risks. Handled missing `month` extraction safely to prevent caching KeyErrors.
+- Docker rebuilt and redeployed on port 8503.

@@ -1,8 +1,8 @@
-# D-ROCK FINANCIAL TERMINAL v1.0 - TECHNICAL SPECIFICATION
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Automate the ingestion of monthly betting CSVs to calculate financial metrics, track player lifecycles, and generate business intelligence via a web application and Excel exports.
-- **Architecture:** ETL Pipeline + Interactive UI Dashboard (Hub & Spoke Model).
+- **Architecture:** Multi-Client Enterprise BI Platform (V2.0). Utilizes an ETL Pipeline + Interactive UI Dashboard (Hub & Spoke Model).
 - **Tech Stack:** Python 3.10+, `pandas`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
 - **UI Theme:** "Matrix/Terminal" (Pitch Black `#000000`, Secondary `#0D0D0D`, Text/Accent Neon Green `#00FF41`).
 
@@ -10,9 +10,13 @@
 
 ## 2. DATA MODELS (Single Source of Truth)
 
-### 2.1 Raw Ingestion Entities
-- **`PlayerRecord`:** `id`, `brand` (Rojabet/Latribet), `wb_tag` (Program), `bet`, `win`, `revenue`, `report_month`.
+### 2.1 Raw Ingestion Entities (Universal Ingestion Adapter)
+- **`PlayerRecord` (Unified):** `id`, `client`, `brand`, `country`, `wb_tag`, `bet`, `win`, `revenue` (GGR), `ngr`, `bet_casino`, `revenue_casino`, `ngr_casino`, `bet_sports`, `revenue_sports`, `ngr_sports`, `report_month`.
 - **`CampaignRecord`:** `brand`, `campaign_type`, `records`, `kpi1_conversions`, `kpi2_logins`, `calls`, `emails_sent`, `sms_sent`, `report_month`.
+
+### 2.1.1 Smart Adapter Mappings & Fallbacks
+- **LeoVegas Path (V2.0):** Maps `"Player Key"` -> `"id"`, extracts true `"ngr"` from `"NGR (Total) € after Tax"`, and ingests specific Casino/Sports splits (`Turnover (Casino) €`, `GGR (Sports) €`, etc.). Extracts the exact `"Country"`. 
+- **Offside Gaming Path (Fallback):** Maps `"Player unique identifier"` -> `"id"`. Enforces default fallbacks where `ngr = revenue`, `country = "Global"`, and Casino/Sports vertical splits are zeroed out (`0`) to prevent math breakage.
 
 ### 2.2 Aggregated Business Entities
 - **`MonthlyBrandSummary` & `BothBusinessSummary`:** - *Base:* `Turnover` (Handle), `GGR` (Revenue), `Margin` (Hold %), `Revenue (15%)` (Commission/Net Income).
@@ -83,12 +87,19 @@ Evaluated row-by-row in this strict priority order:
 
 ## 4. FRONTEND APPLICATION (`app.py`)
 
-### 4.1 Global UI Rules
-- **State Management:** Uploaded data and generated DataFrames must be stored in `st.session_state` to prevent Streamlit from reloading/losing data on widget interaction.
-- **Formatting:** Percentages format as `%.2f%%`. Currencies format as `$%,.2f`. Counts format as `%,d`. All plots must use the dark Matrix layout background and neon green font.
-- **Sidebar:** Contains file uploaders, an execution button (`st.button` with `use_container_width=True`), and a persistent Excel download button (`st.download_button` type "secondary").
+### 4.1 🗄️ Data Control Room (Boot Load)
+- **System Integrity:** Displays backend configuration flags, schema verifications, and cache statuses prior to data load.
+- **Compliance & Infrastructure:** Renders a 3-column verification matrix for Ingestion Adapter Status, Analytical Engine checks, and Output Handlers.
+- **Ingestion Dropzones:** The exact portal to upload Financial (LeoVegas/Offside) and Campaign (V1) CSVs. Saves files locally to `./data/` directories, triggers the `run_pipeline()` callback.
 
-### 4.2 Tab 1: 📊 Executive Summary
+### 4.2 🌍 GLOBAL INTELLIGENCE FILTERS
+- Always visible immediately below the main title. Three cascading selectboxes governing downstream analytics:
+  - **1. Client:** `["All", "Offside Gaming", "LeoVegas Group"]`
+  - **2. Brand:** Dependant on the selected Client (e.g. `Latribet`, `Rojabet`, or `Both Business` for Offside. `LeoVegas ES`, etc. for LeoVegas).
+  - **3. Country:** Dependant on selected Client & Brand (e.g., `["All", "Peru", "Chile", "Japan"]`, or `Global`).
+- Replaced the prior individual multi-tab approach. All dashboard tables and charts dynamically react and slice their data arrays via `data_slicer(df)` based strictly on these 3 toggles.
+
+### 4.3 Tab 1: 📊 Executive Summary
 - **Master Insight:** `> SYSTEM DIAGNOSTIC_` text box generating dynamic AI narrative (GGR trajectory, Margin alerts, Whale Risk alerts).
 - **Cross-Brand Matrices:** Side-by-side comparison tables (`Both Business` | `Rojabet` | `Latribet`) for:
   1. *Performance Matrix:* Financial KPIs + Whale Risk.
@@ -100,21 +111,17 @@ Evaluated row-by-row in this strict priority order:
 - Add a new section `> REVENUE CONCENTRATION (PARETO CURVE)_` below the Cross-Brand Cannibalization section.
 - Display the Plotly chart showing the combined entity's revenue concentration.
 
-### 4.3 Tabs 2, 3, & 4: Deep-Dives (Combined, Rojabet, Latribet)
-*These tabs share strict component universality. Everything in Combined must appear in the individual brand tabs.*
+### 4.4 Tab 2: 🏦 Adaptive Financial Deep-Dive (Consolidated)
+*Tabs 2, 3, and 4 (Combined/Rojabet/Latribet) were consolidated into a single Adaptive tab powered entirely by the 🌍 Global Filters.*
+- **Top:** Toggle for True Profitability (`st.toggle("View True Profitability (NGR vs GGR)")`) switches main aggregates across the tab.
 - **Top:** 5 KPI metric cards (Turnover, GGR, Margin, Revenue (15%), Total Players).
-- **Comparative Intelligence:** - Time-Series `[ FINANCIALS ]` table containing EOY projections. (Includes a `> 🔮 EOY PROJECTIONS` caption).
-  - Time-Series `[ PLAYER DEMOGRAPHICS ]` table. Order: Total Active, Conversions, New Players, Reactivated, Retained, Profitable, Neg. Yield.
-- **Risk & Value Metrics:**
-  - Whale Risk Gauge (Top 10% share > 70% shows warning).
-  - Turnover Per Player.
-  - Value Composition stacked bar chart (`New_Player_GGR` vs `Returning_Player_GGR`).
-- **Visual Cohort Retention Heatmap:** Plotly triangle heatmap showing lifecycle retention percentages over time.
-- Add a new subheader `> CUMULATIVE LTV TRAJECTORY_` right above or below the Cohort Retention Heatmap.
-- Display the Plotly line chart using `st.plotly_chart(fig, use_container_width=True)`.
-- Update the `> SEGMENTATION BY PROGRAM_` section.
-- Display the detailed DataFrame containing `Program`, `Total Players`, `Turnover`, `GGR`, and `Margin`.
-- Ensure proper Streamlit column formatting: `Margin` as `%.2f%%`, `Turnover` and `GGR` as `$%,.2f`.
+- **Vertical Intelligence:** Side-by-side stack charts displaying Turnover Composition (Casino vs Sports) and GGR/NGR Composition.
+- **Comparative Intelligence:** Time-Series `[ FINANCIALS ]` table and Time-Series `[ PLAYER DEMOGRAPHICS ]` table featuring YoY, QoQ, MoM, and YTD metrics.
+- **Risk & Value Metrics:** Whale Risk Gauge (Top 10% share > 70% shows warning), Turnover Per Player, and a Value Composition stacked bar chart.
+- **Visual Cohort Retention Heatmap:** Plotly triangle heatmap showing lifecycle retention percentages over time. Add a new subheader `> CUMULATIVE LTV TRAJECTORY_`.
+- **Segmentation by Program:** Table output of the detailed DataFrame containing `Program`, `Total Players`, `Turnover`, `GGR`, and `Margin`.
+
+
 
 ### 4.4 Tab 5: 📈 Campaigns
 - Displays total aggregated campaign metrics and a `plotly.graph_objects.Funnel` chart mapping Records -> Logins -> Conversions. Applies LI duplication scrubbing rules.

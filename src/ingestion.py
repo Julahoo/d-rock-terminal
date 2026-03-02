@@ -38,7 +38,47 @@ COL_MAP: dict[str, str] = {
     "Revenue":                  "revenue",
 }
 
-NUMERIC_COLS = ["bet", "win", "revenue"]
+NUMERIC_COLS = [
+    "bet", "win", "revenue", "ngr",
+    "bet_casino", "revenue_casino", "ngr_casino",
+    "bet_sports", "revenue_sports", "ngr_sports",
+    "deposit_count", "deposits", "withdrawals",
+    "bonus_casino", "bonus_sports", "bonus_total"
+]
+
+# ── LeoVegas Group column mapping (Smart Adapter) ────────────────────────
+LEOVEGAS_COL_MAP: dict[str, str] = {
+    "Player Key":          "id",
+    "Brand":               "brand",
+    "Segment":             "wb_tag",
+    "Turnover (Total) €":  "bet",
+    "GGR (Total) €":       "revenue",
+    "NGR (Total) € after Tax": "ngr",
+    "Country":             "country",
+    "Turnover (Casino) €": "bet_casino",
+    "GGR (Casino) €":      "revenue_casino",
+    "NGR (Casino) €":      "ngr_casino",
+    "Turnover (Sports) €": "bet_sports",
+    "GGR (Sports) €":      "revenue_sports",
+    "NGR (Sports) €":      "ngr_sports",
+    "Deposit #":           "deposit_count",
+    "Deposit €":           "deposits",
+    "Withdrawal €":        "withdrawals",
+    "Bonus Cost (Casino) €": "bonus_casino",
+    "Bonus Cost (Sports) €": "bonus_sports",
+    "Tax €":               "tax_total",
+    "Reactivation Date":   "reactivation_date",
+    "Campaign Start Date": "campaign_start_date",
+}
+
+LEOVEGAS_NUMERIC_RAW = [
+    "Turnover (Total) €", "GGR (Total) €", "NGR (Total) € after Tax",
+    "Turnover (Casino) €", "GGR (Casino) €", "NGR (Casino) €",
+    "Turnover (Sports) €", "GGR (Sports) €", "NGR (Sports) €",
+    "Deposit #", "Deposit €", "Withdrawal €",
+    "Bonus Cost (Casino) €", "Bonus Cost (Sports) €", "Bonus Cost (Total)  €",
+    "Tax €",
+]
 
 # ── campaign column mapping ──────────────────────────────────────────────
 CAMPAIGN_COL_MAP: dict[str, str] = {
@@ -60,7 +100,7 @@ CAMPAIGN_NUMERIC_COLS = [
 # ── filename pattern ─────────────────────────────────────────────────────
 #  e.g. latribet_2025_08.csv  →  brand="latribet", year=2025, month=8
 FILE_RE = re.compile(
-    r"^(?P<brand>[a-z]+)_(?P<year>\d{4})_(?P<month>\d{2})\.csv$",
+    r"^(?P<brand>[a-z]+)_(?P<year>\d{4})_(?P<month>\d{2})\.(?:csv|xlsx)$",
     re.IGNORECASE,
 )
 
@@ -368,36 +408,153 @@ def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
     return brand, f"{year}-{month}"
 
 
+def _normalise_player_columns(df: pd.DataFrame, source_label: str) -> Optional[pd.DataFrame]:
+    """Smart Router: detect CSV format by headers and normalise to spec columns.
+
+    - "Player Key" in headers        → LeoVegas Group format
+    - "Player unique identifier"      → Offside Gaming format
+    - Otherwise                       → unrecognisable, returns None
+    """
+    # --- SCRUB INVISIBLE BOMs AND WHITESPACE FROM HEADERS ---
+    df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+
+    if "Player Key" in df.columns:
+        # ── LeoVegas Group path ──────────────────────────────────────────
+        logger.info("[SmartRouter] %s → LeoVegas Group format detected", source_label)
+
+        # Coerce numerics BEFORE rename to handle blank / string cells
+        for raw_col in LEOVEGAS_NUMERIC_RAW:
+            if raw_col in df.columns:
+                df[raw_col] = pd.to_numeric(df[raw_col], errors="coerce").fillna(0)
+
+        # Rename to spec columns
+        df = df.rename(columns=LEOVEGAS_COL_MAP)
+        
+        # HOTFIX: Dynamically hunt for the dirty Bonus Total header BEFORE subsetting
+        if "bonus_total" not in df.columns:
+            bonus_match = [c for c in df.columns if "Bonus Cost (Total)" in str(c)]
+            if bonus_match:
+                df.rename(columns={bonus_match[0]: "bonus_total"}, inplace=True)
+            else:
+                df["bonus_total"] = 0.0
+
+        # HOTFIX: Dynamically hunt for the Segment header (case-insensitive) BEFORE subsetting
+        if "wb_tag" not in df.columns: # If LEOVEGAS_COL_MAP failed to map Segment -> wb_tag
+            seg_match = [c for c in df.columns if "segment" in str(c).lower()]
+            if seg_match:
+                df.rename(columns={seg_match[0]: "wb_tag"}, inplace=True)
+
+        spec_cols = list(LEOVEGAS_COL_MAP.values()) + ["bonus_total"]
+        # Keep only mapped columns (LeoVegas has no 'win' yet)
+        df = df[[c for c in spec_cols if c in df.columns]]
+        
+        # Mirror wb_tag to segment for Phase 16 Analytics
+        if "wb_tag" in df.columns:
+            df["segment"] = df["wb_tag"]
+        else:
+            df["segment"] = "Unknown"
+                
+        # Ensure the other bonus and tax columns have fallbacks if mapping missed them due to spaces
+        for col in ["bonus_casino", "bonus_sports", "tax_total"]:
+            if col not in df.columns:
+                df[col] = 0.0
+                
+        # Ensure 'win' column exists for downstream compat
+        if "win" not in df.columns:
+            df["win"] = df["bet"] - df["revenue"]
+
+        # Fill any missing vertical columns with 0 for LeoVegas just in case
+        for vcol in ["bet_casino", "revenue_casino", "ngr_casino", "bet_sports", "revenue_sports", "ngr_sports"]:
+            if vcol not in df.columns:
+                df[vcol] = 0
+
+        # Final coerce on spec numeric cols
+        for col in NUMERIC_COLS:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+        # Drop rows with null id
+        df["id"] = df["id"].astype(str).str.strip()
+        df = df[df["id"].ne("") & df["id"].ne("nan")]
+
+        # Reactivation Delta parsing (Phase 13)
+        df["reactivation_date"] = pd.to_datetime(df["reactivation_date"], format="%d/%m/%Y", errors="coerce")
+        df["campaign_start_date"] = pd.to_datetime(df["campaign_start_date"], format="%d/%m/%Y", errors="coerce")
+        df["reactivation_days"] = (df["reactivation_date"] - df["campaign_start_date"]).dt.days
+
+        # Tag client entity
+        df["client"] = "LeoVegas Group"
+
+    elif "Player unique identifier" in df.columns:
+        # ── Offside Gaming path ──────────────────────────────────────────
+        logger.info("[SmartRouter] %s → Offside Gaming format detected", source_label)
+
+        missing_cols = [c for c in COL_MAP if c not in df.columns]
+        if missing_cols:
+            logger.warning("%s is missing columns %s – skipping", source_label, missing_cols)
+            return None
+
+        df = df.rename(columns=COL_MAP)[list(COL_MAP.values())]
+
+        df = df.dropna(subset=["id"])
+
+        # Mirror wb_tag to segment for Phase 16 Analytics
+        if "wb_tag" in df.columns:
+            df["segment"] = df["wb_tag"]
+
+        # Tag client entity
+        df["client"] = "Offside Gaming"
+        # Fallback NGR to equal GGR (revenue) for clients without tax data
+        df["ngr"] = df["revenue"]
+        # Fallback Country to 'Global' for clients without geographic data
+        df["country"] = "Global"
+        
+        # Fallback Verticals to 0 for clients without vertical split
+        df["bet_casino"] = 0
+        df["revenue_casino"] = 0
+        df["ngr_casino"] = 0
+        df["bet_sports"] = 0
+        df["revenue_sports"] = 0
+        df["ngr_sports"] = 0
+
+        # Offside Gaming Phase 8 Fallbacks
+        df["deposit_count"] = 0
+        df["deposits"] = 0
+        df["withdrawals"] = 0
+        df["bonus_casino"] = 0
+        df["bonus_sports"] = 0
+        df["bonus_total"] = 0
+        df["tax_total"] = 0
+
+        df["reactivation_date"] = pd.NaT
+        df["campaign_start_date"] = pd.NaT
+        df["reactivation_days"] = pd.NA
+
+        # Coerce numerics AFTER fallback columns are created
+        for col in NUMERIC_COLS:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    else:
+        # ── Unrecognised ─────────────────────────────────────────────────
+        logger.warning(
+            "[SmartRouter] %s – unrecognisable column format: %s",
+            source_label, list(df.columns),
+        )
+        return None
+
+    # ── Common post-processing ───────────────────────────────────────────
+    df["brand"] = df["brand"].str.strip().str.title()
+    return df
+
+
 def _read_and_clean(csv_path: Path) -> Optional[pd.DataFrame]:
-    """Read a single CSV, rename columns to spec names, coerce numerics,
-    and drop rows with null player id."""
+    """Read a single CSV and normalise via the Smart Router."""
     try:
         df = pd.read_csv(csv_path)
     except Exception:
         logger.exception("Failed to read %s", csv_path)
         return None
 
-    # Rename
-    missing_cols = [c for c in COL_MAP if c not in df.columns]
-    if missing_cols:
-        logger.warning(
-            "%s is missing columns %s – skipping", csv_path.name, missing_cols
-        )
-        return None
-
-    df = df.rename(columns=COL_MAP)[list(COL_MAP.values())]
-
-    # Coerce numerics
-    for col in NUMERIC_COLS:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # Drop rows where player id is null
-    df = df.dropna(subset=["id"])
-
-    # Normalise brand casing
-    df["brand"] = df["brand"].str.strip().str.title()
-
-    return df
+    return _normalise_player_columns(df, csv_path.name)
 
 
 def _month_range(start: str, end: str) -> list[str]:
@@ -453,22 +610,18 @@ def load_all_data_from_uploads(
         brand_key, report_month = parsed
 
         try:
-            raw = pd.read_csv(f)
+            if f.name.lower().endswith(".xlsx"):
+                raw = pd.read_excel(f, engine="openpyxl")
+            else:
+                raw = pd.read_csv(f)
         except Exception:
             logger.exception("Failed to read %s", f.name)
             continue
 
-        # Normalise columns
-        missing_cols = [c for c in COL_MAP if c not in raw.columns]
-        if missing_cols:
-            logger.warning("%s is missing columns %s – skipping", f.name, missing_cols)
+        # Normalise columns via Smart Router
+        df = _normalise_player_columns(raw, f.name)
+        if df is None:
             continue
-
-        df = raw.rename(columns=COL_MAP)[list(COL_MAP.values())]
-        for col in NUMERIC_COLS:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df.dropna(subset=["id"])
-        df["brand"] = df["brand"].str.strip().str.title()
 
         if df.empty:
             logger.warning("Empty after cleaning: %s", f.name)
@@ -516,10 +669,13 @@ def load_campaign_data_from_uploads(files: list) -> pd.DataFrame:
             logger.warning("Skipping unrecognised campaign file: %s", f.name)
             continue
 
-        _, report_month = parsed
+        brand_key, report_month = parsed
 
         try:
-            df = pd.read_csv(f)
+            if f.name.lower().endswith(".xlsx"):
+                df = pd.read_excel(f, engine="openpyxl")
+            else:
+                df = pd.read_csv(f)
         except Exception:
             logger.exception("Failed to read campaign file %s", f.name)
             continue
