@@ -15,6 +15,7 @@ Spec refs: §3-C, §2 MonthlyBrandSummary, §2 CampaignSummary, §2 CohortMatrix
 from __future__ import annotations
 
 import calendar
+import io
 import logging
 from pathlib import Path
 
@@ -234,47 +235,28 @@ _BB_HEADER_FILL = PatternFill(start_color="BF8F00", end_color="BF8F00", fill_typ
 # ═══════════════════════════════════════════════════════════════════════════
 def export_to_excel(
     summary_df: pd.DataFrame,
-    output_dir: Path,
     campaign_df: pd.DataFrame | None = None,
     cohort_matrices: dict[str, pd.DataFrame] | None = None,
     segmentation_df: pd.DataFrame | None = None,
     both_business_df: pd.DataFrame | None = None,
-) -> Path:
-    """Write *summary_df* to a multi-tab Excel workbook.
+) -> io.BytesIO:
+    """Write *summary_df* to a multi-tab Excel workbook in-memory.
 
-    One sheet per brand, named ``{Brand} Financial``.  Data is sorted
-    chronologically within each sheet.  If *campaign_df* is provided
-    and non-empty, a ``Summary Campaigns`` tab is also written.
+    One sheet per brand, named ``{Brand} Financial``.  If *campaign_df* is
+    provided and non-empty, a ``Summary Campaigns`` tab is also written.
     If *cohort_matrices* is provided, each brand's cohort retention
     matrix is appended below its financial summary.
 
-    Parameters
-    ----------
-    summary_df : pd.DataFrame
-        The ``MonthlyBrandSummary`` DataFrame from Phase 3.
-    output_dir : Path
-        Directory to write the output file into (created if needed).
-    campaign_df : pd.DataFrame | None
-        Optional ``CampaignSummary`` DataFrame from Phase 5.
-    cohort_matrices : dict[str, pd.DataFrame] | None
-        Optional dict of brand → cohort retention matrix (Phase 7).
-    segmentation_df : pd.DataFrame | None
-        Optional ``SegmentationSummary`` DataFrame from Phase 8.
-    both_business_df : pd.DataFrame | None
-        Optional ``BothBusinessSummary`` DataFrame from Phase 9.
-
     Returns
     -------
-    Path
-        Absolute path to the generated Excel file.
+    io.BytesIO
+        In-memory buffer containing the Excel workbook.
     """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / OUTPUT_FILENAME
+    buf = io.BytesIO()
 
     brands = sorted(summary_df["brand"].unique())
 
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         # ── Both Business Summary tab (Phase 9 — first tab) ──────────
         if both_business_df is not None and not both_business_df.empty:
             _write_both_business_tab(writer, both_business_df)
@@ -325,13 +307,10 @@ def export_to_excel(
             _write_segmentation_tab(writer, segmentation_df)
             logger.info("Exported 'Segmentation' tab (%d rows)", len(segmentation_df))
 
-        logger.info(
-            "Exported %d brand(s) to %s",
-            len(brands),
-            output_path,
-        )
+        logger.info("Exported %d brand(s) to in-memory buffer", len(brands))
 
-    return output_path
+    buf.seek(0)
+    return buf
 
 
 # ═══════════════════════════════════════════════════════════════════════════

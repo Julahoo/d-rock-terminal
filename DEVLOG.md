@@ -1,5 +1,5 @@
 # DEVELOPMENT LOG
-**Status:** All Phases Complete (1–9)
+**Status:** V1.1 Production Ready (Phases 1-18 + Enterprise Optimizations Complete)
 **Started:** 2026-03-01
 
 ## LOG ENTRIES
@@ -400,3 +400,19 @@
   - `> COHORT RETENTION HEATMAP_` section added to: `_render_financial_tab` (Rojabet + Latribet) and Combined Deep-Dive tab.
   - Each tab passes brand-filtered `raw_df` (or full df for Combined).
 - Docker rebuilt and redeployed on port 8502.
+
+### [V1.1 Optimization 1] - Vectorized Whale Analysis - COMPLETED
+- **`src/analytics.py`:** Removed the `O(N)` `.iterrows()` bottleneck for calculating `top_10_pct_ggr_share`.
+- Replaced it with a native pandas vectorized approach using grouped masking and `.nlargest()` / proportional summation.
+- Applied this CPU optimization to both `_compute_financial_metrics` and `_build_combined_financial` to ensure the app scales seamlessly to hundreds of thousands of rows without locking the Streamlit UI.
+
+### [V1.1 Optimization 2] - DRY MoM Frontend Math - COMPLETED
+- **`app.py`:** Removed redundant manual percentage math (`((c - p) / p) * 100`) inside the Executive Summary's `_brand_mom` and `_bb_mom` functions.
+- Directly wired these functions to extract the pre-calculated `_mom_pct` values from the cached `generate_time_series` engine, matching the architecture used for YoY metrics.
+- Enforced strict string formatting (`+X.XX%` / `-X.XX%`) prior to Streamlit rendering to prevent Javascript crashes.
+
+### [V1.1 Optimization 3] - Multi-User Concurrency (In-Memory I/O) - COMPLETED
+- **`src/ingestion.py`:** Refactored `load_all_data` and `load_campaign_data` to read directly from Streamlit `UploadedFile` buffer objects instead of scanning local disk directories.
+- **`src/exporter.py`:** Refactored `export_to_excel` to write the workbook to an in-memory `io.BytesIO()` buffer instead of the local `data/output/` directory.
+- **`app.py`:** Updated file uploaders and download buttons to pass and receive buffer objects.
+- **Impact:** The terminal is now 100% stateless and safe for simultaneous multi-user web deployment. No files are written to the server's hard drive.

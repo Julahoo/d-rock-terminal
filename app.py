@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
-from src.ingestion import load_all_data, load_campaign_data, DATA_DIR, RAW_DIR, CAMPAIGNS_DIR
+from src.ingestion import load_all_data_from_uploads, load_campaign_data_from_uploads
 from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves
 from src.exporter import export_to_excel
 
@@ -41,8 +41,6 @@ def _cached_ltv_curves(raw_df):
 
 # ── Config ───────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
-OUTPUT_DIR = DATA_DIR / "output"
-OUTPUT_FILE = OUTPUT_DIR / "Summary_Data_Auto.xlsx"
 
 BRANDS = ["latribet", "rojabet"]
 
@@ -91,12 +89,9 @@ with st.sidebar:
 
     # ── Financial Data ───────────────────────────────────────────────────
     st.subheader("Financial Data")
+    all_raw_uploads = []
     for brand in BRANDS:
-        brand_dir = RAW_DIR / brand
-        brand_dir.mkdir(parents=True, exist_ok=True)
-        existing = sorted(brand_dir.glob("*.csv"))
-
-        with st.expander(f"**{brand.title()}** ({len(existing)} files)", expanded=False):
+        with st.expander(f"**{brand.title()}**", expanded=False):
             uploaded = st.file_uploader(
                 f"Upload {brand.title()} financial CSVs",
                 type="csv",
@@ -104,26 +99,16 @@ with st.sidebar:
                 key=f"fin_{brand}",
             )
             if uploaded:
-                for f in uploaded:
-                    dest = brand_dir / f.name
-                    dest.write_bytes(f.getvalue())
-                st.success(f"Saved {len(uploaded)} file(s) to `data/raw/{brand}/`")
-
-            if existing:
-                st.caption("Files on disk:")
-                for fp in existing:
-                    st.text(f"  • {fp.name}")
+                all_raw_uploads.extend(uploaded)
+                st.success(f"{len(uploaded)} file(s) ready")
 
     st.markdown("---")
 
     # ── Campaign Data ────────────────────────────────────────────────────
     st.subheader("Campaign Data")
+    all_camp_uploads = []
     for brand in BRANDS:
-        brand_dir = CAMPAIGNS_DIR / brand
-        brand_dir.mkdir(parents=True, exist_ok=True)
-        existing = sorted(brand_dir.glob("*.csv"))
-
-        with st.expander(f"**{brand.title()}** ({len(existing)} files)", expanded=False):
+        with st.expander(f"**{brand.title()}**", expanded=False):
             uploaded = st.file_uploader(
                 f"Upload {brand.title()} campaign CSVs",
                 type="csv",
@@ -131,29 +116,20 @@ with st.sidebar:
                 key=f"camp_{brand}",
             )
             if uploaded:
-                for f in uploaded:
-                    dest = brand_dir / f.name
-                    dest.write_bytes(f.getvalue())
-                st.success(f"Saved {len(uploaded)} file(s) to `data/campaigns/{brand}/`")
+                all_camp_uploads.extend(uploaded)
+                st.success(f"{len(uploaded)} file(s) ready")
 
-            if existing:
-                st.caption("Files on disk:")
-                for fp in existing:
-                    st.text(f"  • {fp.name}")
-
-    # ── Excel Report Download (persistent) ────────────────────────
+    # ── Excel Report Download (from session state) ────────────────
     st.markdown("---")
-    _excel_path = OUTPUT_DIR / "Summary_Data_Auto.xlsx"
-    if _excel_path.exists():
-        with open(_excel_path, "rb") as _fh:
-            st.download_button(
-                label="Download Excel Report",
-                data=_fh.read(),
-                file_name="Summary_Data_Auto.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-                use_container_width=True,
-            )
+    if "excel_buffer" in st.session_state and st.session_state["excel_buffer"] is not None:
+        st.download_button(
+            label="Download Excel Report",
+            data=st.session_state["excel_buffer"],
+            file_name="Summary_Data_Auto.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -168,14 +144,17 @@ if run_clicked:
 
         # ── Phase 2: Ingestion ───────────────────────────────────────────
         st.write("> Ingesting financial data...")
+        if not all_raw_uploads:
+            st.warning("No financial data uploaded. Upload CSVs in the sidebar first.")
+            st.stop()
         try:
-            df, registry = load_all_data()
+            df, registry = load_all_data_from_uploads(all_raw_uploads)
         except Exception as exc:
             st.error(f"Ingestion failed: {exc}")
             st.stop()
 
         if df.empty:
-            st.warning("No financial data found. Upload CSVs in the sidebar first.")
+            st.warning("No financial data found after processing uploads.")
             st.stop()
 
         st.write(f"> Loaded {len(df):,} player records across {df['report_month'].nunique()} months.")
@@ -186,7 +165,7 @@ if run_clicked:
 
         # ── Phase 5: Campaigns ───────────────────────────────────────────
         st.write("> Processing campaign data...")
-        campaign_raw = load_campaign_data()
+        campaign_raw = load_campaign_data_from_uploads(all_camp_uploads)
         campaign_summary: pd.DataFrame | None = None
 
         if campaign_raw.empty:
@@ -213,9 +192,8 @@ if run_clicked:
 
         # ── Phase 4: Export ──────────────────────────────────────────────
         st.write("> Generating Excel report...")
-        output_path = export_to_excel(
+        excel_buffer = export_to_excel(
             financial_summary,
-            OUTPUT_DIR,
             campaign_df=campaign_summary,
             cohort_matrices=cohort_matrices,
             segmentation_df=segmentation,
@@ -233,7 +211,7 @@ if run_clicked:
     st.session_state["segmentation"] = segmentation
     st.session_state["both_business"] = both_business
     st.session_state["program_summary"] = program_summary
-    st.session_state["output_path"] = output_path
+    st.session_state["excel_buffer"] = excel_buffer
     st.session_state["data_loaded"] = True
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -579,36 +557,36 @@ if st.session_state["data_loaded"]:
                 }
 
             def _brand_mom(brand_name: str) -> list:
-                """Calculate MoM % change for each metric, formatted as string."""
+                """Extract MoM % from pre-computed time series (_mom_pct via shift(1))."""
                 bdata = financial_summary[
                     financial_summary["brand"] == brand_name
                 ].sort_values("month")
-                if len(bdata) < 2:
-                    return ["N/A"] * len(metrics_list)
-                curr = bdata.iloc[-1]
-                prev = bdata.iloc[-2]
+                if bdata.empty:
+                    return ["-"] * len(metrics_list)
+                brand_ts = _cached_time_series(bdata)
+                brand_ts_m = brand_ts.get("monthly", pd.DataFrame())
+                if brand_ts_m.empty:
+                    return ["-"] * len(metrics_list)
+                latest = brand_ts_m.iloc[-1]
                 results = []
                 for metric in metrics_list:
                     col = _mom_map.get(metric)
                     if col is None:
                         results.append("N/A")
                         continue
-                    c_val = float(curr.get(col, 0))
-                    p_val = float(prev.get(col, 0))
-                    if p_val == 0:
-                        results.append("N/A")
+                    mom_key = f"{col}_mom_pct"
+                    val = latest.get(mom_key)
+                    if val is None or pd.isna(val):
+                        results.append("-")
                     else:
-                        pct = ((c_val - p_val) / abs(p_val)) * 100
-                        results.append(f"{pct:+.2f}%")
+                        results.append(f"{val:+.1f}%")
                 return results
 
             def _bb_mom() -> list:
-                """MoM for Both Business (combined)."""
-                if len(both_business) < 2:
-                    return ["N/A"] * len(metrics_list)
-                curr = both_business.iloc[-1]
-                prev = both_business.iloc[-2]
-                bb_mom_map = {
+                """Extract MoM % from combined time series."""
+                if exec_ts_m.empty:
+                    return ["-"] * len(metrics_list)
+                bb_ts_map = {
                     "Turnover": "turnover",
                     "GGR": "ggr",
                     "Margin %": "margin",
@@ -619,17 +597,16 @@ if st.session_state["data_loaded"]:
                 }
                 results = []
                 for metric in metrics_list:
-                    col = bb_mom_map.get(metric)
+                    col = bb_ts_map.get(metric)
                     if col is None:
                         results.append("N/A")
                         continue
-                    c_val = float(curr.get(col, 0))
-                    p_val = float(prev.get(col, 0))
-                    if p_val == 0:
-                        results.append("N/A")
+                    mom_key = f"{col}_mom_pct"
+                    val = exec_latest.get(mom_key)
+                    if val is None or pd.isna(val):
+                        results.append("-")
                     else:
-                        pct = ((c_val - p_val) / abs(p_val)) * 100
-                        results.append(f"{pct:+.2f}%")
+                        results.append(f"{val:+.1f}%")
                 return results
 
             bb_snap = {

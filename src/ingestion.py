@@ -421,3 +421,123 @@ def _pretty_month(ym: str) -> str:
     import calendar
     y, m = (int(x) for x in ym.split("-"))
     return f"{calendar.month_name[m]} {y}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  In-memory ingestion (concurrent-safe — no disk writes)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def load_all_data_from_uploads(
+    files: list,
+) -> tuple[pd.DataFrame, IngestionRegistry]:
+    """Read player CSVs from Streamlit UploadedFile objects in-memory.
+
+    Parameters
+    ----------
+    files : list
+        Flat list of UploadedFile objects (all brands mixed together).
+
+    Returns
+    -------
+    (DataFrame, IngestionRegistry)
+    """
+    registry = IngestionRegistry()
+    frames: list[pd.DataFrame] = []
+
+    for f in files:
+        parsed = _parse_filename(f.name)
+        if parsed is None:
+            logger.warning("Skipping unrecognised file: %s", f.name)
+            continue
+
+        brand_key, report_month = parsed
+
+        try:
+            raw = pd.read_csv(f)
+        except Exception:
+            logger.exception("Failed to read %s", f.name)
+            continue
+
+        # Normalise columns
+        missing_cols = [c for c in COL_MAP if c not in raw.columns]
+        if missing_cols:
+            logger.warning("%s is missing columns %s – skipping", f.name, missing_cols)
+            continue
+
+        df = raw.rename(columns=COL_MAP)[list(COL_MAP.values())]
+        for col in NUMERIC_COLS:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["id"])
+        df["brand"] = df["brand"].str.strip().str.title()
+
+        if df.empty:
+            logger.warning("Empty after cleaning: %s", f.name)
+            continue
+
+        df["report_month"] = report_month
+        frames.append(df)
+        registry.mark_complete(brand=brand_key, report_month=report_month, file_path=f.name)
+
+    if not frames:
+        logger.warning("No data loaded from uploads.")
+        return pd.DataFrame(), registry
+
+    unified = pd.concat(frames, ignore_index=True)
+
+    gaps = registry.evaluate_gaps()
+    for gap in gaps:
+        logger.warning("Missing %s data for %s", _pretty_month(gap["report_month"]), gap["brand"].title())
+
+    return unified, registry
+
+
+def load_campaign_data_from_uploads(files: list) -> pd.DataFrame:
+    """Read campaign CSVs from Streamlit UploadedFile objects in-memory.
+
+    Parameters
+    ----------
+    files : list
+        Flat list of UploadedFile objects (all brands mixed together).
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    empty = pd.DataFrame(columns=list(CAMPAIGN_COL_MAP.values()) + ["report_month"])
+
+    if not files:
+        return empty
+
+    frames: list[pd.DataFrame] = []
+
+    for f in files:
+        parsed = _parse_filename(f.name)
+        if parsed is None:
+            logger.warning("Skipping unrecognised campaign file: %s", f.name)
+            continue
+
+        _, report_month = parsed
+
+        try:
+            df = pd.read_csv(f)
+        except Exception:
+            logger.exception("Failed to read campaign file %s", f.name)
+            continue
+
+        df = _normalise_campaign_columns(df)
+        if df is None:
+            logger.warning("Campaign file %s missing required columns — skipping", f.name)
+            continue
+
+        for col in CAMPAIGN_NUMERIC_COLS:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        df["brand"] = df["brand"].str.strip().str.title()
+        df["report_month"] = report_month
+        frames.append(df)
+
+    if not frames:
+        return empty
+
+    unified = pd.concat(frames, ignore_index=True)
+    logger.info("Loaded %d campaign rows from uploads", len(unified))
+    return unified

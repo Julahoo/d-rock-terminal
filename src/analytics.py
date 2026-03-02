@@ -126,22 +126,24 @@ def _compute_financial_metrics(df: pd.DataFrame) -> pd.DataFrame:
     # hold_pct = (ggr / total_handle) * 100
     agg["hold_pct"] = _safe_pct(agg["ggr"], agg["total_handle"])
 
-    # top_10_pct_ggr_share: whale analysis (computed per brand×month)
-    agg["top_10_pct_ggr_share"] = 0.0
-    for idx, row in agg.iterrows():
-        brand_month = df[
-            (df["brand"] == row["brand"]) & (df["report_month"] == row["month"])
-        ]
-        profitable = brand_month[brand_month["revenue"] > 0].sort_values(
-            "revenue", ascending=False
-        )
-        if len(profitable) == 0 or row["ggr"] == 0:
-            continue
-        top_n = max(1, int(len(profitable) * 0.10))
-        top_revenue = profitable.head(top_n)["revenue"].sum()
-        agg.at[idx, "top_10_pct_ggr_share"] = round(
-            (top_revenue / row["ggr"]) * 100, 6
-        )
+    # top_10_pct_ggr_share: whale analysis (vectorised per brand×month)
+    def _whale_share(group):
+        profitable = group[group["revenue"] > 0].nlargest(max(1, int(len(group[group["revenue"] > 0]) * 0.10)), "revenue")
+        return profitable["revenue"].sum()
+
+    whale = (
+        df.groupby(["brand", "report_month"])
+        .apply(_whale_share, include_groups=False)
+        .reset_index(name="_top_rev")
+        .rename(columns={"report_month": "month"})
+    )
+    agg = agg.merge(whale, on=["brand", "month"], how="left")
+    agg["top_10_pct_ggr_share"] = np.where(
+        agg["ggr"] != 0,
+        ((agg["_top_rev"].fillna(0) / agg["ggr"]) * 100).round(6),
+        0.0,
+    )
+    agg.drop(columns=["_top_rev"], inplace=True)
 
     return agg
 
@@ -253,20 +255,24 @@ def _build_combined_financial(
         axis=1,
     )
 
-    # Whale analysis for Combined (use raw data across all brands)
-    combined["top_10_pct_ggr_share"] = 0.0
-    for idx, row in combined.iterrows():
-        month_all = raw_df[raw_df["report_month"] == row["month"]]
-        profitable = month_all[month_all["revenue"] > 0].sort_values(
-            "revenue", ascending=False
-        )
-        if len(profitable) == 0 or row["ggr"] == 0:
-            continue
-        top_n = max(1, int(len(profitable) * 0.10))
-        top_revenue = profitable.head(top_n)["revenue"].sum()
-        combined.at[idx, "top_10_pct_ggr_share"] = round(
-            (top_revenue / row["ggr"]) * 100, 6
-        )
+    # Whale analysis for Combined (vectorised across all brands)
+    def _whale_share_combined(group):
+        profitable = group[group["revenue"] > 0].nlargest(max(1, int(len(group[group["revenue"] > 0]) * 0.10)), "revenue")
+        return profitable["revenue"].sum()
+
+    whale_c = (
+        raw_df.groupby("report_month")
+        .apply(_whale_share_combined, include_groups=False)
+        .reset_index(name="_top_rev")
+        .rename(columns={"report_month": "month"})
+    )
+    combined = combined.merge(whale_c, on="month", how="left")
+    combined["top_10_pct_ggr_share"] = np.where(
+        combined["ggr"] != 0,
+        ((combined["_top_rev"].fillna(0) / combined["ggr"]) * 100).round(6),
+        0.0,
+    )
+    combined.drop(columns=["_top_rev"], inplace=True)
 
     return combined
 
