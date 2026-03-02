@@ -1,0 +1,9 @@
+# Ignore the data folder (sensitive data and local registry)
+data/
+Summary_Data_Auto.xlsx
+
+# Ignore Python cache and environments
+__pycache__/
+*.pyc
+venv/
+.env
