@@ -13,7 +13,7 @@ import sys
 import pandas as pd
 
 from src.ingestion import load_all_data, load_campaign_data, DATA_DIR
-from src.analytics import generate_monthly_summaries, generate_campaign_summaries
+from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary
 from src.exporter import export_to_excel
 
 logging.basicConfig(
@@ -108,11 +108,33 @@ def main() -> None:
         ):
             print("\n" + campaign_summary.to_string(index=False))
 
+    # ── Phase 7: Cohort Matrix ────────────────────────────────────────────
+    logger.info("═══ Phase 7: Cohort Matrix ═══")
+    cohort_matrices = generate_cohort_matrix(df)
+    for brand, matrix in cohort_matrices.items():
+        logger.info("%s: %d cohorts × %d retention months", brand, len(matrix), len(matrix.columns))
+
+    # ── Phase 8: Segmentation ───────────────────────────────────────────
+    logger.info("═══ Phase 8: Segmentation ═══")
+    segmentation = generate_segmentation_summary(df)
+    logger.info("Segmentation: %d rows (%d segments)", len(segmentation), segmentation["wb_tag"].nunique() if not segmentation.empty else 0)
+
+    # ── Phase 9: Both Business Summary ───────────────────────────────────
+    logger.info("═══ Phase 9: Both Business Summary ═══")
+    both_business = generate_both_business_summary(summary)
+    logger.info("Both Business: %d months", len(both_business))
+
     # ── Phase 4: Export ──────────────────────────────────────────────────
     logger.info("═══ Phase 4: Output Generation ═══")
 
     output_dir = DATA_DIR / "output"
-    output_path = export_to_excel(summary, output_dir, campaign_df=campaign_summary)
+    output_path = export_to_excel(
+        summary, output_dir,
+        campaign_df=campaign_summary,
+        cohort_matrices=cohort_matrices,
+        segmentation_df=segmentation,
+        both_business_df=both_business,
+    )
 
     logger.info("Report written → %s", output_path)
     logger.info("═══ Pipeline complete ═══")

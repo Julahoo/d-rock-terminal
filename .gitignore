@@ -1,9 +1,29 @@
-# Ignore the data folder (sensitive data and local registry)
-data/
-Summary_Data_Auto.xlsx
+# Python virtual environments
+venv/
+env/
+.venv/
 
-# Ignore Python cache and environments
+# Python cache
 __pycache__/
 *.pyc
-venv/
-.env
+.pytest_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS generated files
+.DS_Store
+
+# 🛑 DO NOT PUSH RAW DATA OR REPORTS 🛑
+data/raw/**/*.csv
+data/raw/*.csv
+data/campaigns/**/*.csv
+data/campaigns/*.csv
+data/output/
+*.xlsx
+Summary_Data_Auto.xlsx
+registry.json
+
+# Keep the folder structures intact in Git without the files
+!data/raw/.gitkeep
+!data/campaigns/.gitkeep

@@ -1,0 +1,7 @@
+# Ignore local data and sensitive files
+data/
+Summary_Data_Auto.xlsx
+venv/
+__pycache__/
+.env
+.git/
