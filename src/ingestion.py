@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+from sqlalchemy import text
+from src.database import engine as db_engine
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,20 @@ NUMERIC_COLS = [
     "deposit_count", "deposits", "withdrawals",
     "bonus_casino", "bonus_sports", "bonus_total"
 ]
+
+# ── Operations & Telemarketing Mapping ────────────────────────────────
+CLIENT_HIERARCHY = {
+    'BAH': 'REL', 'YW': 'LIM', 'MRO': 'LIM', 'VJ': 'SIM', 'YU': 'SIM', 
+    'LV': 'LeoVegas Group', 'LTRB': 'Offside Gaming', 'ROJA': 'Offside Gaming',
+    'CASINODAYS': 'RHN'
+}
+
+BRAND_CODE_MAP = {
+    'VERA JOHN': 'VJ', 'YUUGADO': 'YU', 'BOABET': 'BOA', 'YOUWIN': 'YW', 
+    'BAHIBI': 'BHB', 'MR OYUN': 'MRO', 'BAHIGO': 'BAH', 'WETTIGO': 'WG', 
+    'HAPPY LUKE': 'HL', 'LIVE CASINO HOUSE': 'LCH', 'ROYAL PANDA': 'RP',
+    'LEO VEGAS': 'LV', 'LATRIBET': 'LTRB', 'ROJABET': 'LTRB', 'POWERPLAY': 'PP'
+}
 
 # ── LeoVegas Group column mapping (Smart Adapter) ────────────────────────
 LEOVEGAS_COL_MAP: dict[str, str] = {
@@ -641,6 +657,52 @@ def load_all_data_from_uploads(
     for gap in gaps:
         logger.warning("Missing %s data for %s", _pretty_month(gap["report_month"]), gap["brand"].title())
 
+    # --- PERMANENT DB SAVE FOR FINANCIAL DATA ---
+    if not unified.empty:
+        try:
+            mapping_df = pd.read_sql("SELECT brand_code, brand_name, client_name FROM client_mapping", db_engine)
+            # Map by Brand Name -> Client (for financials)
+            fin_map = {str(row['brand_name']).upper(): row['client_name'] for _, row in mapping_df.iterrows() if pd.notnull(row.get('brand_name'))}
+
+            brand_col = next((c for c in unified.columns if 'brand' in c.lower()), None)
+
+            if brand_col:
+                records = []
+                for f in files:
+                    date_match = re.search(r'20\d{2}_\d{2}', f.name)
+                    file_month = date_match.group(0) if date_match else "UNKNOWN_DATE"
+
+                    unique_brands = unified[unified['report_month'] == file_month][brand_col].dropna().unique() if 'report_month' in unified.columns else unified[brand_col].dropna().unique()
+                    for b in unique_brands:
+                        clean_brand = str(b).strip()
+                        client = fin_map.get(clean_brand.upper(), "UNKNOWN")
+
+                        ngr_col = next((c for c in unified.columns if 'ngr' in c.lower() or 'net' in c.lower()), None)
+                        total_ngr = unified[unified[brand_col] == b][ngr_col].sum() if ngr_col else 0.0
+
+                        records.append({
+                            "client": client,
+                            "brand": clean_brand,
+                            "month": file_month,
+                            "ngr": float(total_ngr),
+                            "deposits": 0.0
+                        })
+
+                if records:
+                    fin_db_df = pd.DataFrame(records)
+                    fin_db_df.to_sql("financial_data", db_engine, if_exists="append", index=False)
+                    print(f"✅ PERMANENTLY SAVED Financial Data to Database!")
+        except Exception as e:
+            print(f"⚠️ Could not save financial data to DB: {e}")
+
+    # Invalidate Fin Cache so UI fetches fresh DB data
+    try:
+        import streamlit as st
+        if "raw_fin_df" in st.session_state:
+            del st.session_state["raw_fin_df"]
+    except:
+        pass
+
     return unified, registry
 
 
@@ -697,3 +759,108 @@ def load_campaign_data_from_uploads(files: list) -> pd.DataFrame:
     unified = pd.concat(frames, ignore_index=True)
     logger.info("Loaded %d campaign rows from uploads", len(unified))
     return unified
+
+def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
+    frames = []
+    unmapped_tags = set()
+    
+    # Dynamically fetch the latest Brand Registry from the database
+    try:
+        mapping_df = pd.read_sql("SELECT brand_code, brand_name, client_name FROM client_mapping", db_engine)
+        live_map = {row['brand_code']: {'client': row['client_name'], 'brand': row['brand_name'] if pd.notnull(row.get('brand_name')) else row['brand_code']} for _, row in mapping_df.iterrows()}
+    except:
+        live_map = {}
+
+    for f in files:
+        try:
+            f.seek(0)
+            if f.name.lower().endswith(".xlsx"): df = pd.read_excel(f, engine="openpyxl")
+            else:
+                try: df = pd.read_csv(f, encoding="utf-8")
+                except: 
+                    f.seek(0)
+                    df = pd.read_csv(f, encoding="ISO-8859-1")
+        except Exception as e:
+            print(f"❌ CRASH ON FILE {f.name}: {e}")
+            continue
+            
+        df.columns = [str(c).replace('\ufeff', '').replace('"', '').strip() for c in df.columns]
+        
+        if "Campaign Name" not in df.columns: continue
+            
+        ops_metrics = ["Calls", "KPI1-Conv.", "Cost Caller", "Cost SIP", "Cost SMS", "Cost Email", 
+                       "D", "D+", "D-", "D Ratio", "T", "AM", "DNC", "NA", "DX", "WN"]
+        for col in ops_metrics:
+            if col not in df.columns: df[col] = 0.0
+            else: df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        
+        records_to_insert = []
+        date_match = re.search(r'20\d{2}_\d{2}', f.name)
+        file_date = date_match.group(0) if date_match else "UNKNOWN_DATE"
+
+        for _, row in df.iterrows():
+            campaign = str(row.get("Campaign Name", "UNKNOWN"))
+            tokens = [t for t in campaign.upper().replace('_', '-').split('-') if t]
+            
+            tag = tokens[0] if len(tokens) > 0 else "UNKNOWN"
+            
+            if tag != "UNKNOWN" and tag not in live_map:
+                unmapped_tags.add(tag)
+                
+            mapped_info = live_map.get(tag, {})
+            client = mapped_info.get('client', "UNKNOWN")
+            brand_name = mapped_info.get('brand', tag)
+            
+            calls = int(row["Calls"])
+            convs = int(row["KPI1-Conv."])
+            total_cost = row["Cost Caller"] + row["Cost SIP"] + row["Cost SMS"] + row["Cost Email"]
+            true_cac = total_cost / convs if convs > 0 else 0.0
+            
+            records_to_insert.append({
+                "campaign_name": f"{campaign}_{file_date}",
+                "ops_client": client,
+                "ops_brand": brand_name,
+                "ops_date": file_date,
+                "calls": calls,
+                "conversions": convs,
+                "total_cost": total_cost,
+                "true_cac": true_cac,
+                "d_total": int(row["D"]),
+                "d_plus": int(row["D+"]),
+                "d_minus": int(row["D-"]),
+                "d_ratio": float(row["D Ratio"]),
+                "tech_issues": int(row["T"]),
+                "am": int(row["AM"]),
+                "dnc": int(row["DNC"]),
+                "na": int(row["NA"]),
+                "dx": int(row["DX"]),
+                "wn": int(row["WN"])
+            })
+            
+        if records_to_insert:
+            batch_df = pd.DataFrame(records_to_insert)
+            try:
+                # Save permanently to PostgreSQL
+                batch_df.to_sql("ops_telemarketing_data", db_engine, if_exists="append", index=False)
+                print(f"✅ PERMANENTLY SAVED {f.name} to Database!")
+            except Exception as e:
+                print(f"⚠️ Could not save {f.name} to DB (might be a duplicate): {e}")
+            
+            frames.append(batch_df)
+
+    # Push unmapped tags to UI state
+    if unmapped_tags:
+        import streamlit as st
+        if "unmapped_tags" not in st.session_state:
+            st.session_state["unmapped_tags"] = set()
+        st.session_state["unmapped_tags"].update(unmapped_tags)
+
+    # Invalidate Ops Cache so UI fetches fresh DB data
+    try:
+        import streamlit as st
+        if "raw_ops_df" in st.session_state:
+            del st.session_state["raw_ops_df"]
+    except:
+        pass
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

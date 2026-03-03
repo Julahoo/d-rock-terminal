@@ -432,3 +432,19 @@
 - **`src/analytics.py`:** Added `generate_vip_churn_radar(df)` to detect VIPs (>500 NGR or >5000 Turnover last month) whose NGR strictly crashed by >30% and >200 absolute value MoM.
 - **`app.py`:** Injected the 📉 EARLY-WARNING VIP CHURN RADAR at the very top of the CRM intelligence tab to instantly alert retention teams of high-value flight risks. Handled missing `month` extraction safely to prevent caching KeyErrors.
 - Docker rebuilt and redeployed on port 8503.
+
+### [Phase 18 - PostgreSQL Persistence Layer] - Current
+- Replaced temporary RAM/CSV state with a persistent PostgreSQL database (`src/database.py`).
+- Implemented schemas: `ops_telemarketing_data`, `financial_data`, `client_mapping`, `contractual_slas`.
+- Updated ingestion engines to save directly to DB (`to_sql`) and added cache invalidation (`del st.session_state`) upon upload.
+
+### [Phase 19 - Universal Brand Translator & Quarantine] - Current
+- Upgraded Registry to 3-column mapping: Ops Tag (e.g., ROJB) -> Brand Name (Rojabet) -> Client (Offside Gaming).
+- Ingestion automatically intercepts tags, translates them to Brand Names, and syncs Ops/Fin data perfectly.
+- Added Orphaned Tag detection to warn users of unmapped campaigns and retroactively fix historical DB records upon registry update.
+
+### [Phase 20 - 4-Tier Navigation & Entity-Centric Admin] - Current
+- Destroyed flat-tab layout. Implemented 4-tier Sidebar Router: `📊 Dashboard`, `📞 Operations`, `🏦 Financial`, `⚙️ Admin`.
+- Built `🏢 Client Hub` in the Admin tier: features a Master Health Board and Drill-Down Profiles per client.
+- Built the Inverted Data Completeness Matrix (Months as Rows, Brands as Columns) inside the Client Profile.
+- Rebuilt Global Filters to hydrate dynamically from the DB, strip whitespace, and apply RBAC routing.

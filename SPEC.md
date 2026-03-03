@@ -2,21 +2,23 @@
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Automate the ingestion of monthly betting CSVs to calculate financial metrics, track player lifecycles, and generate business intelligence via a web application and Excel exports.
-- **Architecture:** Multi-Client Enterprise BI Platform (V2.0). Utilizes an ETL Pipeline + Interactive UI Dashboard (Hub & Spoke Model).
-- **Tech Stack:** Python 3.10+, `pandas`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
+- **Architecture:** 4-Tier Modular Enterprise Platform (V2.0). Utilizes an ETL Pipeline saving state to a persistent PostgreSQL database (`src/database.py`).
+- **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
 - **UI Theme:** "Matrix/Terminal" (Pitch Black `#000000`, Secondary `#0D0D0D`, Text/Accent Neon Green `#00FF41`).
 
 ---
 
-## 2. DATA MODELS (Single Source of Truth)
+## 2. DATA MODELS (PostgreSQL Persistence Layer)
 
-### 2.1 Raw Ingestion Entities (Universal Ingestion Adapter)
-- **`PlayerRecord` (Unified):** `id`, `client`, `brand`, `country`, `wb_tag`, `bet`, `win`, `revenue` (GGR), `ngr`, `bet_casino`, `revenue_casino`, `ngr_casino`, `bet_sports`, `revenue_sports`, `ngr_sports`, `report_month`.
-- **`CampaignRecord`:** `brand`, `campaign_type`, `records`, `kpi1_conversions`, `kpi2_logins`, `calls`, `emails_sent`, `sms_sent`, `report_month`.
+### 2.1 Database Tables (Single Source of Truth)
+- **`ops_telemarketing_data`:** Core telemarketing operational records. Columns include `ops_hash`, `ops_client`, `ops_brand`, `ops_date`, total dials, connections, promises, etc.
+- **`financial_data`:** Core financial records populated from ingestion. Columns match the Smart Adapters (e.g., `brand`, `month`, `ogr`, `ngr`, `deposits`).
+- **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`. Used to normalize incoming data and intercept/quarantine orphaned tags.
+- **`contractual_slas`:** Stores client-specific SLA thresholds for Operations command tracking. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`, `target_cac_usd`, `benchmark_conv_pct`.
 
-### 2.1.1 Smart Adapter Mappings & Fallbacks
-- **LeoVegas Path (V2.0):** Maps `"Player Key"` -> `"id"`, extracts true `"ngr"` from `"NGR (Total) € after Tax"`, and ingests specific Casino/Sports splits (`Turnover (Casino) €`, `GGR (Sports) €`, etc.). Extracts the exact `"Country"`. 
-- **Offside Gaming Path (Fallback):** Maps `"Player unique identifier"` -> `"id"`. Enforces default fallbacks where `ngr = revenue`, `country = "Global"`, and Casino/Sports vertical splits are zeroed out (`0`) to prevent math breakage.
+### 2.2 Smart Adapter Mappings & Fallbacks
+- **LeoVegas Path (V2.0):** Maps `"Player Key"` -> `"id"`, extracts true `"ngr"` from `"NGR (Total) € after Tax"`, and ingests specific Casino/Sports splits. 
+- **Offside Gaming Path (Fallback):** Maps `"Player unique identifier"` -> `"id"`. Enforces default fallbacks where `ngr = revenue`, `country = "Global"`, and Casino/Sports vertical splits are zeroed out.
 
 ### 2.2 Aggregated Business Entities
 - **`MonthlyBrandSummary` & `BothBusinessSummary`:** - *Base:* `Turnover` (Handle), `GGR` (Revenue), `Margin` (Hold %), `Revenue (15%)` (Commission/Net Income).
@@ -87,48 +89,33 @@ Evaluated row-by-row in this strict priority order:
 
 ## 4. FRONTEND APPLICATION (`app.py`)
 
-### 4.1 🗄️ Data Control Room (Boot Load)
-- **System Integrity:** Displays backend configuration flags, schema verifications, and cache statuses prior to data load.
-- **Compliance & Infrastructure:** Renders a 3-column verification matrix for Ingestion Adapter Status, Analytical Engine checks, and Output Handlers.
-- **Ingestion Dropzones:** The exact portal to upload Financial (LeoVegas/Offside) and Campaign (V1) CSVs. Saves files locally to `./data/` directories, triggers the `run_pipeline()` callback.
+### 4.1 🧭 4-Tier Navigation Router & Global Filters
+- **Sidebar Router:** Replaced flat-tab structure with a role-based radio router (`view_mode`):
+  1. `📊 Dashboard`: Executive/CRM intelligence.
+  2. `📞 Operations`: Operations Control and CallsU metrics.
+  3. `🏦 Financial`: Financial Deep-Dive and Ingestion dropzones.
+  4. `⚙️ Admin`: Client Hub and settings.
+- **🌍 GLOBAL INTELLIGENCE FILTERS:**
+  - Placed in the sidebar globally. DB-Hydrated logic explicitly strips hidden whitespace to prevent filtering bugs.
+  - Cascading logic: **Client** selection perfectly limits the **Brand** dropdown to registered components via SQL `WHERE` clauses on `client_mapping`.
+  - UX Trick: Auto-selects the brand if the client only has 1 registered.
 
-### 4.2 🌍 GLOBAL INTELLIGENCE FILTERS
-- Always visible immediately below the main title. Three cascading selectboxes governing downstream analytics:
-  - **1. Client:** `["All", "Offside Gaming", "LeoVegas Group"]`
-  - **2. Brand:** Dependant on the selected Client (e.g. `Latribet`, `Rojabet`, or `Both Business` for Offside. `LeoVegas ES`, etc. for LeoVegas).
-  - **3. Country:** Dependant on selected Client & Brand (e.g., `["All", "Peru", "Chile", "Japan"]`, or `Global`).
-- Replaced the prior individual multi-tab approach. All dashboard tables and charts dynamically react and slice their data arrays via `data_slicer(df)` based strictly on these 3 toggles.
+### 4.2 ⚙️ Admin Tier: Client Hub
+- **Master Health Board:** Displays a dynamic grid showing the absolute timestamps of the latest Financial and Operational files uploaded per client, alongside their active SLA counts.
+- **Client Detail Profile:** Access via "⚙️ Manage Profile". Traps the `st.session_state` to a specific client to view a 3-tab dashboard:
+  - **Tab 1: Completeness & Uploads:** Dynamic inverted matrix (Months as Rows, Brands as Columns) tracking data synchronization. Includes an isolated financial up-loader directly injecting state to DB.
+  - **Tab 2: Brand Registry:** Manages the `client_mapping` table. Adding a tag dynamically traces and retroactively fixes Orphaned records in `ops_telemarketing_data`.
+  - **Tab 3: Contractual SLAs:** Manages the `contractual_slas` config table.
 
-### 4.3 Tab 1: 📊 Executive Summary
-- **Master Insight:** `> SYSTEM DIAGNOSTIC_` text box generating dynamic AI narrative (GGR trajectory, Margin alerts, Whale Risk alerts).
-- **Cross-Brand Matrices:** Side-by-side comparison tables (`Both Business` | `Rojabet` | `Latribet`) for:
-  1. *Performance Matrix:* Financial KPIs + Whale Risk.
-  2. *Demographics Matrix:* Lifecycle counts (Total, Conversions, Retained, etc.).
-  3. *VIP Health Matrix:* RFM counts (True VIPs vs Churn Risk).
-- Each matrix is preceded by an italicized business insight. Includes a Brand vs. Brand Trajectory Bar Chart.
-- Add a new section `> CROSS-BRAND CANNIBALIZATION (ALL-TIME)_` below the existing matrices.
-- Display a dual metric: The total number of overlapping players, and the total lifetime GGR generated by those specific players.
-- Add a new section `> REVENUE CONCENTRATION (PARETO CURVE)_` below the Cross-Brand Cannibalization section.
-- Display the Plotly chart showing the combined entity's revenue concentration.
+### 4.3 Cache Invalidation Strategy
+- Rather than persisting RAM-Csvs, all upload handlers save directly to PostgreSQL using `to_sql`. 
+- Post-upload, the application explicitly triggers `del st.session_state["raw_fin_df"]` / `raw_ops_df`, forcing `app.py` to seamlessly re-hydrate `pd.read_sql` on the next `st.rerun()`.
 
-### 4.4 Tab 2: 🏦 Adaptive Financial Deep-Dive (Consolidated)
-*Tabs 2, 3, and 4 (Combined/Rojabet/Latribet) were consolidated into a single Adaptive tab powered entirely by the 🌍 Global Filters.*
-- **Top:** Toggle for True Profitability (`st.toggle("View True Profitability (NGR vs GGR)")`) switches main aggregates across the tab.
-- **Top:** 5 KPI metric cards (Turnover, GGR, Margin, Revenue (15%), Total Players).
-- **Vertical Intelligence:** Side-by-side stack charts displaying Turnover Composition (Casino vs Sports) and GGR/NGR Composition.
-- **Comparative Intelligence:** Time-Series `[ FINANCIALS ]` table and Time-Series `[ PLAYER DEMOGRAPHICS ]` table featuring YoY, QoQ, MoM, and YTD metrics.
-- **Risk & Value Metrics:** Whale Risk Gauge (Top 10% share > 70% shows warning), Turnover Per Player, and a Value Composition stacked bar chart.
-- **Visual Cohort Retention Heatmap:** Plotly triangle heatmap showing lifecycle retention percentages over time. Add a new subheader `> CUMULATIVE LTV TRAJECTORY_`.
-- **Segmentation by Program:** Table output of the detailed DataFrame containing `Program`, `Total Players`, `Turnover`, `GGR`, and `Margin`.
+### 4.4 Tab 1: 📊 Executive Summary
+- **Master Insight:** `> SYSTEM DIAGNOSTIC_` text box generating dynamic AI narrative.
+- **Brand vs Brand Trajectory:** Plotly grouped bar chart.
+- **Cross-Brand Cannibalization & Pareto Curve:** Sections generating visualization matrices based on combined entity calculations.
 
-
-
-### 4.4 Tab 5: 📈 Campaigns
-- Displays total aggregated campaign metrics and a `plotly.graph_objects.Funnel` chart mapping Records -> Logins -> Conversions. Applies LI duplication scrubbing rules.
-
-### 4.5 Tab 6: 🕵️ CRM Intelligence
-- **Global Filter:** Brand selectbox (anchored with a widget `key`).
-- **Leaderboards:** Top 50 "👑 Crown Jewels" (Max GGR) and Top 50 "⚠️ Bonus Abusers" (Max Turnover + Negative Yield).
-- **Churn Targeting Generator:** Interactive sliders for Inactivity and Lifetime GGR, displaying a filtered target dataframe with a CSV export button.
-- **Smart Campaign Profiling:** 5-column metric display showing counts for the automated campaign heuristics, followed by a dropdown extractor to download specific CSV target lists.
-- Update the `> SMART CAMPAIGN PROFILING_` metric display. Because we now have 6 distinct campaigns, change the layout from a single row of 5 columns to a 2-row grid using `st.columns(3)` to keep the UI clean and prevent the text from wrapping awkwardly.
+### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence
+- **Campaigns:** Funnel visualizations and tracking per brand.
+- **CRM Intelligence:** Global selectbox, 👑 Crown Jewels vs ⚠️ Bonus Abusers leaderboards, Churn Targeting generator. Note: Smart Campaign Profiling expands to a responsive 2-row grid to accommodate the 6 distinct active VIP heuristics.

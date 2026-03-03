@@ -1502,9 +1502,14 @@ def generate_vip_churn_radar(df: pd.DataFrame) -> pd.DataFrame:
     return churn_risk.sort_values("NGR_Drop_Value", ascending=False).head(50)
 
 def generate_segment_roi_matrix(df: pd.DataFrame) -> pd.DataFrame:
+    # HOTFIX: Cache-bypass. If segment is missing but wb_tag exists from legacy memory, use it.
     if "segment" not in df.columns:
-        return pd.DataFrame()
-        
+        if "wb_tag" in df.columns:
+            df = df.copy()
+            df["segment"] = df["wb_tag"]
+        else:
+            return pd.DataFrame()
+            
     seg = df.groupby("segment").agg(
         Total_Players=("id", "nunique"),
         Total_Turnover=("bet", "sum"),
@@ -1520,4 +1525,8 @@ def generate_segment_roi_matrix(df: pd.DataFrame) -> pd.DataFrame:
     seg["Avg_NGR_per_Player"] = seg.apply(lambda x: x["Total_NGR"] / x["Total_Players"] if x["Total_Players"] > 0 else 0, axis=1)
     seg["Margin_%"] = seg.apply(lambda x: (x["Total_GGR"] / x["Total_Turnover"] * 100) if x["Total_Turnover"] > 0 else 0, axis=1)
     
-    return seg.sort_values("Total_NGR", ascending=False)
+    # Calculate true net profit after 15% revenue share deduction
+    seg["Rev_Share_15"] = (seg["Total_NGR"] * 0.15).round(2)
+    seg["Actual_Earning"] = (seg["Total_NGR"] - seg["Rev_Share_15"]).round(2)
+    
+    return seg.sort_values("Actual_Earning", ascending=False)
