@@ -2872,7 +2872,12 @@ if "📞 Operations Command" in tab_map:
                                     
                             fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
                                                     labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title=f"{duration} Volume Trends")
-                            fig_trend_vol.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                            fig_trend_vol.update_layout(
+                                paper_bgcolor="rgba(0,0,0,0)", 
+                                plot_bgcolor="rgba(0,0,0,0)", 
+                                font_color="#00FF41",
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+                            )
                             
                             for trace in fig_trend_vol.data:
                                 if 'SLA' in trace.name or 'Benchmark' in trace.name:
@@ -2911,7 +2916,8 @@ if "📞 Operations Command" in tab_map:
                                 font_color="#00FF41",
                                 barmode='group',
                                 hovermode='x unified',
-                                margin=dict(t=40, b=20, l=40, r=40)
+                                margin=dict(t=40, b=20, l=40, r=40),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
                             )
                             fig_trend_pct.update_yaxes(title_text="Volume (Raw)", secondary_y=False, showgrid=False)
                             fig_trend_pct.update_yaxes(title_text="Efficiency (%)", secondary_y=True, showgrid=False)

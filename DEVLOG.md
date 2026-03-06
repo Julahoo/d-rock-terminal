@@ -848,3 +848,7 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 ### [Hotfix - Date Slider Crash on Single-Day Datasets] - Current
 - The Operations Command tab was crashing with `StreamlitAPIException: Slider min_value must be less than the max_value` when users uploaded exactly one day of data.
 - Added a safeguard to the global date range calculation that evaluates `if min_db_date.date() >= max_date.date()` and automatically adds `pd.Timedelta(days=1)` to the `max_date` if true. This ensures Streamlit sliders always have a valid, strict range.
+
+### [UI Enhancement - Trend Chart Legends] - Current
+- Updated the "Daily SLA Trends & Performance" charts layout in `app.py`.
+- Moved the legends from the default side position to the bottom (`orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5`) to free up horizontal space for the graphs.
