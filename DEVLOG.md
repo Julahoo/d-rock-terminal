@@ -829,3 +829,7 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 ### [Hotfix - Cold Start UI Unblock] - Current
 - Removed `st.stop()` from the initial database hydration `except` block.
 - Allowed the Streamlit script to continue executing and rendering the main UI tabs with empty DataFrames, unblocking access to the Ingestion dropzones on fresh deployments.
+
+### [Hotfix - Cloud Schema Alignment] - Current
+- Upgraded `init_db()` in `src/database.py` to dynamically inject the 29 Cost, Funnel, and Disposition columns into existing tables.
+- Resolved silent `to_sql` ingestion failures on fresh cloud deployments.

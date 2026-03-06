@@ -64,6 +64,7 @@ def init_db():
                 ops_client VARCHAR(100),
                 ops_brand VARCHAR(50),
                 ops_date VARCHAR(50),
+                records INT DEFAULT 0,
                 calls INT,
                 conversions INT,
                 total_cost DECIMAL(10, 2),
@@ -71,13 +72,33 @@ def init_db():
                 d_total INT DEFAULT 0,
                 d_plus INT DEFAULT 0,
                 d_minus INT DEFAULT 0,
+                d_neutral INT DEFAULT 0,
                 d_ratio DECIMAL(10, 4) DEFAULT 0,
+                kpi2_logins INT DEFAULT 0,
+                li_pct DECIMAL(10, 4) DEFAULT 0,
                 tech_issues INT DEFAULT 0,
+                t INT DEFAULT 0,
                 am INT DEFAULT 0,
                 dnc INT DEFAULT 0,
                 na INT DEFAULT 0,
                 dx INT DEFAULT 0,
                 wn INT DEFAULT 0,
+                cost_caller DECIMAL(10, 2) DEFAULT 0,
+                cost_sip DECIMAL(10, 2) DEFAULT 0,
+                cost_sms DECIMAL(10, 2) DEFAULT 0,
+                cost_email DECIMAL(10, 2) DEFAULT 0,
+                hlrv INT DEFAULT 0,
+                twoxrv INT DEFAULT 0,
+                sa INT DEFAULT 0,
+                sd INT DEFAULT 0,
+                sf INT DEFAULT 0,
+                sp INT DEFAULT 0,
+                ev INT DEFAULT 0,
+                es INT DEFAULT 0,
+                ed INT DEFAULT 0,
+                eo INT DEFAULT 0,
+                ec INT DEFAULT 0,
+                ef INT DEFAULT 0,
                 ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
@@ -85,15 +106,26 @@ def init_db():
         # --- HEAL LEGACY OPERATIONS DATES (2025_02 -> 2025-02) ---
         conn.execute(text("UPDATE ops_telemarketing_data SET ops_date = REPLACE(ops_date, '_', '-')"))
         
-        # Safe Migration: Add columns to existing table if they don't exist
+        # Safe Migration: Add columns to existing tables if they don't exist
         new_columns = [
-            "d_total INT DEFAULT 0", "d_plus INT DEFAULT 0", "d_minus INT DEFAULT 0", 
-            "d_ratio DECIMAL(10,4) DEFAULT 0", "tech_issues INT DEFAULT 0", 
-            "am INT DEFAULT 0", "dnc INT DEFAULT 0", "na INT DEFAULT 0", 
-            "dx INT DEFAULT 0", "wn INT DEFAULT 0"
+            "records INT DEFAULT 0", "d_total INT DEFAULT 0", "d_plus INT DEFAULT 0", 
+            "d_minus INT DEFAULT 0", "d_neutral INT DEFAULT 0", "d_ratio DECIMAL(10,4) DEFAULT 0", 
+            "kpi2_logins INT DEFAULT 0", "li_pct DECIMAL(10,4) DEFAULT 0", 
+            "tech_issues INT DEFAULT 0", "t INT DEFAULT 0", "am INT DEFAULT 0", 
+            "dnc INT DEFAULT 0", "na INT DEFAULT 0", "dx INT DEFAULT 0", "wn INT DEFAULT 0",
+            "cost_caller DECIMAL(10, 2) DEFAULT 0", "cost_sip DECIMAL(10, 2) DEFAULT 0", 
+            "cost_sms DECIMAL(10, 2) DEFAULT 0", "cost_email DECIMAL(10, 2) DEFAULT 0",
+            "hlrv INT DEFAULT 0", "twoxrv INT DEFAULT 0", "sa INT DEFAULT 0", 
+            "sd INT DEFAULT 0", "sf INT DEFAULT 0", "sp INT DEFAULT 0", 
+            "ev INT DEFAULT 0", "es INT DEFAULT 0", "ed INT DEFAULT 0", 
+            "eo INT DEFAULT 0", "ec INT DEFAULT 0", "ef INT DEFAULT 0"
         ]
+        # We need to make sure the snapshots table exists before we try to ALTER it
+        conn.execute(text("CREATE TABLE IF NOT EXISTS ops_telemarketing_snapshots (id SERIAL PRIMARY KEY)"))
+        
         for col_def in new_columns:
             conn.execute(text(f"ALTER TABLE ops_telemarketing_data ADD COLUMN IF NOT EXISTS {col_def}"))
+            conn.execute(text(f"ALTER TABLE ops_telemarketing_snapshots ADD COLUMN IF NOT EXISTS {col_def}"))
 
         # 4. Raw Financial Historical Data
         conn.execute(text("""
