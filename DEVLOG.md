@@ -874,3 +874,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 ### [Feature - Benchmarking Phase 1 & 2] - Current
 - Updated `src/database.py` schema injection to include `extracted_engagement`, `extracted_segment`, `extracted_lifecycle`, and `country` across both telemetry and snapshot tables.
 - Overhauled `src/ingestion.py` and `src/cron_callsu.py` parsing heuristics to accurately separate Lifecycles from Segments and capture LI/NLI engagement markers.
+
+### [Feature - Benchmarking Phase 3] - Current
+- Initialized `ops_historical_benchmarks` table in `src/database.py` to store calculated averages.
+- Built `scripts/jobs/generate_benchmarks.py` to calculate two-step true daily averages across Brand/Country/Lifecycle/Segment/Engagement signatures.
+- Made the benchmark generation script idempotent to safely prevent data duplication.

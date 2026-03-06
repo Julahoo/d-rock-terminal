@@ -58,6 +58,23 @@ def init_db():
         
         # 3. Telemarketing Historical Data (CallsU)
         conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS ops_historical_benchmarks (
+                id SERIAL PRIMARY KEY,
+                benchmark_period VARCHAR(100),
+                brand VARCHAR(50),
+                country VARCHAR(50),
+                extracted_lifecycle VARCHAR(50),
+                extracted_segment VARCHAR(50),
+                extracted_engagement VARCHAR(50),
+                avg_daily_records DECIMAL(10, 2),
+                avg_daily_calls DECIMAL(10, 2),
+                avg_daily_logins DECIMAL(10, 2),
+                avg_daily_conversions DECIMAL(10, 2),
+                avg_daily_deliveries DECIMAL(10, 2)
+            )
+        """))
+        
+        conn.execute(text("""
             CREATE TABLE IF NOT EXISTS ops_telemarketing_data (
                 id SERIAL PRIMARY KEY,
                 campaign_name VARCHAR(255) UNIQUE,
