@@ -833,3 +833,9 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 ### [Hotfix - Cloud Schema Alignment] - Current
 - Upgraded `init_db()` in `src/database.py` to dynamically inject the 29 Cost, Funnel, and Disposition columns into existing tables.
 - Resolved silent `to_sql` ingestion failures on fresh cloud deployments.
+
+### [Bugfix - Missing Optout Columns in Schema] - Current
+- Investigated empty state and logs using the Debugging Workflow.
+- Discovered that 4 new columns (`optouts_all`, `optout_call`, `optout_sms`, `optout_email`) were being scraped by the `ingestion.py` engine but were missing from the production `init_db()` PostgreSQL schema.
+- This caused `to_sql(if_exists="append")` to silently fail on upload, completely blocking data ingestion while throwing a terminal-only `UndefinedColumn` error.
+- Expanded the safe schema migration loop in `database.py` to inject these 4 columns on boot, finally allowing the pipeline to succeed.

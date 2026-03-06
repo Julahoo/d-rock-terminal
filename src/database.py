@@ -99,6 +99,10 @@ def init_db():
                 eo INT DEFAULT 0,
                 ec INT DEFAULT 0,
                 ef INT DEFAULT 0,
+                optouts_all INT DEFAULT 0,
+                optout_call INT DEFAULT 0,
+                optout_sms INT DEFAULT 0,
+                optout_email INT DEFAULT 0,
                 ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
@@ -118,7 +122,9 @@ def init_db():
             "hlrv INT DEFAULT 0", "twoxrv INT DEFAULT 0", "sa INT DEFAULT 0", 
             "sd INT DEFAULT 0", "sf INT DEFAULT 0", "sp INT DEFAULT 0", 
             "ev INT DEFAULT 0", "es INT DEFAULT 0", "ed INT DEFAULT 0", 
-            "eo INT DEFAULT 0", "ec INT DEFAULT 0", "ef INT DEFAULT 0"
+            "eo INT DEFAULT 0", "ec INT DEFAULT 0", "ef INT DEFAULT 0",
+            "optouts_all INT DEFAULT 0", "optout_call INT DEFAULT 0",
+            "optout_sms INT DEFAULT 0", "optout_email INT DEFAULT 0"
         ]
         # We need to make sure the snapshots table exists before we try to ALTER it
         conn.execute(text("CREATE TABLE IF NOT EXISTS ops_telemarketing_snapshots (id SERIAL PRIMARY KEY)"))
