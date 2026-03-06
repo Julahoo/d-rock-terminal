@@ -27,7 +27,7 @@ def pre_seed_client_mappings():
         {"tag": "SIM", "brand": "Simplicity Malta Limited", "client": "Simplicity Malta Limited", "fmt": "Standard"},
         {"tag": "PP", "brand": "PowerPlay", "client": "PowerPlay", "fmt": "Standard"},
         {"tag": "INSP", "brand": "Magico Games/Interspin", "client": "Magico Games/Interspin", "fmt": "Standard"},
-        {"tag": "PE", "brand": "PressEnter", "client": "PressEnter", "fmt": "Standard"},
+        {"tag": "PE", "brand": "NitroCasino", "client": "PressEnter", "fmt": "Standard"},
         {"tag": "LV", "brand": "LeoVegas Group", "client": "LeoVegas Group", "fmt": "LeoVegas"},
         
         # Sub-Brand Explicit Definitions
@@ -41,7 +41,9 @@ def pre_seed_client_mappings():
         {"tag": "BETMGM", "brand": "BetMGM", "client": "LeoVegas Group", "fmt": "LeoVegas"},
         {"tag": "EXPEKT", "brand": "Expekt", "client": "LeoVegas Group", "fmt": "LeoVegas"},
         {"tag": "GOGO", "brand": "GoGoCasino", "client": "LeoVegas Group", "fmt": "LeoVegas"},
-        {"tag": "ROYALPANDA", "brand": "RoyalPanda", "client": "LeoVegas Group", "fmt": "LeoVegas"}
+        {"tag": "ROYALPANDA", "brand": "RoyalPanda", "client": "LeoVegas Group", "fmt": "LeoVegas"},
+        {"tag": "WG", "brand": "Wetigo", "client": "Reliato", "fmt": "Standard"},
+        {"tag": "BHB", "brand": "Bahibi", "client": "Limitless", "fmt": "Standard"}
     ]
 
     with engine.begin() as conn:
