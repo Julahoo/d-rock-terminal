@@ -839,3 +839,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Discovered that 4 new columns (`optouts_all`, `optout_call`, `optout_sms`, `optout_email`) were being scraped by the `ingestion.py` engine but were missing from the production `init_db()` PostgreSQL schema.
 - This caused `to_sql(if_exists="append")` to silently fail on upload, completely blocking data ingestion while throwing a terminal-only `UndefinedColumn` error.
 - Expanded the safe schema migration loop in `database.py` to inject these 4 columns on boot, finally allowing the pipeline to succeed.
+
+### [Hotfix - Empty UI Tabs (Blank States)] - Current
+- Discovered that the `🕵️ CRM Intelligence` and `📈 Campaigns` tabs in `app.py` were nested entirely inside the global `if not _master_df.empty:` financial data check.
+- When the cloud database was fresh and lacked financial data, Streamlit skipped the entire rendering block, resulting in a blank white screen when users clicked those tabs.
+- Injected a graceful `else:` block that explicitly renders these tabs with a bright yellow warning: `"⚠️ No Financial Data Loaded. Please navigate to the 📥 Financial Ingestion tab..."` instead of leaving the user with a broken UI.

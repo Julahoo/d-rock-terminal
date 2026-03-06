@@ -2547,6 +2547,21 @@ if not _master_df.empty:
             else:
                 st.info("No segment data available in the current slice.")
 
+else:
+    # --- GRACEFUL DEGRADATION FOR EMPTY DATABASES ---
+    if "🕵️ CRM Intelligence" in tab_map:
+        with tab_map["🕵️ CRM Intelligence"]:
+            st.warning("⚠️ **No Financial Data Loaded**. Please navigate to the **📥 Financial Ingestion** tab and upload your player reports to unlock CRM Intelligence.")
+            
+    if "📈 Campaigns" in tab_map:
+        with tab_map["📈 Campaigns"]:
+            st.warning("⚠️ **No Financial Data Loaded**. Please navigate to the **📥 Financial Ingestion** tab and upload your player reports to unlock Campaign ROI metrics.")
+            
+    if "🏦 Financial Deep-Dive" in tab_map:
+        with tab_map["🏦 Financial Deep-Dive"]:
+            st.warning("⚠️ **No Financial Data Loaded**. Please navigate to the **📥 Financial Ingestion** tab and upload your player reports to unlock the Financial Dashboard.")
+
+
 # ==========================================
 # 📞 TAB: OPERATIONS COMMAND (Phase 3 - Telemarketing)
 # ==========================================
