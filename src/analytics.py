@@ -23,7 +23,38 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def generate_monthly_summaries(df: pd.DataFrame) -> pd.DataFrame:
+def _pad_missing_months(summary_df: pd.DataFrame, force_start: str = None, force_end: str = None) -> pd.DataFrame:
+    """Pads missing months with 0s to ensure continuous time-series."""
+    if summary_df.empty or "month" not in summary_df.columns or "brand" not in summary_df.columns:
+        return summary_df
+
+    g_min = force_start if force_start else summary_df["month"].min()
+    g_max = force_end if force_end else summary_df["month"].max()
+
+    if pd.isna(g_min) or pd.isna(g_max):
+        return summary_df
+
+    try:
+        sy, sm = (int(x) for x in g_min.split("-"))
+        ey, em = (int(x) for x in g_max.split("-"))
+        full_months = []
+        while (sy, sm) <= (ey, em):
+            full_months.append(f"{sy}-{sm:02d}")
+            sm += 1
+            if sm > 12:
+                sm = 1
+                sy += 1
+
+        all_brands = summary_df["brand"].unique()
+        full_idx = pd.MultiIndex.from_product([all_brands, full_months], names=["brand", "month"])
+        padded = summary_df.set_index(["brand", "month"]).reindex(full_idx).reset_index()
+
+        return padded.fillna(0.0)
+    except Exception as e:
+        logger.error(f"Error padding missing months: {e}")
+        return summary_df
+
+def generate_monthly_summaries(df: pd.DataFrame, force_start: str = None, force_end: str = None) -> pd.DataFrame:
     """Take the unified raw DataFrame (PlayerRecord rows) and produce
     a summarised DataFrame matching the ``MonthlyBrandSummary`` entity.
 
@@ -56,6 +87,9 @@ def generate_monthly_summaries(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── 3. Merge and derive remaining fields -----------------------------
     summary = financial.merge(cohort, on=["brand", "month"], how="left")
+
+    # ── PADDING MISSING MONTHS (Zero-Fill) ─────────────────────────────
+    summary = _pad_missing_months(summary, force_start, force_end)
 
     # retention_pct = (returning_players / total_players) * 100
     summary["retention_pct"] = _safe_pct(

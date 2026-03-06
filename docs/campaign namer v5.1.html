@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D-Rock Campaign Fixer v5.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap"
+        rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+
+<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+
+    <header class="bg-gradient-to-r from-gray-900 to-gray-800 text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20 shadow-sm relative group bg-indigo-500 flex items-center justify-center font-bold text-xl">
+                    D
+                </div>
+                <h1 class="text-xl font-bold tracking-tight">D-Rock Campaign Fixer <span class="text-xs bg-indigo-500 px-2 py-0.5 rounded-full ml-2">v5.1</span></h1>
+            </div>
+
+            <div class="mt-4 md:mt-0 flex items-center space-x-2 text-sm font-medium">
+                <div id="step-1-indicator" class="flex items-center text-white">
+                    <span class="w-6 h-6 flex items-center justify-center bg-white text-indigo-800 rounded-full mr-2">1</span>
+                    Upload
+                </div>
+                <div class="w-8 h-0.5 bg-indigo-400"></div>
+                <div id="step-2-indicator" class="flex items-center text-indigo-200">
+                    <span class="w-6 h-6 flex items-center justify-center border-2 border-indigo-400 rounded-full mr-2">2</span>
+                    Preview
+                </div>
+                <div class="w-8 h-0.5 bg-indigo-400"></div>
+                <div id="step-3-indicator" class="flex items-center text-indigo-200">
+                    <span class="w-6 h-6 flex items-center justify-center border-2 border-indigo-400 rounded-full mr-2">3</span>
+                    Download
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow container mx-auto px-2 py-8 max-w-[1400px]">
+
+        <div id="step-1" class="max-w-2xl mx-auto mt-10">
+            <div class="bg-white rounded-xl shadow-md p-8 text-center border border-gray-100">
+                <label for="file-input" id="drop-zone"
+                    class="block border-3 border-dashed border-indigo-100 rounded-xl p-12 transition-colors duration-200 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer">
+                    <div class="flex justify-center mb-4">
+                        <svg class="w-16 h-16 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                            </path>
+                        </svg>
+                    </div>
+                    <h2 class="text-xl font-semibold text-gray-800 mb-2">Upload your Campaign CSV</h2>
+                    <p class="text-gray-500 mb-6">Drag and drop your file here, or click to browse</p>
+                    <p class="text-xs text-gray-500 bg-gray-100 py-2 px-4 rounded-lg inline-block text-left">
+                        <span class="font-bold block mb-1">Supported Formats:</span>
+                        1. Raw File (brand_id; id; name; start_at)<br>
+                        2. Partially Cleaned File (Previously exported from this tool)
+                    </p>
+                    <input type="file" id="file-input" class="hidden" accept=".csv">
+                </label>
+                <div id="error-message" class="hidden mt-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
+                </div>
+            </div>
+        </div>
+
+        <div id="step-2" class="hidden w-full h-full flex flex-col">
+            <div class="flex justify-between items-center mb-4 px-4">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">Review & Standardize</h2>
+                    <p class="text-sm text-gray-500">Grouped by missing elements, then alphabetically. Use filters to narrow down issues.</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button id="reset-btn"
+                        class="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors">
+                        Reset
+                    </button>
+                    <button id="download-btn"
+                        class="px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg shadow hover:from-emerald-600 hover:to-teal-700 font-medium transition-all transform hover:-translate-y-0.5">
+                        Approve & Download
+                    </button>
+                </div>
+            </div>
+
+            <div id="bulk-edit-bar" class="hidden bg-indigo-50 border border-indigo-200 p-4 rounded-t-xl flex flex-wrap items-center gap-3 shadow-sm transition-all z-20 relative">
+                <span class="text-sm font-bold text-indigo-800 flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    Bulk Edit Selected:
+                </span>
+                
+                <input type="text" id="bulk-brand" placeholder="Brand" class="text-xs border-gray-300 rounded px-2 py-1.5 w-16 shadow-sm">
+                <input type="text" id="bulk-country" placeholder="CTY" class="text-xs border-gray-300 rounded px-2 py-1.5 w-14 shadow-sm">
+                <input type="text" id="bulk-language" placeholder="LNG" class="text-xs border-gray-300 rounded px-2 py-1.5 w-14 shadow-sm">
+                
+                <select id="bulk-product" class="text-xs border-gray-300 rounded px-2 py-1.5 shadow-sm"><option value="">- PRD -</option></select>
+                <select id="bulk-segment" class="text-xs border-gray-300 rounded px-2 py-1.5 shadow-sm"><option value="">- SEG -</option></select>
+                <select id="bulk-lifecycle" class="text-xs border-gray-300 rounded px-2 py-1.5 shadow-sm"><option value="">- LFC -</option></select>
+                <select id="bulk-sublifecycle" class="text-xs border-gray-300 rounded px-2 py-1.5 shadow-sm"><option value="">- SUB -</option></select>
+                <select id="bulk-engagement" class="text-xs border-gray-300 rounded px-2 py-1.5 shadow-sm"><option value="">- ENG -</option></select>
+
+                <button id="btn-apply-bulk" class="ml-auto bg-indigo-600 text-white px-5 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow transition-colors">
+                    Apply to Selected
+                </button>
+            </div>
+
+            <div id="filter-bar" class="bg-gray-100 border-x border-gray-200 px-4 py-2 flex gap-4 text-sm items-center z-10 relative">
+                <span class="font-bold text-gray-600 flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                    Filters:
+                </span>
+                <select id="filter-status" class="border-gray-300 rounded px-2 py-1.5 text-xs shadow-sm font-medium text-gray-700">
+                    <option value="ALL">All Statuses</option>
+                    <option value="Potential Issue">⚠️ Issues</option>
+                    <option value="Warning">⚠️ Warnings</option>
+                    <option value="Success">✅ OK</option>
+                    <option value="Correct">📘 Loader</option>
+                </select>
+                <select id="filter-brand" class="border-gray-300 rounded px-2 py-1.5 text-xs shadow-sm font-medium text-gray-700">
+                    <option value="ALL">All Brands</option>
+                </select>
+            </div>
+
+            <div class="bg-white rounded-b-xl shadow-md border border-gray-200 overflow-hidden flex-grow flex flex-col" style="max-height: 65vh;">
+                <div class="overflow-x-auto overflow-y-auto custom-scrollbar flex-grow">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th scope="col" class="px-3 py-3 text-center bg-gray-50">
+                                    <input type="checkbox" id="select-all" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" title="Select/Deselect all visible rows">
+                                </th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Status</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 min-w-[200px]">Original Name</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Brand">BRN</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Country">CTY</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Language">LNG</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Product">PRD</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Segment">SEG</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Lifecycle">LFC</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="SubLifecycle">SUB</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Engagement">ENG</th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Date">DAT</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider bg-gray-50 min-w-[300px]">Proposed Name (Editable)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="preview-table-body" class="bg-white divide-y divide-gray-200 font-mono text-sm">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="bg-gray-50 px-6 py-3 border-t border-gray-200 text-xs text-gray-500 flex justify-between z-10">
+                    <span id="row-count">0 rows showing</span>
+                    <span id="selection-count" class="font-semibold text-indigo-600"></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="step-3" class="hidden max-w-lg mx-auto text-center pt-8">
+            <div class="mb-8 relative inline-block">
+                <div class="w-40 h-40 rounded-full overflow-hidden border-4 border-white shadow-2xl relative z-20 flex items-center justify-center bg-indigo-500 text-5xl font-bold text-white animate-bounce-slow">
+                    ✓
+                </div>
+                <div class="absolute top-0 left-0 w-40 h-40 rounded-full bg-emerald-500 blur-xl opacity-30 animate-pulse z-10"></div>
+            </div>
+            <h2 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-600 mb-4">Done & Dusted!</h2>
+            <h3 class="text-xl font-semibold text-gray-800 mb-2">Processing Complete</h3>
+            <p class="text-gray-600 mb-8">Your files have been applied and exported to CSV.</p>
+
+            <button onclick="location.reload()"
+                class="px-8 py-3 bg-gray-900 text-white rounded-lg shadow-lg hover:bg-gray-800 font-medium transition-all transform hover:scale-105">
+                Fix Another File 🚀
+            </button>
+        </div>
+
+    </main>
+
+    <script>
+        // ==========================================
+        // CONFIG & DOMAIN KNOWLEDGE
+        // ==========================================
+        const CONFIG = {
+            BRAND_MAPPING: {
+                'VERA JOHN': 'VJ', 'VJ': 'VJ', 'YUUGADO': 'YU', 'YU': 'YU', 'BOABET': 'BOA', 'BOA': 'BOA',
+                'YOUWIN': 'YW', 'YW': 'YW', 'BAHIBI': 'BHB', 'BHB': 'BHB', 'MR OYUN': 'MRO', 'MRO': 'MRO',
+                'BAHIGO': 'BAH', 'BAH': 'BAH', 'WETTIGO': 'WG', 'WG': 'WG', 'HAPPY LUKE': 'HL', 'HL': 'HL',
+                'LIVE CASINO HOUSE': 'LCH', 'LCH': 'LCH', 'AMOK CASINO': 'AMOK', 'AMOK': 'AMOK', 'GEMLER': 'GEMLR', 'GEMLR': 'GEMLR',
+                'GOLDROLL': 'GLDRL', 'GLDRL': 'GLDRL', 'LUCKY JUNGLE': 'LCKYJ', 'LCKYJ': 'LCKYJ', 'MONSINO': 'MSINO', 'MSINO': 'MSINO',
+                'MOUNT GOLD': 'MTGLD', 'MTGLD': 'MTGLD', 'OVERLOAD': 'OVRLD', 'OVRLD': 'OVRLD', 'REFUEL CASINO': 'REFLCN', 'REFLCN': 'REFLCN',
+                'SLOTABLE': 'SLTBL', 'SLTBL': 'SLTBL', 'SPINERO': 'SPNRO', 'SPNRO': 'SPNRO', 'UNLIMIT': 'UNLIMIT', 'UNLIMIT': 'UNLIMIT',
+                'WINZIE': 'WNZIE', 'WNZIE': 'WNZIE', 'BOOMERINO': 'BMR', 'BMR': 'BMR', 'YUKICASINO': 'YUK', 'YUK': 'YUK',
+                'PANGOPLAY': 'PNG', 'PNG': 'PNG', 'NITRO CASINO': 'NTR', 'NTR': 'NTR', 'M88': 'M88',
+                'GOGO': 'GG', 'GG': 'GG', 'BETUK': 'BetUK', 'PINK': 'PNK', '21.CO.UK': '21uk',
+                'BETMGM': 'MGM', 'SLOTBOSS': 'SLTS', 'EXPECT': 'EX', 'ROYAL PANDA': 'RP',
+                'LEO VEGAS': 'LV', 'LV': 'LV', 'LATRIBET': 'LTRB', 'ROJABET': 'LTRB',
+                'INSTASPIN_CS': 'ISNPCS', 'POWERPLAY': 'PP'
+            },
+            SMART_DEFAULTS: {
+                'TR': { lang: 'TR', warning: false },
+                'ES': { lang: 'ES', warning: false },
+                'GB': { lang: 'EN', warning: false },
+                'UK': { lang: 'EN', warning: false },
+                'BR': { lang: 'PT', warning: false },
+                'JP': { lang: 'JA', warning: false },
+                'CA': { lang: 'EN', warning: true },
+                'CH': { lang: 'DE', warning: true },
+                'IN': { lang: 'EN', warning: true }
+            },
+            LISTS: {
+                PRODUCTS: ['SPO', 'CAS', 'LIVE', 'ALL'],
+                // Added Cohorts for A/B Testing
+                SEGMENTS: ['HIGH', 'MID', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4'],
+                LIFECYCLES: ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER'], 
+                SUBLIFECYCLES: ['J1', 'J2', 'J3', 'BULK', 'NA'],
+                ENGAGEMENTS: ['NLI', 'LI']
+            },
+            REGEX: {
+                SQL_DATE: /^(\d{4})-(\d{2})-(\d{2})/
+            },
+            ORDER_KEYS: ['brand', 'country', 'language', 'product', 'segment', 'lifecycle', 'sublifecycle', 'engagement', 'date']
+        };
+
+        let appState = {
+            rows: [], 
+            visibleIndices: [], // Tracks currently filtered view
+            filename: '',
+            selectedIndices: new Set()
+        };
+
+        const els = {
+            step1: document.getElementById('step-1'),
+            step2: document.getElementById('step-2'),
+            step3: document.getElementById('step-3'),
+            ind1: document.getElementById('step-1-indicator'),
+            ind2: document.getElementById('step-2-indicator'),
+            ind3: document.getElementById('step-3-indicator'),
+            dropZone: document.getElementById('drop-zone'),
+            fileInput: document.getElementById('file-input'),
+            errorMsg: document.getElementById('error-message'),
+            tableBody: document.getElementById('preview-table-body'),
+            downloadBtn: document.getElementById('download-btn'),
+            resetBtn: document.getElementById('reset-btn'),
+            rowCount: document.getElementById('row-count'),
+            selectAll: document.getElementById('select-all'),
+            bulkBar: document.getElementById('bulk-edit-bar'),
+            selectionCount: document.getElementById('selection-count'),
+            btnApplyBulk: document.getElementById('btn-apply-bulk'),
+            filterStatus: document.getElementById('filter-status'),
+            filterBrand: document.getElementById('filter-brand')
+        };
+
+        function populateSelects() {
+            const populate = (id, list) => {
+                const el = document.getElementById(id);
+                list.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item;
+                    opt.textContent = item;
+                    el.appendChild(opt);
+                });
+            };
+            populate('bulk-product', CONFIG.LISTS.PRODUCTS);
+            populate('bulk-segment', CONFIG.LISTS.SEGMENTS);
+            populate('bulk-lifecycle', CONFIG.LISTS.LIFECYCLES);
+            populate('bulk-sublifecycle', CONFIG.LISTS.SUBLIFECYCLES);
+            populate('bulk-engagement', CONFIG.LISTS.ENGAGEMENTS);
+        }
+        populateSelects();
+
+        function populateBrandFilter() {
+            els.filterBrand.innerHTML = '<option value="ALL">All Brands</option>';
+            const uniqueBrands = [...new Set(appState.rows.map(r => r._placeholders.brand))].sort();
+            uniqueBrands.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b.startsWith('MISSING') ? 'Missing Brand' : b;
+                els.filterBrand.appendChild(opt);
+            });
+        }
+
+        function switchStep(step) {
+            els.step1.classList.add('hidden');
+            els.step2.classList.add('hidden');
+            els.step3.classList.add('hidden');
+            if (step === 1) els.step1.classList.remove('hidden');
+            if (step === 2) els.step2.classList.remove('hidden');
+            if (step === 3) els.step3.classList.remove('hidden');
+            updateIndicators(step);
+        }
+
+        function updateIndicators(activeStep) {
+            if (activeStep >= 2) {
+                els.ind2.classList.remove('text-indigo-200');
+                els.ind2.classList.add('text-white');
+                els.ind2.querySelector('span').classList.remove('border-indigo-400', 'text-indigo-200');
+                els.ind2.querySelector('span').classList.add('bg-white', 'text-indigo-800', 'border-white');
+            }
+            if (activeStep === 3) {
+                els.ind3.classList.remove('text-indigo-200');
+                els.ind3.classList.add('text-white');
+                els.ind3.querySelector('span').classList.remove('border-indigo-400', 'text-indigo-200');
+                els.ind3.querySelector('span').classList.add('bg-white', 'text-indigo-800', 'border-white');
+
+                const duration = 3 * 1000;
+                const animationEnd = Date.now() + duration;
+                const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+                const interval = setInterval(function () {
+                    const timeLeft = animationEnd - Date.now();
+                    if (timeLeft <= 0) return clearInterval(interval);
+                    const particleCount = 50 * (timeLeft / duration);
+                    confetti(Object.assign({}, defaults, { particleCount, origin: { x: Math.random() * 0.2 + 0.1, y: Math.random() - 0.2 } }));
+                    confetti(Object.assign({}, defaults, { particleCount, origin: { x: Math.random() * 0.2 + 0.7, y: Math.random() - 0.2 } }));
+                }, 250);
+            }
+        }
+
+        function showError(msg) {
+            els.errorMsg.textContent = msg;
+            els.errorMsg.classList.remove('hidden');
+        }
+
+        function parseSQLDate(dateStr) {
+            if (!dateStr || typeof dateStr !== 'string') return null;
+            const match = dateStr.match(CONFIG.REGEX.SQL_DATE);
+            if (!match) return null;
+            return new Date(match[1], match[2] - 1, match[3]);
+        }
+
+        function formatLaunchDate(dateObj) {
+            if (!dateObj || isNaN(dateObj.getTime())) return null;
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+            const month = monthNames[dateObj.getMonth()];
+            const year = dateObj.getFullYear();
+            return `${day}${month}${year}`;
+        }
+
+        function buildProposedName(p) {
+            if (!p) return '';
+            return `${p.brand}-${p.country}-${p.language}-${p.product}-${p.segment}-${p.lifecycle}-${p.sublifecycle}-${p.engagement}-${p.date}`;
+        }
+
+        function evaluateRowStatus(p, warningsArray) {
+            const hasMissing = Object.values(p).some(val => val && val.startsWith('MISSING_'));
+            if (hasMissing) return 'Potential Issue';
+            if (warningsArray && warningsArray.length > 0) return 'Warning';
+            return 'Success';
+        }
+
+        function transformName(row) {
+            const original = row.name || '';
+            const rawStartAt = row.start_at || '';
+
+            if (original.toUpperCase().includes('DELETED')) return null;
+
+            if (original.toUpperCase().includes('LOADER')) {
+                return {
+                    newName: original, status: 'Correct',
+                    placeholders: { brand: '', country: '', language: '', product: '', segment: '', lifecycle: 'LOADER', sublifecycle: '', engagement: '', date: '' },
+                    warnings: []
+                };
+            }
+
+            const tokens = original.toUpperCase().split(/[-_ ]+/).filter(t => t.length > 0);
+            
+            let p = {
+                brand: null, country: null, language: null, product: null,
+                segment: null, lifecycle: null, sublifecycle: null, engagement: null, date: null
+            };
+
+            if (tokens.length > 0) p.brand = CONFIG.BRAND_MAPPING[tokens[0]] || tokens[0];
+
+            for (let i = 1; i < tokens.length; i++) {
+                let t = tokens[i];
+                if (CONFIG.LISTS.PRODUCTS.includes(t) && !p.product) p.product = t;
+                else if (CONFIG.LISTS.SEGMENTS.includes(t) && !p.segment) p.segment = t;
+                else if (CONFIG.LISTS.LIFECYCLES.includes(t) && !p.lifecycle) p.lifecycle = t;
+                else if (CONFIG.LISTS.SUBLIFECYCLES.includes(t) && !p.sublifecycle) p.sublifecycle = t;
+                else if (CONFIG.LISTS.ENGAGEMENTS.includes(t) && !p.engagement) p.engagement = t;
+                else if (t === 'ONT') p.country = 'ONT';
+                else if (/^[A-Z]{2}$/.test(t)) {
+                    if (!p.country) p.country = t;
+                    else if (!p.language) p.language = t;
+                } 
+            }
+
+            if (p.country === 'CA' && original.toUpperCase().includes('ONT')) p.country = 'ONT';
+            if (original.toUpperCase().includes('AFF') || p.segment === 'AFF') {
+                p.segment = 'AFF'; p.lifecycle = 'WB';
+            }
+            if (p.lifecycle === 'ACQ') p.lifecycle = 'RND';
+
+            let warnings = [];
+
+            if (p.country && !p.language && CONFIG.SMART_DEFAULTS[p.country]) {
+                const mapInfo = CONFIG.SMART_DEFAULTS[p.country];
+                p.language = mapInfo.lang;
+                if (mapInfo.warning) {
+                    warnings.push(`Auto-assigned language [${mapInfo.lang}] based on country [${p.country}]. Please verify if correct.`);
+                }
+            }
+
+            const dateObj = parseSQLDate(rawStartAt);
+            p.date = formatLaunchDate(dateObj);
+
+            const finalP = {
+                brand: p.brand || 'MISSING_BRAND',
+                country: p.country || 'MISSING_CTY',
+                language: p.language || 'MISSING_LANG',
+                product: p.product || 'MISSING_PROD',
+                segment: p.segment || 'MISSING_SEG',
+                lifecycle: p.lifecycle || 'MISSING_LIFE',
+                sublifecycle: p.sublifecycle || 'MISSING_SUB',
+                engagement: p.engagement || 'MISSING_ENG',
+                date: p.date || 'MISSING_DATE'
+            };
+
+            return {
+                newName: buildProposedName(finalP),
+                status: evaluateRowStatus(finalP, warnings),
+                placeholders: finalP,
+                warnings: warnings
+            };
+        }
+
+        function sortProcessedRows(rows) {
+            return rows.sort((a, b) => {
+                const score = (s) => s === 'Potential Issue' ? 0 : (s === 'Warning' ? 1 : 2);
+                const scoreA = score(a._status);
+                const scoreB = score(b._status);
+                if (scoreA !== scoreB) return scoreA - scoreB;
+
+                const getMissingSignature = (p) => {
+                    return CONFIG.ORDER_KEYS.filter(k => p[k] && p[k].startsWith('MISSING_')).join(',');
+                };
+                const missingA = getMissingSignature(a._placeholders);
+                const missingB = getMissingSignature(b._placeholders);
+                
+                if (missingA !== missingB) {
+                    return missingA.localeCompare(missingB);
+                }
+
+                for (let k of CONFIG.ORDER_KEYS) {
+                    const valA = a._placeholders[k] || '';
+                    const valB = b._placeholders[k] || '';
+                    if (valA !== valB) {
+                        return valA.localeCompare(valB);
+                    }
+                }
+                return 0; 
+            });
+        }
+
+        function handleFile(file) {
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true,
+                complete: function (results) {
+                    if (results.errors.length > 0) console.warn("CSV Errors:", results.errors);
+                    
+                    const isResumeFile = results.meta.fields.includes('old_name') && results.meta.fields.includes('placeholder_brand');
+                    
+                    if (!isResumeFile && (!results.meta.fields.includes('id') || !results.meta.fields.includes('name'))) {
+                        showError("Invalid CSV format. Unrecognized headers.");
+                        return;
+                    }
+
+                    const processedRows = [];
+                    results.data.forEach(row => {
+                        if (isResumeFile) {
+                            if(!row.old_name) return; 
+                            processedRows.push({
+                                brand_id: row.brand_id,
+                                id: row.campaign_id,
+                                name: row.old_name,
+                                _proposed: row.new_name,
+                                _status: row.status,
+                                _placeholders: {
+                                    brand: row.placeholder_brand,
+                                    country: row.placeholder_country,
+                                    language: row.placeholder_language,
+                                    product: row.placeholder_product,
+                                    segment: row.placeholder_segment,
+                                    lifecycle: row.placeholder_lifecycle,
+                                    sublifecycle: row.placeholder_sublifecycle,
+                                    engagement: row.placeholder_engagement,
+                                    date: row.placeholder_date
+                                },
+                                _warnings: [] 
+                            });
+                        } else {
+                            const transform = transformName(row);
+                            if (transform) {
+                                processedRows.push({
+                                    ...row,
+                                    _proposed: transform.newName,
+                                    _status: transform.status,
+                                    _placeholders: transform.placeholders,
+                                    _warnings: transform.warnings
+                                });
+                            }
+                        }
+                    });
+
+                    appState.rows = sortProcessedRows(processedRows);
+                    appState.filename = file.name.replace('.csv', '').replace('_clean', '') + '_clean.csv';
+                    appState.selectedIndices.clear();
+
+                    populateBrandFilter();
+                    renderPreview();
+                    switchStep(2);
+                },
+                error: function (err) { showError("Parsing error: " + err.message); }
+            });
+        }
+
+        function updateSelectionUI() {
+            const count = appState.selectedIndices.size;
+            if (count > 0) {
+                els.bulkBar.classList.remove('hidden');
+                els.bulkBar.classList.add('flex');
+                els.selectionCount.textContent = `${count} total row(s) selected`;
+            } else {
+                els.bulkBar.classList.add('hidden');
+                els.bulkBar.classList.remove('flex');
+                els.selectionCount.textContent = '';
+            }
+            
+            const allVisibleSelected = appState.visibleIndices.length > 0 && 
+                                       appState.visibleIndices.every(idx => appState.selectedIndices.has(idx));
+            els.selectAll.checked = allVisibleSelected;
+        }
+
+        function renderPreview() {
+            els.tableBody.innerHTML = '';
+            appState.visibleIndices = [];
+
+            const fStatus = els.filterStatus.value;
+            const fBrand = els.filterBrand.value;
+
+            const createBadge = (val, warningText = null) => {
+                if (!val || val === '') return `<span class="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[10px] block text-center">-</span>`;
+                if (val.startsWith('MISSING')) {
+                    return `<span class="px-1.5 py-0.5 bg-red-100 border border-red-300 text-red-700 font-bold rounded text-[10px] block text-center cursor-help" title="Missing required parameter: ${val.replace('MISSING_','')}">MIS</span>`;
+                }
+                if (warningText) {
+                    return `<span class="px-1.5 py-0.5 bg-yellow-100 border border-yellow-300 text-yellow-800 font-bold rounded text-[10px] block text-center cursor-help" title="${warningText}">${val}</span>`;
+                }
+                return `<span class="px-1.5 py-0.5 bg-green-100 border border-green-300 text-green-800 font-bold rounded text-[10px] block text-center">${val}</span>`;
+            };
+
+            appState.rows.forEach((row, index) => {
+                if (fStatus !== 'ALL' && row._status !== fStatus) return;
+                if (fBrand !== 'ALL' && row._placeholders.brand !== fBrand) return;
+
+                appState.visibleIndices.push(index);
+
+                const tr = document.createElement('tr');
+                tr.className = `transition-colors ${appState.selectedIndices.has(index) ? 'bg-indigo-50/50' : 'hover:bg-gray-50'}`;
+
+                let statusBadge = '';
+                if (row._status === 'Potential Issue') {
+                    const missingElements = Object.entries(row._placeholders)
+                        .filter(([_, val]) => val && val.startsWith('MISSING_'))
+                        .map(([_, val]) => val.replace('MISSING_', ''))
+                        .join(', ');
+                    statusBadge = `<span class="px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded whitespace-nowrap shadow-sm border border-red-200 cursor-help" title="Missing: ${missingElements}">⚠️ ISSUE</span>`;
+                } else if (row._status === 'Warning') {
+                    const warningJoined = row._warnings && row._warnings.length > 0 ? row._warnings.join('\n') : "Resumed Warning";
+                    statusBadge = `<span class="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded whitespace-nowrap shadow-sm border border-yellow-200 cursor-help" title="${warningJoined}">⚠️ WARN</span>`;
+                } else if (row._status === 'Correct') {
+                    statusBadge = `<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded whitespace-nowrap shadow-sm border border-blue-200">📘 LOADER</span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded whitespace-nowrap shadow-sm border border-green-200">✅ OK</span>`;
+                }
+
+                const p = row._placeholders;
+                const isSelected = appState.selectedIndices.has(index);
+                const langWarningText = (row._warnings || []).find(w => w.includes('Auto-assigned'));
+
+                tr.innerHTML = `
+                    <td class="px-3 py-3 text-center whitespace-nowrap">
+                        <input type="checkbox" class="row-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-200 cursor-pointer" data-index="${index}" ${isSelected ? 'checked' : ''}>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">${statusBadge}</td>
+                    <td class="px-4 py-3 text-gray-700" title="${row.name}">
+                        <div class="text-[10px] font-bold text-gray-400 mb-0.5 uppercase tracking-wider">ID: ${row.id || 'N/A'}</div>
+                        <div class="truncate w-48 font-medium">${row.name || ''}</div>
+                    </td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.brand)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.country)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.language, langWarningText)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.product)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.segment)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.lifecycle)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.sublifecycle)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.engagement)}</td>
+                    <td class="px-1 py-3 whitespace-nowrap">${createBadge(p.date)}</td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <input type="text" 
+                            class="w-full ${row._status === 'Potential Issue' ? 'bg-red-50 border-red-300 text-red-900 focus:ring-red-500' : (row._status === 'Warning' ? 'bg-yellow-50 border-yellow-300 text-yellow-900 focus:ring-yellow-500' : 'bg-green-50 border-green-300 text-green-900 focus:ring-green-500')} font-bold rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 transition-shadow"
+                            value="${row._proposed}"
+                            data-index="${index}"
+                            onchange="updateRowManual(${index}, this.value)"
+                        >
+                    </td>
+                `;
+                els.tableBody.appendChild(tr);
+            });
+
+            els.rowCount.textContent = `${appState.visibleIndices.length} rows showing (out of ${appState.rows.length})`;
+
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    if (e.target.checked) appState.selectedIndices.add(idx);
+                    else appState.selectedIndices.delete(idx);
+                    updateSelectionUI();
+                    
+                    const tr = e.target.closest('tr');
+                    if(e.target.checked) { tr.classList.add('bg-indigo-50/50'); tr.classList.remove('hover:bg-gray-50'); }
+                    else { tr.classList.remove('bg-indigo-50/50'); tr.classList.add('hover:bg-gray-50'); }
+                });
+            });
+            updateSelectionUI();
+        }
+
+        window.updateRowManual = function (index, newValue) {
+            appState.rows[index]._proposed = newValue;
+        };
+
+        els.filterStatus.addEventListener('change', renderPreview);
+        els.filterBrand.addEventListener('change', renderPreview);
+
+        els.btnApplyBulk.addEventListener('click', () => {
+            const edits = {
+                brand: document.getElementById('bulk-brand').value.trim().toUpperCase(),
+                country: document.getElementById('bulk-country').value.trim().toUpperCase(),
+                language: document.getElementById('bulk-language').value.trim().toUpperCase(),
+                product: document.getElementById('bulk-product').value,
+                segment: document.getElementById('bulk-segment').value,
+                lifecycle: document.getElementById('bulk-lifecycle').value,
+                sublifecycle: document.getElementById('bulk-sublifecycle').value,
+                engagement: document.getElementById('bulk-engagement').value
+            };
+
+            appState.selectedIndices.forEach(idx => {
+                const row = appState.rows[idx];
+                const p = row._placeholders;
+
+                if (edits.brand) p.brand = edits.brand;
+                if (edits.country) p.country = edits.country;
+                if (edits.language) p.language = edits.language;
+                if (edits.product) p.product = edits.product;
+                if (edits.segment) p.segment = edits.segment;
+                if (edits.lifecycle) p.lifecycle = edits.lifecycle;
+                if (edits.sublifecycle) p.sublifecycle = edits.sublifecycle;
+                if (edits.engagement) p.engagement = edits.engagement;
+
+                if (edits.language && row._warnings) {
+                    row._warnings = row._warnings.filter(w => !w.includes('Auto-assigned'));
+                }
+
+                row._status = evaluateRowStatus(p, row._warnings);
+                row._proposed = buildProposedName(p);
+            });
+
+            document.getElementById('bulk-brand').value = '';
+            document.getElementById('bulk-country').value = '';
+            document.getElementById('bulk-language').value = '';
+            document.getElementById('bulk-product').value = '';
+            document.getElementById('bulk-segment').value = '';
+            document.getElementById('bulk-lifecycle').value = '';
+            document.getElementById('bulk-sublifecycle').value = '';
+            document.getElementById('bulk-engagement').value = '';
+            
+            appState.selectedIndices.clear();
+            
+            appState.rows = sortProcessedRows(appState.rows);
+            renderPreview();
+        });
+
+        els.selectAll.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                appState.visibleIndices.forEach(idx => appState.selectedIndices.add(idx));
+            } else {
+                appState.visibleIndices.forEach(idx => appState.selectedIndices.delete(idx));
+            }
+            renderPreview(); 
+        });
+
+        function exportCSV() {
+            const exportData = appState.rows.map(row => ({
+                brand_id: row.brand_id,
+                campaign_id: row.id,
+                old_name: row.name,
+                new_name: row._proposed,
+                placeholder_brand: row._placeholders.brand,
+                placeholder_country: row._placeholders.country,
+                placeholder_language: row._placeholders.language,
+                placeholder_product: row._placeholders.product,
+                placeholder_segment: row._placeholders.segment,
+                placeholder_lifecycle: row._placeholders.lifecycle,
+                placeholder_sublifecycle: row._placeholders.sublifecycle,
+                placeholder_engagement: row._placeholders.engagement,
+                placeholder_date: row._placeholders.date,
+                status: row._status
+            }));
+
+            const csv = Papa.unparse(exportData, { delimiter: ";", header: true });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", appState.filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            switchStep(3);
+        }
+
+        // Events
+        els.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); els.dropZone.classList.add('border-indigo-400', 'bg-indigo-50'); });
+        els.dropZone.addEventListener('dragleave', () => { els.dropZone.classList.remove('border-indigo-400', 'bg-indigo-50'); });
+        els.dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            els.dropZone.classList.remove('border-indigo-400', 'bg-indigo-50');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        els.fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+        els.resetBtn.addEventListener('click', () => { appState.rows = []; appState.selectedIndices.clear(); switchStep(1); });
+        els.downloadBtn.addEventListener('click', exportCSV);
+
+    </script>
+</body>
+
+</html>

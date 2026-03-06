@@ -13,10 +13,11 @@
 ### 2.1 Database Tables (Single Source of Truth)
 - **`ops_telemarketing_data`:** Core telemarketing operational records. Columns include `ops_hash`, `ops_client`, `ops_brand`, `ops_date`, total dials, connections, promises, etc.
 - **`financial_data`:** Core financial records populated from ingestion. Columns match the Smart Adapters (e.g., `brand`, `month`, `ogr`, `ngr`, `deposits`).
-- **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`. Used to normalize incoming data and intercept/quarantine orphaned tags.
+- **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`, `financial_format` (Enum: Standard, LeoVegas, Offside). Used to normalize incoming data and intercept/quarantine orphaned tags.
 - **`contractual_slas`:** Stores client-specific SLA thresholds for Operations command tracking. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`, `target_cac_usd`, `benchmark_conv_pct`.
 
-### 2.2 Smart Adapter Mappings & Fallbacks
+### 2.1.1 Deterministic UI-Driven Parsers
+- The parser logic is now explicitly mapped in the database via the `financial_format` column, completely replacing the legacy "column sniffing" fallback.
 - **LeoVegas Path (V2.0):** Maps `"Player Key"` -> `"id"`, extracts true `"ngr"` from `"NGR (Total) € after Tax"`, and ingests specific Casino/Sports splits. 
 - **Offside Gaming Path (Fallback):** Maps `"Player unique identifier"` -> `"id"`. Enforces default fallbacks where `ngr = revenue`, `country = "Global"`, and Casino/Sports vertical splits are zeroed out.
 
@@ -92,13 +93,20 @@ Evaluated row-by-row in this strict priority order:
 ### 4.1 🧭 4-Tier Navigation Router & Global Filters
 - **Sidebar Router:** Replaced flat-tab structure with a role-based radio router (`view_mode`):
   1. `📊 Dashboard`: Executive/CRM intelligence.
-  2. `📞 Operations`: Operations Control and CallsU metrics.
+  2. `📞 Operations`: Operations Command and Ingestion.
   3. `🏦 Financial`: Financial Deep-Dive and Ingestion dropzones.
   4. `⚙️ Admin`: Client Hub and settings.
 - **🌍 GLOBAL INTELLIGENCE FILTERS:**
   - Placed in the sidebar globally. DB-Hydrated logic explicitly strips hidden whitespace to prevent filtering bugs.
   - Cascading logic: **Client** selection perfectly limits the **Brand** dropdown to registered components via SQL `WHERE` clauses on `client_mapping`.
   - UX Trick: Auto-selects the brand if the client only has 1 registered.
+  - Unified Time Frame Filter (Date Slider): Synchronously slices both Financial (report_month) and Operations (ops_date) data across all tabs.
+
+### 4.2 ⚡ Real-Time Auto-Hydration & Ingestion Decoupling
+- **Decentralized Ingestion:** Legacy Data Control Room destroyed. Uploaders are now scoped to their specific domains:
+  - 🏦 Financial uploads occur inside the `📥 Financial Ingestion` workspace.
+  - 📞 Operations uploads occur inside the `🗄️ Operations Ingestion` workspace.
+- **Analytical Auto-Hydration:** The dashboard computations (Monthly Summaries, Cohorts, Segmentations, etc.) are instantly generated from the PostgreSQL filtered `_master_df` using `@st.cache_data` wrappers to prevent blocking the main thread.
 
 ### 4.2 ⚙️ Admin Tier: Client Hub
 - **Master Health Board:** Displays a dynamic grid showing the absolute timestamps of the latest Financial and Operational files uploaded per client, alongside their active SLA counts.
@@ -119,3 +127,8 @@ Evaluated row-by-row in this strict priority order:
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence
 - **Campaigns:** Funnel visualizations and tracking per brand.
 - **CRM Intelligence:** Global selectbox, 👑 Crown Jewels vs ⚠️ Bonus Abusers leaderboards, Churn Targeting generator. Note: Smart Campaign Profiling expands to a responsive 2-row grid to accommodate the 6 distinct active VIP heuristics.
+
+### 4.6 Report Generation Engine
+- **Financial Report:** Exported from the Financial Deep-Dive tab.
+- **Operations Report:** Exported from the Operations Command tab.
+- **Master Report (Combined):** Exported from the Executive Summary tab, appending an Operations Tracker tab to the standard financial workbook.

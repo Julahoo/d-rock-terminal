@@ -1,9 +1,17 @@
 import os
 import pandas as pd
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 
-# Fetch the Database URL from Docker environment variables, fallback to local if needed
+load_dotenv()
+
+# Fetch the Database URL from Docker or Railway environment variables, fallback to local if needed
 DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:supersecretpassword@localhost:5432/drock")
+
+# Railway's Postgres URL might start with postgres:// instead of postgresql:// (SQLAlchemy requires postgresql://)
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(DB_URL)
 
 def init_db():
@@ -19,18 +27,32 @@ def init_db():
             )
         """))
         conn.execute(text("ALTER TABLE client_mapping ADD COLUMN IF NOT EXISTS brand_name VARCHAR(100)"))
+        conn.execute(text("ALTER TABLE client_mapping ADD COLUMN IF NOT EXISTS financial_format VARCHAR(50) DEFAULT 'Standard'"))
         
-        # 2. Contractual SLAs
+        # 2. Dual-Layer SLAs & Benchmarks
+        # Drop legacy single-table logic
+        conn.execute(text("DROP TABLE IF EXISTS contractual_slas CASCADE"))
+        
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS contractual_slas (
+            CREATE TABLE IF NOT EXISTS contractual_volumes (
                 id SERIAL PRIMARY KEY,
                 client_name VARCHAR(100) NOT NULL,
                 brand_code VARCHAR(50) NOT NULL,
                 lifecycle VARCHAR(50) NOT NULL,
                 monthly_minimum_records INT NOT NULL,
-                target_cac_usd DECIMAL(10, 2),
-                benchmark_conv_pct DECIMAL(5, 4),
                 UNIQUE(client_name, brand_code, lifecycle)
+            )
+        """))
+        
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS granular_benchmarks (
+                id SERIAL PRIMARY KEY,
+                client_name VARCHAR(100) NOT NULL,
+                brand_code VARCHAR(50) NOT NULL,
+                campaign_signature VARCHAR(150) UNIQUE NOT NULL,
+                target_conv_pct DECIMAL(5, 4),
+                target_li_pct DECIMAL(5, 4),
+                target_cac_usd DECIMAL(10, 2)
             )
         """))
         
@@ -59,6 +81,9 @@ def init_db():
                 ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
+
+        # --- HEAL LEGACY OPERATIONS DATES (2025_02 -> 2025-02) ---
+        conn.execute(text("UPDATE ops_telemarketing_data SET ops_date = REPLACE(ops_date, '_', '-')"))
         
         # Safe Migration: Add columns to existing table if they don't exist
         new_columns = [
@@ -70,19 +95,59 @@ def init_db():
         for col_def in new_columns:
             conn.execute(text(f"ALTER TABLE ops_telemarketing_data ADD COLUMN IF NOT EXISTS {col_def}"))
 
-        # 4. Financial Historical Data
+        # 4. Raw Financial Historical Data
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS financial_data (
-                id SERIAL PRIMARY KEY,
-                client VARCHAR(100) NOT NULL,
-                brand VARCHAR(50) NOT NULL,
-                month VARCHAR(50) NOT NULL,
-                ngr DECIMAL(15, 2) DEFAULT 0.0,
-                deposits DECIMAL(15, 2) DEFAULT 0.0,
-                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(client, brand, month)
+            CREATE TABLE IF NOT EXISTS raw_financial_data (
+                db_id SERIAL PRIMARY KEY,
+                player_id VARCHAR(255),
+                client VARCHAR(100),
+                brand VARCHAR(50),
+                country VARCHAR(50),
+                wb_tag VARCHAR(100),
+                segment VARCHAR(100),
+                bet DECIMAL(15, 2),
+                revenue DECIMAL(15, 2),
+                ngr DECIMAL(15, 2),
+                bet_casino DECIMAL(15, 2),
+                revenue_casino DECIMAL(15, 2),
+                ngr_casino DECIMAL(15, 2),
+                bet_sports DECIMAL(15, 2),
+                revenue_sports DECIMAL(15, 2),
+                ngr_sports DECIMAL(15, 2),
+                deposit_count INT,
+                deposits DECIMAL(15, 2),
+                withdrawals DECIMAL(15, 2),
+                bonus_total DECIMAL(15, 2),
+                bonus_casino DECIMAL(15, 2),
+                bonus_sports DECIMAL(15, 2),
+                tax_total DECIMAL(15, 2),
+                report_month VARCHAR(50),
+                reactivation_date TIMESTAMP,
+                campaign_start_date TIMESTAMP,
+                reactivation_days INT,
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
+
+        # 5. User Authentication Registry
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                name VARCHAR(100),
+                allowed_clients JSONB NOT NULL
+            )
+        """))
+
+        # Auto-Seed Default Superadmin
+        import json
+        conn.execute(text("""
+            INSERT INTO users (username, password, role, name, allowed_clients) 
+            VALUES ('superadmin', '123', 'Superadmin', 'Global Overlord', :ac)
+            ON CONFLICT (username) DO NOTHING
+        """), {"ac": json.dumps(["All"])})
 
         conn.commit()
         print("✅ Database initialized successfully.")

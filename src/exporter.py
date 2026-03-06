@@ -281,6 +281,7 @@ def export_to_excel(
     cohort_matrices: dict[str, pd.DataFrame] | None = None,
     segmentation_df: pd.DataFrame | None = None,
     both_business_df: pd.DataFrame | None = None,
+    ops_df: pd.DataFrame | None = None,
 ) -> io.BytesIO:
     """Write *summary_df* to a multi-tab Excel workbook in-memory.
 
@@ -348,6 +349,11 @@ def export_to_excel(
         if segmentation_df is not None and not segmentation_df.empty:
             _write_segmentation_tab(writer, segmentation_df)
             logger.info("Exported 'Segmentation' tab (%d rows)", len(segmentation_df))
+
+        # ── Operations tab (Phase 23) ────────────────────────────────
+        if ops_df is not None and not ops_df.empty:
+            _write_ops_tab(writer, ops_df)
+            logger.info("Exported 'Operations Tracker' tab (%d rows)", len(ops_df))
 
         logger.info("Exported %d brand(s) to in-memory buffer", len(brands))
 
@@ -534,4 +540,22 @@ def _pretty_month(ym: str) -> str:
     """Convert 'YYYY-MM' → 'Month YYYY'."""
     y, m = (int(x) for x in ym.split("-"))
     return f"{calendar.month_name[m]} {y}"
+
+def export_ops_to_excel(ops_df: pd.DataFrame) -> io.BytesIO:
+    """Standalone export for Operations data."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        _write_ops_tab(writer, ops_df)
+    buf.seek(0)
+    return buf
+
+def _write_ops_tab(writer, ops_df: pd.DataFrame) -> None:
+    """Write the Operations data to the workbook."""
+    sheet_name = "Operations Tracker"
+    # Ensure we don't hit Excel sheet name length limits
+    ops_df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1, header=False)
+    ws = writer.sheets[sheet_name]
+    headers = list(ops_df.columns)
+    _write_header(ws, headers)
+    _auto_column_widths(ws, headers)
 

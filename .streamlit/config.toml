@@ -1,6 +1,15 @@
 [theme]
-primaryColor = "#00FF41"
-backgroundColor = "#000000"
-secondaryBackgroundColor = "#0D0D0D"
-textColor = "#00FF41"
-font = "monospace"
+# The primary accent color for interactive elements (sleek neon blue)
+primaryColor = "#3b82f6"
+
+# The main app background color (deep slate gray/dark mode)
+backgroundColor = "#0f172a"
+
+# The secondary background color for sidebars and input widgets
+secondaryBackgroundColor = "#1e293b"
+
+# The main text color
+textColor = "#f8fafc"
+
+# The font family
+font = "sans serif"

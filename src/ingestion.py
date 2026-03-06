@@ -50,9 +50,21 @@ NUMERIC_COLS = [
 
 # ── Operations & Telemarketing Mapping ────────────────────────────────
 CLIENT_HIERARCHY = {
-    'BAH': 'REL', 'YW': 'LIM', 'MRO': 'LIM', 'VJ': 'SIM', 'YU': 'SIM', 
-    'LV': 'LeoVegas Group', 'LTRB': 'Offside Gaming', 'ROJA': 'Offside Gaming',
-    'CASINODAYS': 'RHN'
+    # Map specific brand tags to their Enterprise Client Names
+    'BAH': 'Reliato',
+    'YW': 'Limitless',
+    'VJ': 'Simplicity Malta Limited',
+    'PP': 'PowerPlay',
+    'RHN': 'Rhino',
+    'INSP': 'Magico Games/Interspin',
+    'PE': 'PressEnter',
+    'LV': 'LeoVegas Group',
+    'ROJB': 'Reliato',
+    'MRO': 'Limitless',
+    'YU': 'Simplicity Malta Limited',
+    'LTRB': 'Offside Gaming',
+    'ROJA': 'Offside Gaming',
+    'CASINODAYS': 'Rhino'
 }
 
 BRAND_CODE_MAP = {
@@ -424,19 +436,14 @@ def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
     return brand, f"{year}-{month}"
 
 
-def _normalise_player_columns(df: pd.DataFrame, source_label: str) -> Optional[pd.DataFrame]:
-    """Smart Router: detect CSV format by headers and normalise to spec columns.
-
-    - "Player Key" in headers        → LeoVegas Group format
-    - "Player unique identifier"      → Offside Gaming format
-    - Otherwise                       → unrecognisable, returns None
-    """
+def _normalise_player_columns(df: pd.DataFrame, source_label: str, target_format: str = "Standard", target_client: str = "UNKNOWN", target_brand: str = "UNKNOWN") -> Optional[pd.DataFrame]:
+    """Deterministic Router: normalise to spec columns based on financial format."""
     # --- SCRUB INVISIBLE BOMs AND WHITESPACE FROM HEADERS ---
     df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-    if "Player Key" in df.columns:
+    if target_format == "LeoVegas":
         # ── LeoVegas Group path ──────────────────────────────────────────
-        logger.info("[SmartRouter] %s → LeoVegas Group format detected", source_label)
+        logger.info("[DeterministicRouter] %s → LeoVegas format applied", source_label)
 
         # Coerce numerics BEFORE rename to handle blank / string cells
         for raw_col in LEOVEGAS_NUMERIC_RAW:
@@ -498,11 +505,17 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str) -> Optional[p
         df["reactivation_days"] = (df["reactivation_date"] - df["campaign_start_date"]).dt.days
 
         # Tag client entity
-        df["client"] = "LeoVegas Group"
+        df["client"] = target_client
+        # Respect native multi-brand tracker data if present (e.g., LeoVegas trackers)
+        if "brand" in df.columns:
+            # Ensure empty strings are treated as NA, then fallback to target_brand
+            df["brand"] = df["brand"].replace("", pd.NA).fillna(target_brand)
+        else:
+            df["brand"] = target_brand
 
-    elif "Player unique identifier" in df.columns:
+    elif target_format == "Offside":
         # ── Offside Gaming path ──────────────────────────────────────────
-        logger.info("[SmartRouter] %s → Offside Gaming format detected", source_label)
+        logger.info("[DeterministicRouter] %s → Offside Gaming format applied", source_label)
 
         missing_cols = [c for c in COL_MAP if c not in df.columns]
         if missing_cols:
@@ -518,7 +531,8 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str) -> Optional[p
             df["segment"] = df["wb_tag"]
 
         # Tag client entity
-        df["client"] = "Offside Gaming"
+        df["client"] = target_client
+        df["brand"] = target_brand
         # Fallback NGR to equal GGR (revenue) for clients without tax data
         df["ngr"] = df["revenue"]
         # Fallback Country to 'Global' for clients without geographic data
@@ -550,15 +564,10 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str) -> Optional[p
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     else:
-        # ── Unrecognised ─────────────────────────────────────────────────
-        logger.warning(
-            "[SmartRouter] %s – unrecognisable column format: %s",
-            source_label, list(df.columns),
-        )
+        # ── Unrecognised/Standard ────────────────────────────────────────
+        logger.warning("[DeterministicRouter] %s – No valid parser mapped for format: %s", source_label, target_format)
         return None
 
-    # ── Common post-processing ───────────────────────────────────────────
-    df["brand"] = df["brand"].str.strip().str.title()
     return df
 
 
@@ -614,8 +623,23 @@ def load_all_data_from_uploads(
     -------
     (DataFrame, IngestionRegistry)
     """
-    registry = IngestionRegistry()
+    registry = IngestionRegistry.load()
     frames: list[pd.DataFrame] = []
+
+    try:
+        mapping_df = pd.read_sql("SELECT brand_code, brand_name, client_name, financial_format FROM client_mapping", db_engine)
+        fin_map = {}
+        for _, row in mapping_df.iterrows():
+            val = {
+                'client': row['client_name'], 
+                'brand': row['brand_name'] if pd.notna(row.get('brand_name')) else row['brand_code'],
+                'format': row.get('financial_format', 'Standard')
+            }
+            # Map by both code and name for bulletproof fallback
+            if pd.notna(row.get('brand_name')): fin_map[str(row['brand_name']).strip().lower()] = val
+            if pd.notna(row.get('brand_code')): fin_map[str(row['brand_code']).strip().lower()] = val
+    except:
+        fin_map = {}
 
     for f in files:
         parsed = _parse_filename(f.name)
@@ -624,6 +648,28 @@ def load_all_data_from_uploads(
             continue
 
         brand_key, report_month = parsed
+        mapped_info = fin_map.get(brand_key.strip().lower(), {})
+        target_format = mapped_info.get('format', 'Standard')
+        target_client = mapped_info.get('client', 'UNKNOWN')
+        target_brand = mapped_info.get('brand', brand_key.title())
+
+        # --- PARENT-CHILD FORMAT INHERITANCE OVERRIDE ---
+        if target_client == 'LeoVegas Group':
+            target_format = 'LeoVegas'
+        elif target_client == 'Offside Gaming' or 'Offside' in target_client:
+            target_format = 'Offside'
+
+        # --- DUPLICATE PROTECTION ---
+        try:
+            import streamlit as st
+            # Check if this exact brand + month combination already exists in the raw data table
+            check_query = f"SELECT 1 FROM raw_financial_data WHERE brand = '{target_brand}' AND report_month = '{report_month}' LIMIT 1"
+            exists = pd.read_sql(check_query, db_engine)
+            if not exists.empty:
+                st.warning(f"⚠️ Rejected '{f.name}': Data for {target_brand} ({report_month}) already exists in the database.")
+                continue # Skip to the next file
+        except Exception as e:
+            pass # If DB check fails for any reason, safely proceed
 
         try:
             if f.name.lower().endswith(".xlsx"):
@@ -634,8 +680,8 @@ def load_all_data_from_uploads(
             logger.exception("Failed to read %s", f.name)
             continue
 
-        # Normalise columns via Smart Router
-        df = _normalise_player_columns(raw, f.name)
+        # Normalise columns via Deterministic Router
+        df = _normalise_player_columns(raw, f.name, target_format, target_client, target_brand)
         if df is None:
             continue
 
@@ -660,38 +706,12 @@ def load_all_data_from_uploads(
     # --- PERMANENT DB SAVE FOR FINANCIAL DATA ---
     if not unified.empty:
         try:
-            mapping_df = pd.read_sql("SELECT brand_code, brand_name, client_name FROM client_mapping", db_engine)
-            # Map by Brand Name -> Client (for financials)
-            fin_map = {str(row['brand_name']).upper(): row['client_name'] for _, row in mapping_df.iterrows() if pd.notnull(row.get('brand_name'))}
-
-            brand_col = next((c for c in unified.columns if 'brand' in c.lower()), None)
-
-            if brand_col:
-                records = []
-                for f in files:
-                    date_match = re.search(r'20\d{2}_\d{2}', f.name)
-                    file_month = date_match.group(0) if date_match else "UNKNOWN_DATE"
-
-                    unique_brands = unified[unified['report_month'] == file_month][brand_col].dropna().unique() if 'report_month' in unified.columns else unified[brand_col].dropna().unique()
-                    for b in unique_brands:
-                        clean_brand = str(b).strip()
-                        client = fin_map.get(clean_brand.upper(), "UNKNOWN")
-
-                        ngr_col = next((c for c in unified.columns if 'ngr' in c.lower() or 'net' in c.lower()), None)
-                        total_ngr = unified[unified[brand_col] == b][ngr_col].sum() if ngr_col else 0.0
-
-                        records.append({
-                            "client": client,
-                            "brand": clean_brand,
-                            "month": file_month,
-                            "ngr": float(total_ngr),
-                            "deposits": 0.0
-                        })
-
-                if records:
-                    fin_db_df = pd.DataFrame(records)
-                    fin_db_df.to_sql("financial_data", db_engine, if_exists="append", index=False)
-                    print(f"✅ PERMANENTLY SAVED Financial Data to Database!")
+            # 'unified' already has client, brand, and report_month correctly assigned!
+            db_df = unified.rename(columns={"id": "player_id"}) # Rename to avoid PostgreSQL PK conflict
+            expected_cols = ["player_id", "client", "brand", "country", "wb_tag", "segment", "bet", "revenue", "ngr", "bet_casino", "revenue_casino", "ngr_casino", "bet_sports", "revenue_sports", "ngr_sports", "deposit_count", "deposits", "withdrawals", "bonus_total", "bonus_casino", "bonus_sports", "tax_total", "report_month", "reactivation_date", "campaign_start_date", "reactivation_days"]
+            db_df = db_df[[c for c in expected_cols if c in db_df.columns]]
+            db_df.to_sql("raw_financial_data", db_engine, if_exists="append", index=False)
+            print(f"✅ PERMANENTLY SAVED Raw Financial Data to Database!")
         except Exception as e:
             print(f"⚠️ Could not save financial data to DB: {e}")
 
@@ -788,15 +808,36 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
         
         if "Campaign Name" not in df.columns: continue
             
-        ops_metrics = ["Calls", "KPI1-Conv.", "Cost Caller", "Cost SIP", "Cost SMS", "Cost Email", 
-                       "D", "D+", "D-", "D Ratio", "T", "AM", "DNC", "NA", "DX", "WN"]
+        ops_metrics = ["# Records", "Calls", "KPI1-Conv.", "KPI2-Login", "LI%", "Cost Caller", "Cost SIP", "Cost SMS", "Cost Email", 
+                       "D", "D+", "D-", "D Ratio", "T", "AM", "DNC", "NA", "DX", "WN",
+                       "HLRV", "2XRV", "SA", "SD", "SF", "SP", "EV", "ES", "ED", "EO", "EC", "EF", 
+                       "Optouts (All)", "Optout - Call", "Optout - SMS", "Optout - Email"]
         for col in ops_metrics:
             if col not in df.columns: df[col] = 0.0
             else: df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         
         records_to_insert = []
-        date_match = re.search(r'20\d{2}_\d{2}', f.name)
-        file_date = date_match.group(0) if date_match else "UNKNOWN_DATE"
+        # --- EXTRACT DATE FROM FILENAME ---
+        # Attempt to parse Daily format first (e.g., 2026-02-14 or 2026_02_14)
+        daily_match = re.search(r'(20\d{2})[-_](\d{2})[-_](\d{2})', f.name)
+        # Fallback for Legacy Monthly format
+        monthly_match = re.search(r'(20\d{2})[-_](\d{2})', f.name)
+        
+        if daily_match:
+            report_date = f"{daily_match.group(1)}-{daily_match.group(2)}-{daily_match.group(3)}"
+        elif monthly_match:
+            # Legacy fallback appends -01
+            report_date = f"{monthly_match.group(1)}-{monthly_match.group(2)}-01"
+        else:
+            print(f"⚠️ Warning: Could not parse date from {f.name}. Skipping.")
+            continue
+
+        # --- ASSIGN DAILY DATE TO ALL ROWS ---
+        if 'Date' in df.columns:
+            df['ops_date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+        else:
+            # Use the exact daily date parsed from the filename
+            df['ops_date'] = report_date
 
         for _, row in df.iterrows():
             campaign = str(row.get("Campaign Name", "UNKNOWN"))
@@ -815,26 +856,52 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             convs = int(row["KPI1-Conv."])
             total_cost = row["Cost Caller"] + row["Cost SIP"] + row["Cost SMS"] + row["Cost Email"]
             true_cac = total_cost / convs if convs > 0 else 0.0
+            file_date = row["ops_date"]
             
             records_to_insert.append({
                 "campaign_name": f"{campaign}_{file_date}",
                 "ops_client": client,
                 "ops_brand": brand_name,
                 "ops_date": file_date,
+                "records": int(row.get("# Records", 0)),
                 "calls": calls,
                 "conversions": convs,
                 "total_cost": total_cost,
                 "true_cac": true_cac,
                 "d_total": int(row["D"]),
-                "d_plus": int(row["D+"]),
-                "d_minus": int(row["D-"]),
+                "d_plus": int(row.get("D+", 0)),
+                "d_minus": int(row.get("D-", 0)),
+                "d_neutral": int(row.get("D", 0)),
                 "d_ratio": float(row["D Ratio"]),
+                "kpi2_logins": int(row["KPI2-Login"]),
+                "li_pct": float(row["LI%"]),
                 "tech_issues": int(row["T"]),
-                "am": int(row["AM"]),
-                "dnc": int(row["DNC"]),
-                "na": int(row["NA"]),
-                "dx": int(row["DX"]),
-                "wn": int(row["WN"])
+                "t": int(row.get("T", 0)),
+                "am": int(row.get("AM", 0)),
+                "dnc": int(row.get("DNC", 0)),
+                "na": int(row.get("NA", 0)),
+                "dx": int(row.get("DX", 0)),
+                "wn": int(row.get("WN", 0)),
+                "cost_caller": float(row.get("Cost Caller", 0)),
+                "cost_sip": float(row.get("Cost SIP", 0)),
+                "cost_sms": float(row.get("Cost SMS", 0)),
+                "cost_email": float(row.get("Cost Email", 0)),
+                "hlrv": int(row.get("HLRV", 0)),
+                "twoxrv": int(row.get("2XRV", 0)),
+                "sa": int(row.get("SA", 0)),
+                "sd": int(row.get("SD", 0)),
+                "sf": int(row.get("SF", 0)),
+                "sp": int(row.get("SP", 0)),
+                "ev": int(row.get("EV", 0)),
+                "es": int(row.get("ES", 0)),
+                "ed": int(row.get("ED", 0)),
+                "eo": int(row.get("EO", 0)),
+                "ec": int(row.get("EC", 0)),
+                "ef": int(row.get("EF", 0)),
+                "optouts_all": int(row.get("Optouts (All)", 0)),
+                "optout_call": int(row.get("Optout - Call", 0)),
+                "optout_sms": int(row.get("Optout - SMS", 0)),
+                "optout_email": int(row.get("Optout - Email", 0))
             })
             
         if records_to_insert:
@@ -842,9 +909,16 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             try:
                 # Save permanently to PostgreSQL
                 batch_df.to_sql("ops_telemarketing_data", db_engine, if_exists="append", index=False)
-                print(f"✅ PERMANENTLY SAVED {f.name} to Database!")
+                print(f"✅ PERMANENTLY SAVED {f.name} to PostgreSQL!")
             except Exception as e:
-                print(f"⚠️ Could not save {f.name} to DB (might be a duplicate): {e}")
+                print(f"⚠️ Could not save {f.name} to Main DB (might be a duplicate): {e}")
+
+            try:
+                # Save Snapshot (No unique constraints, always appends a point-in-time record)
+                batch_df.to_sql("ops_telemarketing_snapshots", db_engine, if_exists="append", index=False)
+                print(f"📸 SNAPSHOT SAVED for {f.name}!")
+            except Exception as e_snap:
+                print(f"⚠️ Could not save snapshot for {f.name}: {e_snap}")
             
             frames.append(batch_df)
 

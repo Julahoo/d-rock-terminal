@@ -1,4 +1,4 @@
-# DEVELOPMENT LOG
+﻿# DEVELOPMENT LOG
 **Status:** V2.0 Enterprise Ready (Multi-Client Architecture Deployed)
 **Started:** 2026-03-01
 
@@ -448,3 +448,370 @@
 - Built `🏢 Client Hub` in the Admin tier: features a Master Health Board and Drill-Down Profiles per client.
 - Built the Inverted Data Completeness Matrix (Months as Rows, Brands as Columns) inside the Client Profile.
 - Rebuilt Global Filters to hydrate dynamically from the DB, strip whitespace, and apply RBAC routing.
+
+### [Phase 21 - PostgreSQL RBAC User Management] - Current
+- Updated `SPEC.md` with the `users` table entity.
+- Removed hardcoded RAM authentication dictionary in `app.py`.
+- Implemented PostgreSQL-backed login system storing role and JSONB `allowed_clients`.
+- Added `👥 User Management` sub-module inside the Admin workspace for dynamic user CRUD operations.
+
+### [Phase 22 - Ingestion Decoupling & Auto-Analytics] - Current
+- Dismantled legacy "Data Control Room" and manual `run_clicked` execution pipeline.
+- Decentralized ingestion UI: Financial uploads moved to `📥 Financial Ingestion` tab, Operations to `🗄️ Ops Control Room`.
+- Implemented real-time Dashboard Auto-Hydration via `@st.cache_data` wrappers, computing analytical models dynamically from the DB-filtered `_master_df`.
+
+### [Phase 23 - Master Report Generator] - Current
+- Upgraded `src/exporter.py` to support standalone Operations reports and Combined Master Reports (Financial + Operations).
+- Implemented `@st.cache_data` wrappers returning `.getvalue()` bytes to instantly serialize Excel files without blocking the UI thread.
+- Injected highly-contextual `st.download_button` elements directly into the Executive Summary, Financial Deep-Dive, and Operations Command workspaces.
+
+### [Phase 24 - Deterministic Parser & UX Polish] - Current
+- Added `financial_format` to `client_mapping` schema.
+- Upgraded `src/ingestion.py` to fetch a universal mapping dictionary and explicitly pass `format_type`.
+- Overhauled `app.py` Admin Tier. Upgraded Brand Registry to include the parser dropdown. Upgraded User Management to a fully interactive Create/Edit/Delete state machine.
+- Renamed "Ops Control Room" to "Operations Ingestion" globally for consistency.
+
+### [Hotfix - Raw Persistence Migration] - Current
+- Fixed critical crash `ValueError: DataFrame missing required columns` in analytics engine.
+- Replaced `financial_data` aggregate table with `raw_financial_data` table to store full player-level payload.
+- Updated `src/ingestion.py` to `to_sql` the entire unified dataframe.
+- Updated `app.py` auto-hydration and completeness matrices to read from `raw_financial_data` and remap `player_id -> id`.
+
+### [Hotfix - UI Variable Scope] - Current
+Fixed NameError: name '_raw_df' is not defined crash.
+
+Initialized _raw_df = df.copy() at the absolute top of the CRM Intelligence and Campaigns tab blocks before any analytical widgets render.
+
+### [Hotfix - Global Time Frame Filter] - Current
+Restored and upgraded the missing UI Date Picker.
+
+Integrated a unified select_slider into the 🌍 GLOBAL FILTERS sidebar.
+
+Date filter now synchronously slices both ops_df (ops_date) and financial_df (report_month) before passing them to the dashboard cache.
+
+### [Hotfix - Importer & Duplicate Protection] - Current
+Resolved ImportError in the Admin Hub Completeness tab by wiring the button to the correct load_all_data_from_uploads function.
+
+Upgraded src/ingestion.py to check raw_financial_data for existing report_month + brand combinations prior to parsing. Duplicate files are now safely rejected with a UI warning while the rest of the batch processes normally.
+
+Switched IngestionRegistry() to IngestionRegistry.load() during uploads to prevent registry state wipe.
+
+### [Hotfix - Restored rev_col variable] - Current
+Fixed NameError: name 'rev_col' is not defined crash in the Financial Deep-Dive tab.
+
+Restored revenue_mode and rev_col variable declarations that were inadvertently deleted during the Phase 22 legacy code cleanup.
+
+### [Hotfix - Time-Series Continuous Padding] - Current
+Fixed sparse dataset distortion where missing months were skipped in charts and MoM comparisons.
+
+Upgraded Global Date Slider to dynamically calculate continuous month ranges.
+
+Injected _pad_missing_months() into src/analytics.py to mathematically reindex missing time frames, zero-filling empty months before generating ratios and aggregates.
+
+### [Hotfix - Operations Date Normalization] - Current
+Fixed ValueError: not enough values to unpack crash in the Global Time Frame Filter.
+
+Added dynamic string replacement (_ to -) for ops_date during sidebar hydration to ensure standard YYYY-MM formatting across all continuous zero-padding and slider extraction logic.
+[ H o t f i x 
+ 
+ - 
+ 
+ O p e r a t i o n s 
+ 
+ T a b 
+ 
+ S t r i n g 
+ 
+ A l i g n m e n t ] 
+ 
+ - 
+ 
+ C u r r e n t 
+ 
+ F i x e d 
+ 
+ b l a n k 
+ 
+ t a b 
+ 
+ r e n d e r i n g 
+ 
+ b u g 
+ 
+ i n 
+ 
+ t h e 
+ 
+ O p e r a t i o n s 
+ 
+ W o r k s p a c e . 
+ 
+ R e m o v e d 
+ 
+ s t a l e 
+ 
+ t a b _ m a p 
+ 
+ a l i a s e s 
+ 
+ a n d 
+ 
+ a l i g n e d 
+ 
+ t h e 
+ 
+ r e n d e r i n g 
+ 
+ i f 
+ 
+ c o n d i t i o n 
+ 
+ s t r i c t l y 
+ 
+ t o 
+ 
+ t h e 
+ 
+ n e w 
+ 
+ =����  O p e r a t i o n s   I n g e s t i o n 
+ 
+ k e y . 
+ 
+ 
+Removed stale tab_map aliases and aligned the rendering if condition strictly to the new '??? Operations Ingestion' key.
+
+[Hotfix - Operations Tab UI Verified] - Current
+Visual verification confirmed the string match bug is patched and the file uploader is rendering perfectly.
+
+### [Phase 25 - Deployment Prep & Security] - Current
+- Extracted hardcoded database credentials from `docker-compose.yml` into `.env` standard.
+- Generated `.env.example` template.
+- Wrote comprehensive `README.md` detailing architecture, Quickstart Docker instructions, and SDD compliance.
+
+### [Hotfix - Matrix Date Normalization] - Current
+Fixed duplicate rows in the Admin Hub Data Completeness Matrix (e.g., 2025_02 and 2025-02 showing as separate rows).
+
+Added .str.replace("_", "-") to the SQL query outputs for both Ops and Fin datasets in the matrix builder to ensure perfect alignment and correctly fused checkmarks.
+
+### [Hotfix - Permanent Date Healing] - Current
+Fixed fractured duplicate rows in the Admin Hub Completeness Matrix.
+
+Injected an UPDATE REPLACE query into src/database.py initialization to permanently rewrite all legacy ops_date underscores (_) into hyphens (-).
+
+Updated src/ingestion.py so future Operations uploads are natively saved with hyphens, permanently aligning Ops and Fin datasets at the persistence layer.
+
+### [Feature - Global Client Renaming] - Current
+Added "Rename Client" expander to the Admin -> Client Hub -> Manage Profile view.
+
+Engineered a safe SQL-cascade that globally updates client_mapping, raw_financial_data, ops_telemarketing_data, and retroactively updates JSON-encoded RBAC allowed_clients lists in the users table to prevent permission drops upon renaming.
+
+### [Feature - UI/UX Modernization] - Current
+Implemented global theme configuration via .streamlit/config.toml applying a modern dark-slate aesthetic.
+
+Injected custom CSS into app.py to modernize button radii, add hover transitions, and introduce drop shadows to UI components for a premium enterprise feel.
+
+### [Feature - Client Onboarding UI] - Current
+Injected an "Onboard New Client" form into the ?? Client Hub.
+
+Allows Superadmins to natively create new clients from the UI by defining their anchor brand_code, client_name, and financial_format directly into the client_mapping database table.
+
+### [UI Polish - Header Modernization] - Current
+Updated the main application header to D-ROCK DASHBOARD V2.0.
+
+Replaced the legacy pipeline subtitle with Enterprise Business Intelligence & Operations Command to reflect the new real-time PostgreSQL architecture.
+
+### [Feature - Auto-Seeded Client Registry] - Current
+Upgraded seed_test_data.py to execute pre_seed_client_mappings() before file ingestion.
+
+Hardcoded exact Client/Tag combinations (LIM, REL, RHN, SIM, PP, INSP, PE, LV) into the seeder to completely eliminate the UNKNOWN manual mapping step during database rebuilds.
+
+### [Hotfix - Client Identity Consolidation] - Current
+Fixed UI duplicates in the Global Client matrix (e.g., LIM vs Limitless).
+
+Updated CLIENT_HIERARCHY in src/ingestion.py to natively map sub-brands to their full Enterprise identities.
+
+Created and executed heal_clients.py to run a retroactive SQL cascade, merging all legacy shorthand data into their unified Enterprise client buckets.
+
+### [Hotfix - Sub-Brand Seeder Immunity] - Current
+Expanded seed_test_data.py to explicitly declare sub-brand mappings (YU -> Yuugado, BAH -> Bahigo, etc.) ensuring manual UI renames are no longer required after a docker-compose down -v wipe.
+
+Upgraded heal_clients.py to execute a brand-level SQL UPDATE cascade, immediately translating raw tags into pretty brand names in the live UI dropdowns.
+
+### [Feature - Parent-Child Format Inheritance] - Current
+Implemented a hardcoded parser override in src/ingestion.py. Any file mapped to LeoVegas Group strictly executes via the LeoVegas parser, and Offside Gaming via the Offside parser, ignoring accidental UI misconfigurations.
+
+Created and executed heal_formats.py to retroactively correct any existing client_mapping entries in the live database.
+
+### [Hotfix - LeoVegas Multi-Brand Parsing] - Current
+Modified src/ingestion.py to conditionally respect native brand column data in Master Trackers, preventing the target_brand filename override from destroying granular brand data.
+
+Added Bet UK, BetMGM, Expekt, GoGoCasino, and RoyalPanda to seed_test_data.py.
+
+Wrote and executed heal_leovegas.py to purge corrupted LeoVegas records, inject missing mappings, and headlessly re-ingest the raw files.
+
+### [Feature - SLA Breach Watchdog] - Current
+Implemented an intelligent SLA Breach Alert box on the Operations Dashboard.
+
+Resolves the mathematical flaw of averaging monthly volume targets on daily line charts by intelligently aggregating total volume per campaign_type (RND/WB) and cross-referencing against the contractual_slas table. Flashes a dynamic UI warning if minimums are not met.
+
+### [Hotfix & UX - Stability and Loading States] - Current
+Fixed a TypeError crash in the Operations SLA Tracker by safely coercing missing target_cac_usd values to 0.0.
+
+Implemented st.spinner UI states during pre-login authentication and global database hydration to provide users with visual I/O feedback and prevent the appearance of application freezing.
+
+### [Hotfix - Snapshot KeyError Fix] - Current
+Resolved KeyError: "Column(s) ['Calls', 'KPI1-Conv.'] do not exist" crashing the 12-Month Operations trend chart.
+
+Updated the Pandas aggregation dictionary to query the correct PostgreSQL schema fields (calls, conversions, kpi2_logins) and appended a .rename() step to safely translate them back to the frontend UI labels expected by Plotly.
+
+### [Hotfix - Plotly Render & LI% Fix] - Current
+Resolved ValueError in Plotly line charts by synchronizing the .rename() dictionary with the frontend px.line y-axis variable arrays (Calls, KPI1-Conv., KPI2-Login).
+
+Restored li_pct to the snapshot .agg() dictionary (using .mean()) and injected it into the Efficiency Trends chart as LI%.
+
+### [Hotfix - 12-Month Roll-Up KeyError] - Current
+Resolved KeyError: "Column(s) ['kpi2_logins', 'li_pct'] do not exist" in the 12-Month Operations tab.
+
+Updated the downstream monthly_trends aggregation dictionary to correctly target the uppercase UI-facing columns (KPI2-Login, LI%) that were renamed upstream in the primary daily_trends dataframe.
+
+### [Feature - Daily API Ingestion Support] - Current
+Upgraded the Regex extraction in src/ingestion.py to natively parse YYYY-MM-DD filenames.
+
+Enabled seamless ingestion of daily granular time-series files generated by the automated API pull script.
+
+### [Feature - Integrated API Command Center] - Current
+Refactored the daily CallsU extraction script into a robust, object-oriented background worker (src/api_worker.py).
+
+Implemented an asynchronous threading architecture inside the Streamlit Control Room, allowing users to select a date range and trigger the ETL pipeline natively without freezing the UI.
+
+Attached a live streaming Log Console mapping to data/api_sync.log so users can monitor exactly what the detached API worker is querying on the vendor's server.
+
+### [Feature - Smart API Worker Auto-Ingestion] - Current
+Upgraded src/api_worker.py to detect existing daily files on disk and automatically execute PostgreSQL database ingestion (to_sql) rather than skipping the day entirely.
+
+Provisioned 2026 raw data directories for manual file seeding.
+
+### [Feature - Granular Data Completeness] - Current
+Replaced legacy binary completeness checks with a dynamic, calendar-aware daily evaluation function in app.py.
+
+System now actively counts unique ops_date records per month and compares them against expected elapsed calendar days, surfacing 🟢 Complete, 🟡 Warning (missing < 3 days), 🟠 Partial, and 🔴 Incomplete statuses.
+
+### [Bugfix - API Worker Schema Mismatch] - Current
+Resolved CompileError (f405) during autonomous ingestion.
+
+Wired src/api_worker.py directly into src/ingestion.py -> load_operations_data_from_uploads() to ensure raw CallsU API payloads undergo the standard ETL transformation (Brand mapping, CAC calculation, column pruning) before being inserted into PostgreSQL.
+
+### [Feature - API Worker Auto-Retry Queue] - Current
+Refactored run_historical_pull in src/api_worker.py to utilize a process_day helper function.
+
+Implemented a Two-Pass Retry Queue: Jobs that timeout or fail connection are added to an internal queue, deferred until the main loop completes, and retried automatically.
+
+Added a 🚨 CRITICAL WARNING terminal alert for jobs that persistently fail after the secondary pass.
+
+Increased internal polling timeout to 10 minutes and reduced log verbosity to prevent terminal clutter.
+
+### [Bugfix - True CAC/Operations Matrix Blank Load] - Current
+Debugged an issue where newly injected API daily data was successfully inserted into PostgreSQL (1,842 rows) but failing to render on the `Operations Command` tab, triggering the "No CallsU operations data loaded" fallback state.
+
+**Root Cause 1 (Temporal Filtering):**
+* The global sidebar timeframe filter evaluates month boundaries using strings (e.g., `"2026-01" <= end_month`).
+* Legacy monthly files passed because they natively mapped to YYYY-MM.
+* The new daily system stores native dates (e.g., `"2026-01-14"`). Under Python's strict string comparator, `"2026-01-14"` is evaluated as strictly **greater than** `"2026-01"`. 
+* As a result, *all* daily operations summaries were being completely stripped from the UI `filtered_ops` dataframe rendering the view empty.
+
+**Fix 1:**
+Appended `"-99"` format strings to the end boundary of the time-frame slicer (e.g., `ops_date <= f"{end_month}-99"`), guaranteeing that granular days successfully fall within the inclusive String boundary comparison.
+
+**Root Cause 2 (Streamlit Persistent Memory Cache):**
+* Since the new `api_worker.py` system operates asynchronously via `docker-compose.yml`, data is injected directly into PostgreSQL without passing through Streamlit. 
+* Streamlit persistently holds the *old*, pre-sync `pd.read_sql` result in `st.session_state["raw_ops_df"]` until explicitly cleared.
+
+**Fix 2:**
+Injected a manual `🔄 Sync with Database` global override button into the Analytics sidebar, which forcibly flushes `raw_ops_df`, `raw_fin_df`, and `st.cache_data` before rerunning the hydration engine, ensuring immediate background worker visibility.
+
+### [Bugfix - Master Health Board & SLA Watchdog SQL Crash] - Current
+Debugged an `UndefinedTable` error referencing `contractual_slas` crashing the `⚙️ Admin` tab and silencing the `Operations Command` SLA analyzer.
+
+**Root Cause:**
+* During the recent benchmark database refinement, the monolithic `contractual_slas` table was intentionally dropped and split into `contractual_volumes` and `granular_benchmarks` in `src/database.py`.
+* Two generic query lines in `app.py` were not updated to target the new tables.
+
+**Fix:**
+Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances with `contractual_volumes` to restore DB harmony.
+
+### [Phase 2 - UI & Operations Expansion] - Current
+- Fixed Financial Matrices missing data issues by shifting `latest_month` evaluations to be loop-intrinsically brand-specific. 
+- Injected Elite Date Range Quick-Select Helper mapped into `st.session_state` to default queries to a 7-day memory state for performance and UX. 
+- Integrated side-bar dynamic Target Category and Target Segment parsing via Campaign Name heuristic rules. 
+- Purged the redundant manual "Sync with Database" button.
+- Updated Pie Chart configurations to rigidly enforce green/yellow/red bindings to Deliveries, No Answer, and Issues matrices.
+- Added a 90-Day analytical cut timeframe to the Volume trends UI. 
+- Transformed the primary volume scale to measure strict row metrics (Records) vs contractual volumes (SLA Minimum), with automated Warning detection overlays. 
+- Created and executed `src/seed_slas.py` to seed baseline logic into the backend DB. 
+- Aligned Admin `Manage Profile` UI structure for optimal rendering.
+
+### [Feature - Client-Level SLA Pacing Warning] - Current
+- Implemented Client + Lifecycle SLA aggregation in `app.py`.
+- Injected dynamic pro-rating math `(monthly_goal / 30) * timeframe_days` to accurately gauge pacing and prevent false-positive SLA breach alerts when viewing abbreviated dashboard timeframes.
+- Integrated dynamic `st.warning()` UI rendering to alert Operations Managers of under-delivery.
+
+### [Feature - Phase 8: Module Decoupling] - Current
+- Enforced strict RBAC by deprecating the unified Dashboard view.
+- Migrated all high-level Financial intelligence (Matrices, Cash Flow, Smart Narratives) strictly into the Financial Workspace.
+- Migrated all high-level Operations intelligence (Cannibalization, VIP Health, CRM/Campaign tabs) strictly into the Operations Workspace.
+
+### [Feature - Data Completeness & Financial Validation] - Current
+- Upgraded the Operations Ingestion tab to include granular YYYY-MM operational aggregations (Records, Logins, Conversions, Calls).
+- Implemented a Brand-specific filter dropdown.
+- Engineered a cross-database validation function get_financial_completeness to automatically flag missing client financial uploads as Pending, Warning (1 month late), or Issue (2+ months late).
+- Added a dynamic daily drill-down sub-table for isolated monthly inspections.
+
+### [Bug Fix - Operations Telemarketing '# Records' Data Loss] - Current
+- **Root Cause & Forensics Check**: The user reported that an uploaded file containing "28,816 Records" was displaying 65 instead. Upon querying PostgreSQL, we identified that the telemarketing ingestion engine \`src/ingestion.py\` completely discarded the \`# Records\` CSV column during runtime parsing, leaving the database utterly blind to list volume sizing. The UI had previously masked this architecture flaw by renaming the \`calls\` column to \`Records\` in its charts.
+- **DB Alteration**: Executed \`ALTER TABLE ops_telemarketing_snapshots ADD COLUMN records INTEGER DEFAULT 0\` to inject the missing metric natively into PostgreSQL.
+- **Python Parser Fix**: Expanded \`load_operations_data_from_uploads\` to isolate and cast \`row['# Records']\` into the \`records_to_insert\` SQL bundle.
+- **Completeness Fix**: Rewired \`query_ops\` in \`app.py\` to directly query \`records\` instead of mistakenly aliasing \`d_total\` (65 deliveries).
+- User must re-upload any previous files to hydrate this missing system column.
+
+### [Feature - Global Operations Recap] - Current
+- Engineered a dual-view "Global Operations Recap" section inside the Admin Client Hub.
+- Built `🏢 By Client` aggregation tab displaying all-time sums for Records, Logins, Conversions, and Calls per client, including a Grand Total footer.
+- Built `📅 By Month` aggregation tab displaying chronological system-wide volume totals, including a Grand Total footer.
+
+### [Feature - Operations Metrics & Dual-Axis Trends] - Current
+- Swapped baseline volume metric from `Calls` to `Records` across the SLA tracker and comparison matrices.
+- Upgraded Efficiency Trends to a Plotly dual-axis chart, rendering raw Logins/Conversions as bars on the primary axis and Login%/Conv% as trend lines on the secondary axis.
+- Formatted `D Ratio` dynamically as a true percentage (`%.2f%%`) across all Operations tables.
+
+### [Feature - Ingestion Engine Expansion] - Current
+- Expanded `load_operations_data_from_uploads` to capture granular costs, verifications (HLRV, 2XRV), SMS/Email funnel metrics, and Opt-outs.
+- Updated database schema for `ops_telemarketing_data` and `ops_telemarketing_snapshots` to accept the 20 new columns, preventing data loss during CSV uploads.
+- **Historical Backfill Executed**: Created and executed `reingest_ops.py` to truncate all operations tables to prevent duplication and re-ingested 357 raw data files from `data/raw/callsu_daily`. Successfully parsed natively into 28,863 rows without a single duplicate.
+
+### [Feature - Dispositions Backfill] - Current
+- Added the 9 missing call dispositions (D+, D, D-, AM, DNC, NA, DX, WN, T) to `src/ingestion.py` and PostgreSQL schema.
+- Re-ran the safe `reingest_ops.py` backfill script to fully populate the database.
+
+### [Feature - Omnichannel Quality Engine] - Current
+- Engineered the Campaign Execution module utilizing the newly ingested 74-column dataset.
+- Implemented Gross vs. Net pacing math to exclude `HLRV` and `2XRV` pre-verification failures from floor completion metrics.
+- Built the 3-Pillar Disposition Matrix (Deliveries, NAs, Issues) to instantly isolate script fatigue vs. telecom blocking vs. bad client data.
+- Added digital funnel tracking (SMS delivery / Email opens) for cross-channel visibility.
+
+### [Feature - Client SLA Volume Tracker] - Current
+- Engineered the Client SLA Volume Tracker table in the Operations Command tab.
+- Implemented regex/string mapping to automatically categorize campaigns into ACQ, RET, and WB segments.
+- Applied dynamic Pandas conditional formatting (Red/Green) to instantly highlight volume deficits vs. surpluses against hardcoded client SLA targets.
+
+### [Feature - Railway Deployment Prep] - Current
+- Prepared codebase for Railway.app cloud deployment.
+- Created Procfile to bind Streamlit to Railway's dynamic $PORT.
+- Updated requirements.txt for Nixpacks build environment.
+- Refactored `src/database.py` to securely consume Railway's `DATABASE_URL` environment variable while maintaining local fallback.
+
+### [Feature - Repository Cleanup & Documentation] - Current
+- Audited and organized project directory structure.
+- Hardened `.gitignore` to prevent raw data files (CSVs/Excel) and `.env` secrets from leaking to GitHub.
+- Drafted a comprehensive `README.md` outlining the project architecture, tech stack, local setup, and SDD development guidelines.
+- Sanitized codebase of leftover debug statements.

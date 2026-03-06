@@ -10,6 +10,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import threading
+import time
+import os
+import calendar
+from datetime import datetime
+from src.api_worker import run_historical_pull
+
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -41,6 +48,40 @@ def _cached_retention_heatmap(raw_df):
 def _cached_ltv_curves(raw_df):
     return generate_ltv_curves(raw_df)
 
+@st.cache_data(show_spinner=False)
+def _cached_monthly_summaries(df, start=None, end=None): 
+    return generate_monthly_summaries(df, force_start=start, force_end=end)
+
+@st.cache_data(show_spinner=False)
+def _cached_cohort_matrix(df): return generate_cohort_matrix(df)
+
+@st.cache_data(show_spinner=False)
+def _cached_segmentation(df): return generate_segmentation_summary(df)
+
+@st.cache_data(show_spinner=False)
+def _cached_both_business(summary_df): return generate_both_business_summary(summary_df)
+
+@st.cache_data(show_spinner=False)
+def _cached_program_summary(df): return generate_program_summary(df)
+
+@st.cache_data(show_spinner=False)
+def _get_financial_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
+    from src.exporter import export_to_excel
+    buf = export_to_excel(summary_df, cohort_matrices=cohort_matrices, segmentation_df=segmentation, both_business_df=both_business)
+    return buf.getvalue()
+
+@st.cache_data(show_spinner=False)
+def _get_ops_excel_bytes(ops_df):
+    from src.exporter import export_ops_to_excel
+    buf = export_ops_to_excel(ops_df)
+    return buf.getvalue()
+
+@st.cache_data(show_spinner=False)
+def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business, ops_df):
+    from src.exporter import export_to_excel
+    buf = export_to_excel(summary_df, cohort_matrices=cohort_matrices, segmentation_df=segmentation, both_business_df=both_business, ops_df=ops_df)
+    return buf.getvalue()
+
 # ── Config ───────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
 
@@ -52,6 +93,42 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+# --- UI/UX MODERNIZATION ---
+st.markdown("""
+    <style>
+    /* Modernize Buttons */
+    div.stButton > button {
+        border-radius: 8px;
+        border: 1px solid #3b82f6;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    div.stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        border: 1px solid #60a5fa;
+    }
+
+    /* Modernize DataFrames/Tables */
+    div[data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Modernize Expanders */
+    div[data-testid="stExpander"] {
+        border-radius: 8px;
+        border: 1px solid #334155;
+    }
+
+    /* Subtly style the sidebar */
+    section[data-testid="stSidebar"] {
+        border-right: 1px solid #334155;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # Initialize persistent database tables
 init_db()
@@ -73,9 +150,10 @@ try:
 
     # Hydrate Financial Data
     try:
-        fin_query = "SELECT * FROM financial_data"
+        fin_query = "SELECT * FROM raw_financial_data"
         global_fin_df = pd.read_sql(fin_query, _hydrate_engine)
         if not global_fin_df.empty:
+            global_fin_df.rename(columns={"player_id": "id"}, inplace=True)
             st.session_state["financial_df"] = global_fin_df
     except Exception as e:
         pass # Handle gracefully if table is empty
@@ -105,16 +183,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("D-ROCK FINANCIAL TERMINAL v1.0")
-st.caption("Upload CSVs → Run Pipeline → Download Intel.")
+st.title("📊 D-ROCK DASHBOARD V2.0")
+st.markdown("*Enterprise Business Intelligence & Operations Command*")
+st.markdown("---")
 
 # ── 🔐 Enterprise Authentication & Data Security RBAC ──────────────────
-USERS = {
-    "superadmin": {"password": "123", "role": "Superadmin", "name": "Global Overlord", "allowed_clients": ["All"]},
-    "admin_lv": {"password": "123", "role": "Admin", "name": "LeoVegas Admin", "allowed_clients": ["LeoVegas Group"]},
-    "finance_off": {"password": "123", "role": "Finance", "name": "Offside Finance", "allowed_clients": ["Offside Gaming"]},
-    "ops_agency": {"password": "123", "role": "Operations", "name": "Head of Ops", "allowed_clients": ["REL", "LIM", "SIM", "RHN"]}
-}
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -133,15 +206,31 @@ if not st.session_state["authenticated"]:
             submit = st.form_submit_button("Authenticate", use_container_width=True)
             
             if submit:
-                if username in USERS and USERS[username]["password"] == password:
-                    st.session_state["authenticated"] = True
-                    st.session_state["user_role"] = USERS[username]["role"]
-                    st.session_state["user_name"] = USERS[username]["name"]
-                    st.session_state["allowed_clients"] = USERS[username]["allowed_clients"]
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid username or password.")
-    st.stop() # CRITICAL: Halts execution of the rest of the app until logged in
+                from src.database import engine
+                import pandas as pd
+                import json
+                
+                with st.spinner("Authenticating and securely retrieving configuration..."):
+                    try:
+                        query = "SELECT * FROM users WHERE username = %(u)s AND password = %(p)s"
+                        user_df = pd.read_sql(query, engine, params={"u": username, "p": password})
+                        
+                        if not user_df.empty:
+                            user_record = user_df.iloc[0]
+                            st.session_state["authenticated"] = True
+                            st.session_state["user_role"] = user_record["role"]
+                            st.session_state["user_name"] = user_record["name"]
+                            
+                            # Parse JSONB allowed_clients safely
+                            raw_clients = user_record["allowed_clients"]
+                            st.session_state["allowed_clients"] = json.loads(raw_clients) if isinstance(raw_clients, str) else raw_clients
+                            
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid username or password.")
+                    except Exception as e:
+                        st.error(f"Database connection error: {e}")
+            st.stop() # CRITICAL: Halts execution of the rest of the app until logged in
 
 # ── Session State Initialization ───────────────────────────────────────
 if "data_loaded" not in st.session_state:
@@ -152,16 +241,6 @@ if "data_loaded" not in st.session_state:
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("---")
-    st.header("⚙️ System Controls")
-    if "excel_buffer" in st.session_state and st.session_state["excel_buffer"] is not None:
-        st.download_button(
-            label="Download Excel Report",
-            data=st.session_state["excel_buffer"],
-            file_name="Summary_Data_Auto.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
-            use_container_width=True,
-        )
 
     st.markdown("---")
     st.markdown("### 🧭 NAVIGATION")
@@ -179,22 +258,34 @@ with st.sidebar:
     import pandas as pd
     from src.database import engine as _filter_engine
     
-    if "raw_ops_df" not in st.session_state:
-        try: st.session_state["raw_ops_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_data", _filter_engine)
-        except: st.session_state["raw_ops_df"] = pd.DataFrame()
-            
-    if "raw_fin_df" not in st.session_state:
-        try: st.session_state["raw_fin_df"] = pd.read_sql("SELECT * FROM financial_data", _filter_engine)
-        except: st.session_state["raw_fin_df"] = pd.DataFrame()
+    # Always force-sync from the DB on load to prevent stale session states
+    # especially after a successful Phase 23 injection bypassing the UI
+    with st.spinner("Hydrating data from cluster..."):
+        try: 
+            st.session_state["raw_ops_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_data", _filter_engine)
+            st.session_state["raw_ops_snapshots_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _filter_engine)
+        except Exception as e:
+            st.error(f"FATAL: Could not read operations data from DB: {e}")
+            print(f"FATAL READ_SQL ERROR: {e}")
+            st.session_state["raw_ops_df"] = pd.DataFrame()
+            st.session_state["raw_ops_snapshots_df"] = pd.DataFrame()
+                
+        if "raw_fin_df" not in st.session_state:
+            try: 
+                raw_fin = pd.read_sql("SELECT * FROM raw_financial_data", _filter_engine)
+                if not raw_fin.empty:
+                    raw_fin.rename(columns={"player_id": "id"}, inplace=True)
+                st.session_state["raw_fin_df"] = raw_fin
+            except: 
+                st.session_state["raw_fin_df"] = pd.DataFrame()
 
     raw_ops = st.session_state["raw_ops_df"]
     raw_fin = st.session_state["raw_fin_df"]
 
     # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
-    # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🌍 GLOBAL FILTERS")
-
+    
     # 1. Clean hidden whitespace to prevent Pandas filtering bugs
     if not raw_ops.empty: 
         raw_ops['ops_client'] = raw_ops['ops_client'].astype(str).str.strip()
@@ -232,20 +323,164 @@ with st.sidebar:
     default_brand_index = 1 if len(sorted_brands) == 1 else 0
     selected_brand = st.sidebar.selectbox("🏷️ Target Brand", brand_options, index=default_brand_index)
 
+    # 4. Extract Category and Segment using heuristics from Campaign Name
+    selected_category = "All"
+    selected_segment = "All"
+    
+    if not raw_ops.empty and 'campaign_name' in raw_ops.columns:
+        CATEGORY_LIST = ['SPO', 'CAS', 'LIVE', 'ALL']
+        SEGMENT_LIST = ['HIGH', 'MID', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4']
+        
+        def parse_tokens(x, target_list):
+            if pd.isna(x): return None
+            import re
+            tokens = re.split(r'[-_ ]+', str(x).upper())
+            for t in tokens:
+                if t in target_list: return t
+            return None
+        
+        if '__extracted_category' not in raw_ops.columns:
+            raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(lambda x: parse_tokens(x, CATEGORY_LIST))
+            raw_ops['__extracted_segment'] = raw_ops['campaign_name'].apply(lambda x: parse_tokens(x, SEGMENT_LIST))
+            
+        avail_categories = sorted([c for c in raw_ops['__extracted_category'].dropna().unique() if c])
+        avail_segments = sorted([s for s in raw_ops['__extracted_segment'].dropna().unique() if s])
+        
+        if avail_categories:
+            selected_category = st.sidebar.selectbox("📦 Target Category", ["All"] + avail_categories)
+        if avail_segments:
+            selected_segment = st.sidebar.selectbox("🎯 Target Segment", ["All"] + avail_segments)
+
+    # 5. Elite Date Range Quick-Select Helper
+    import re
+    from datetime import timedelta
+
+    raw_ops_snapshots = st.session_state.get("raw_ops_snapshots_df", pd.DataFrame())
+    # Track boundaries across all datasets
+    valid_mins = []
+    valid_maxs = []
+    
+    if not raw_ops.empty and 'ops_date' in raw_ops.columns:
+        valid_maxs.append(pd.to_datetime(raw_ops['ops_date']).max())
+        valid_mins.append(pd.to_datetime(raw_ops['ops_date']).min())
+        
+    if not raw_fin.empty and 'report_month' in raw_fin.columns:
+        fin_dates = pd.to_datetime(raw_fin['report_month'], format='mixed', errors='coerce')
+        if not fin_dates.empty and not fin_dates.isna().all():
+             # Push the maximum limit safely to the end of the month
+             valid_maxs.append(fin_dates.max() + pd.offsets.MonthEnd(0))
+             valid_mins.append(fin_dates.min())
+
+    max_date = max([d for d in valid_maxs if pd.notnull(d)]) if valid_maxs and any(pd.notnull(valid_maxs)) else pd.Timestamp.today()
+    min_db_date = min([d for d in valid_mins if pd.notnull(d)]) if valid_mins and any(pd.notnull(valid_mins)) else pd.Timestamp("2024-01-01")
+
+    if pd.isna(min_db_date): min_db_date = pd.Timestamp("2024-01-01")
+    if pd.isna(max_date): max_date = pd.Timestamp.today()
+
+    def update_slider():
+        preset = st.session_state["date_preset"]
+        if preset == "Custom": return
+        
+        calc_start = None
+        calc_end = max_date
+        if preset == "Last 7 Days":
+            calc_start = calc_end - pd.Timedelta(days=7)
+        elif preset == "Last 30 Days":
+            calc_start = calc_end - pd.Timedelta(days=30)
+        elif preset == "Last 90 Days":
+            calc_start = calc_end - pd.Timedelta(days=90)
+        elif preset == "Current Month":
+            calc_start = calc_end.replace(day=1)
+        elif preset == "Last Month":
+            calc_end = calc_end.replace(day=1) - pd.Timedelta(days=1)
+            calc_start = calc_end.replace(day=1)
+
+        if calc_start is not None:
+            # Bound the calculated dates to the db min/max range to prevent Streamlit slider crash
+            calc_start = max(calc_start, pd.to_datetime(min_db_date))
+            calc_end = min(calc_end, pd.to_datetime(max_date))
+            # Fallback if range inversion happens due to clamping
+            if calc_start > calc_end:
+                calc_start = calc_end
+            st.session_state["date_slider_val"] = (calc_start.date(), calc_end.date())
+
+    def update_preset():
+        st.session_state["date_preset"] = "Custom"
+
+    if "date_preset" not in st.session_state:
+        st.session_state["date_preset"] = "Last 90 Days"
+        update_slider()
+
+    options = ["Custom", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
+    st.sidebar.radio("Quick Select", options, horizontal=True, key="date_preset", on_change=update_slider)
+
+    if "date_slider_val" not in st.session_state:
+        st.session_state["date_slider_val"] = (min_db_date.date(), max_date.date())
+
+    start_date_val, end_date_val = st.sidebar.slider(
+        "📅 Analysis Window",
+        min_value=min_db_date.date(),
+        max_value=max_date.date(),
+        key="date_slider_val",
+        format="YYYY-MM-DD",
+        on_change=update_preset
+    )
+
+    start_date_str = start_date_val.strftime("%Y-%m-%d")
+    end_date_str = end_date_val.strftime("%Y-%m-%d")
+    start_month = start_date_val.strftime("%Y-%m")
+    end_month = end_date_val.strftime("%Y-%m")
+
     # --- 3. APPLY FILTERS TO TABS ---
     filtered_ops = raw_ops.copy() if not raw_ops.empty else pd.DataFrame()
+    filtered_ops_snapshots = raw_ops_snapshots.copy() if not raw_ops_snapshots.empty else pd.DataFrame()
     filtered_fin = raw_fin.copy() if not raw_fin.empty else pd.DataFrame()
 
     if selected_client != "All":
-        if not filtered_ops.empty: filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
-        if not filtered_fin.empty: filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
+        if not filtered_ops.empty and 'ops_client' in filtered_ops.columns: 
+            filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
+        if not filtered_ops_snapshots.empty and 'ops_client' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == selected_client]
+        if not filtered_fin.empty and 'client' in filtered_fin.columns: 
+            filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
 
     if selected_brand != "All":
-        if not filtered_ops.empty: filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
-        if not filtered_fin.empty: filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
+        if not filtered_ops.empty and 'ops_brand' in filtered_ops.columns: 
+            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
+        if not filtered_ops_snapshots.empty and 'ops_brand' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == selected_brand]
+        if not filtered_fin.empty and 'brand' in filtered_fin.columns: 
+            filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
+            
+    if selected_category != "All":
+        if not filtered_ops.empty and '__extracted_category' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['__extracted_category'] == selected_category]
+        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_category)]
+            
+    if selected_segment != "All":
+        if not filtered_ops.empty and '__extracted_segment' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['__extracted_segment'] == selected_segment]
+        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_segment)]
+
+    # Apply Time Frame Filter
+    if start_date_val and end_date_val:
+        if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
+            # We must use proper string comparisons for SQLite / Postgres dates. Since they are YYYY-MM-DD strings usually:
+            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
+        if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
+            
+        if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
+            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= start_month) & (filtered_fin['report_month'] <= end_month)]
 
     st.session_state["ops_df"] = filtered_ops
+    st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
     st.session_state["financial_df"] = filtered_fin
+
+    # Master DF for Dashboard auto-hydration
+    _master_df = filtered_fin
 
     # --- BOTTOM SIDEBAR: AUTHENTICATION ---
     # Use vertical space to push this to the bottom of the sidebar visually
@@ -263,279 +498,577 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════
 #  System Settings View (Full-Screen, Superadmin Only)
 # ═══════════════════════════════════════════════════════════════════════════
-if view_mode == "🏢 Client Hub":
-    # Initialize router state
-    if "managing_client" not in st.session_state:
-        st.session_state["managing_client"] = None
-
-    if st.session_state["managing_client"] is None:
-        # ==========================================
-        # VIEW A: THE MASTER HEALTH BOARD
-        # ==========================================
-        st.markdown("## 🏢 CLIENT HUB: Master Health Board")
-        st.markdown("*Insight: Centralized view of client data completeness, SLAs, and active configurations.*")
-        st.markdown("---")
-        
-        try:
-            from src.database import engine
-            import pandas as pd
-            
-            # Fetch base data for health calculations
-            registry = pd.read_sql("SELECT client_name, brand_code FROM client_mapping", engine)
-            slas = pd.read_sql("SELECT client_name, brand_code FROM contractual_slas", engine)
-            ops = pd.read_sql("SELECT ops_client as client, MAX(ops_date) as last_ops FROM ops_telemarketing_data GROUP BY ops_client", engine)
-            
-            try: fin = pd.read_sql("SELECT client, MAX(month) as last_fin FROM financial_data GROUP BY client", engine)
-            except: fin = pd.DataFrame(columns=['client', 'last_fin'])
-            
-            # Identify all unique clients
-            all_clients = sorted(list(set(registry['client_name'].tolist() + ops['client'].tolist() + fin['client'].tolist())))
-            
-            if all_clients:
-                # Router UI
-                c1, c2, _ = st.columns([2, 1, 3])
-                target_client = c1.selectbox("Select Client Profile to Manage:", all_clients)
-                if c2.button("⚙️ Manage Profile", use_container_width=True):
-                    st.session_state["managing_client"] = target_client
-                    st.rerun()
-                    
-                st.markdown("### 📊 Global Client Health")
-                
-                health_records = []
-                for c in all_clients:
-                    client_brands = registry[registry['client_name'] == c]['brand_code'].nunique()
-                    client_slas = slas[slas['client_name'] == c]['brand_code'].nunique()
-                    l_ops = ops[ops['client'] == c]['last_ops'].max() if c in ops['client'].values else "Missing"
-                    l_fin = fin[fin['client'] == c]['last_fin'].max() if c in fin['client'].values else "Missing"
-                    
-                    health_records.append({
-                        "Client": c,
-                        "Active Brands": client_brands,
-                        "SLAs Configured": f"{client_slas} / {client_brands}",
-                        "Last Ops Data": l_ops,
-                        "Last Fin Data": l_fin,
-                        "Status": "🟢 Healthy" if l_ops != "Missing" and l_fin != "Missing" else "🟡 Action Needed"
-                    })
-                
-                st.dataframe(pd.DataFrame(health_records), use_container_width=True, hide_index=True)
-            else:
-                st.info("No clients found in the database. Upload Ops data to seed the system.")
-                
-        except Exception as e:
-            st.error(f"Error loading Master Health Board: {e}")
-
-    else:
-        # ==========================================
-        # VIEW B: THE CLIENT DETAIL PROFILE
-        # ==========================================
-        client = st.session_state["managing_client"]
-        
-        c1, c2 = st.columns([4, 1])
-        c1.markdown(f"## ⚙️ Profile: {client}")
-        if c2.button("⬅️ Back to Hub", use_container_width=True):
+if view_mode == "⚙️ Admin":
+    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management"], horizontal=True)
+    
+    if admin_mode == "🏢 Client Hub":
+        # Initialize router state
+        if "managing_client" not in st.session_state:
             st.session_state["managing_client"] = None
-            st.rerun()
+
+        if st.session_state["managing_client"] is None:
+            # ==========================================
+            # VIEW A: THE MASTER HEALTH BOARD
+            # ==========================================
+            st.markdown("## 🏢 CLIENT HUB: Master Health Board")
+            st.markdown("*Insight: Centralized view of client data completeness, SLAs, and active configurations.*")
+            st.markdown("---")
+
+            # --- ONBOARD NEW CLIENT ---
+            with st.expander("➕ Onboard New Client"):
+                with st.form("onboard_client_form"):
+                    st.markdown("Register a brand new client by defining their first brand mapping.")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        new_client = st.text_input("New Client Name (e.g., Betsson Group)").strip()
+                        new_brand = st.text_input("First Brand Name (e.g., Betsson)").strip()
+                    with col2:
+                        new_tag = st.text_input("First Ops Tag (e.g., BETS)").strip().upper()
+                        new_format = st.selectbox("Financial Format", ["Standard", "LeoVegas", "Offside"])
+                    
+                    if st.form_submit_button("Create Client"):
+                        if new_client and new_brand and new_tag:
+                            try:
+                                execute_query(
+                                    """INSERT INTO client_mapping (brand_code, brand_name, client_name, financial_format) 
+                                       VALUES (:t, :b, :c, :f) 
+                                       ON CONFLICT (brand_code) DO UPDATE SET brand_name = :b, client_name = :c, financial_format = :f""", 
+                                    {"t": new_tag, "b": new_brand, "c": new_client, "f": new_format}
+                                )
+                                st.cache_data.clear()
+                                st.success(f"Successfully onboarded {new_client}!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error onboarding client: {e}")
+                        else:
+                            st.warning("Please fill out the Client Name, Brand Name, and Ops Tag.")
+            st.markdown("---")
+    
+            try:
+                from src.database import engine
+                import pandas as pd
             
+                # Fetch base data for health calculations
+                registry = pd.read_sql("SELECT client_name, brand_code FROM client_mapping", engine)
+                slas = pd.read_sql("SELECT client_name, brand_code FROM contractual_volumes", engine)
+                ops = pd.read_sql("SELECT ops_client as client, MAX(ops_date) as last_ops FROM ops_telemarketing_data GROUP BY ops_client", engine)
+            
+                try: fin = pd.read_sql("SELECT client, MAX(report_month) as last_fin FROM raw_financial_data GROUP BY client", engine)
+                except: fin = pd.DataFrame(columns=['client', 'last_fin'])
+            
+                # Identify all unique clients
+                all_clients = sorted(list(set(registry['client_name'].tolist() + ops['client'].tolist() + fin['client'].tolist())))
+            
+                if all_clients:
+                    # Router UI
+                    c1, c2, _ = st.columns([2, 1, 3])
+                    target_client = c1.selectbox("Select Client Profile to Manage:", all_clients)
+                    c2.markdown("<br>", unsafe_allow_html=True)
+                    if c2.button("⚙️ Manage Profile", use_container_width=True):
+                        st.session_state["managing_client"] = target_client
+                        st.rerun()
+                    
+                    st.markdown("### 📊 Global Client Health")
+                
+                    health_records = []
+                    for c in all_clients:
+                        client_brands = registry[registry['client_name'] == c]['brand_code'].nunique()
+                        client_slas = slas[slas['client_name'] == c]['brand_code'].nunique()
+                        l_ops = ops[ops['client'] == c]['last_ops'].max() if c in ops['client'].values else "Missing"
+                        l_fin = fin[fin['client'] == c]['last_fin'].max() if c in fin['client'].values else "Missing"
+                    
+                        health_records.append({
+                            "Client": c,
+                            "Active Brands": client_brands,
+                            "SLAs Configured": f"{client_slas} / {client_brands}",
+                            "Last Ops Data": l_ops,
+                            "Last Fin Data": l_fin,
+                            "Status": "🟢 Healthy" if l_ops != "Missing" and l_fin != "Missing" else "🟡 Action Needed"
+                        })
+                
+                    st.dataframe(pd.DataFrame(health_records), use_container_width=True, hide_index=True)
+                    
+                    # --- GLOBAL OPERATIONS RECAP ---
+                    st.markdown("---")
+                    st.subheader("🌍 Global Operations Recap")
+                    recap_tabs = st.tabs(["🏢 By Client", "📅 By Month"])
+                    
+                    try:
+                        # Fetch all historical ops
+                        recap_df = pd.read_sql("SELECT ops_client, ops_date, records, kpi2_logins as logins, conversions, calls FROM ops_telemarketing_snapshots", engine)
+                        
+                        if not recap_df.empty and 'ops_date' in recap_df.columns:
+                            # 1. By Client View
+                            with recap_tabs[0]:
+                                client_agg = recap_df.groupby('ops_client').agg(
+                                    records=('records', 'sum'),
+                                    logins=('logins', 'sum'),
+                                    conversions=('conversions', 'sum'),
+                                    calls=('calls', 'sum')
+                                ).reset_index()
+                                client_agg.columns = ['Client', 'Total Records', 'Total Logins', 'Total Conversions', 'Total Calls']
+                                
+                                # Add Grand Total Row
+                                total_row_client = pd.DataFrame([{
+                                    'Client': 'GRAND TOTAL',
+                                    'Total Records': client_agg['Total Records'].sum(),
+                                    'Total Logins': client_agg['Total Logins'].sum(),
+                                    'Total Conversions': client_agg['Total Conversions'].sum(),
+                                    'Total Calls': client_agg['Total Calls'].sum()
+                                }])
+                                client_agg = pd.concat([client_agg, total_row_client], ignore_index=True)
+                                
+                                st.dataframe(client_agg, use_container_width=True, hide_index=True)
+                                
+                            # 2. By Month View
+                            with recap_tabs[1]:
+                                recap_df['Month_Str'] = pd.to_datetime(recap_df['ops_date']).dt.strftime('%Y-%m')
+                                month_agg = recap_df.groupby('Month_Str').agg(
+                                    records=('records', 'sum'),
+                                    logins=('logins', 'sum'),
+                                    conversions=('conversions', 'sum'),
+                                    calls=('calls', 'sum')
+                                ).reset_index().sort_values('Month_Str', ascending=False)
+                                month_agg.columns = ['Month', 'Total Records', 'Total Logins', 'Total Conversions', 'Total Calls']
+                                
+                                # Add Grand Total Row
+                                total_row_month = pd.DataFrame([{
+                                    'Month': 'GRAND TOTAL',
+                                    'Total Records': month_agg['Total Records'].sum(),
+                                    'Total Logins': month_agg['Total Logins'].sum(),
+                                    'Total Conversions': month_agg['Total Conversions'].sum(),
+                                    'Total Calls': month_agg['Total Calls'].sum()
+                                }])
+                                month_agg = pd.concat([month_agg, total_row_month], ignore_index=True)
+                                
+                                st.dataframe(month_agg, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No Operations data found to recap.")
+                            
+                    except Exception as e:
+                        st.error(f"Error loading Operations Recap: {e}")
+                        
+                else:
+                    st.info("No clients found in the database. Upload Ops data to seed the system.")
+                
+            except Exception as e:
+                st.error(f"Error loading Master Health Board: {e}")
+
+        else:
+            # ==========================================
+            # VIEW B: THE CLIENT DETAIL PROFILE
+            # ==========================================
+            client = st.session_state["managing_client"]
+        
+            c1, c2 = st.columns([4, 1])
+            c1.markdown(f"## ⚙️ Profile: {client}")
+            if c2.button("⬅️ Back to Hub", use_container_width=True):
+                st.session_state["managing_client"] = None
+                st.rerun()
+            
+            with st.expander("✏️ Rename Client globally"):
+                with st.form("rename_client_form"):
+                    st.warning("⚠️ Renaming a client will retroactively update all historical Operations data, Financial data, Brand Mappings, and User Access lists.")
+                    new_client_name = st.text_input("New Client Name", value=client).strip()
+                    if st.form_submit_button("Cascade Rename"):
+                        if new_client_name and new_client_name != client:
+                            with st.spinner("Executing multi-table cascade update..."):
+                                # 1. Update Mappings
+                                execute_query("UPDATE client_mapping SET client_name = :new WHERE client_name = :old", {"new": new_client_name, "old": client})
+                                # 2. Update Financial Data
+                                execute_query("UPDATE raw_financial_data SET client = :new WHERE client = :old", {"new": new_client_name, "old": client})
+                                # 3. Update Operations Data
+                                execute_query("UPDATE ops_telemarketing_data SET ops_client = :new WHERE ops_client = :old", {"new": new_client_name, "old": client})
+
+                                # 4. Update RBAC User Permissions (Safely parse JSON arrays)
+                                try:
+                                    import json
+                                    users_df = pd.read_sql("SELECT username, allowed_clients FROM users", engine)
+                                    for _, u_row in users_df.iterrows():
+                                        u_name = u_row['username']
+                                        u_clients_str = u_row['allowed_clients']
+                                        if isinstance(u_clients_str, str):
+                                            try:
+                                                u_clients = json.loads(u_clients_str)
+                                                if client in u_clients:
+                                                    # Replace old client name with new one in their access list
+                                                    u_clients = [new_client_name if c == client else c for c in u_clients]
+                                                    execute_query("UPDATE users SET allowed_clients = :ac WHERE username = :u", {"ac": json.dumps(u_clients), "u": u_name})
+                                            except: pass
+                                except Exception as e:
+                                    pass
+
+                                # Clear Cache and Reload
+                                st.cache_data.clear()
+                                st.session_state["managing_client"] = new_client_name
+                                st.success(f"Successfully renamed to {new_client_name}!")
+                                st.rerun()
+
+            st.markdown("---")
+        
+            from src.database import engine, execute_query
+            import pandas as pd
+        
+            t_comp, t_reg, t_sla = st.tabs(["📊 Completeness & Uploads", "🏷️ Brand Registry", "⚖️ Contractual SLAs"])
+        
+            # ==========================================
+            # TAB 1: COMPLETENESS & UPLOADS
+            # ==========================================
+            with t_comp:
+                st.markdown(f"### 🗃️ Data Completeness: {client}")
+                try:
+                    brand_df = pd.read_sql(f"SELECT DISTINCT ops_brand FROM ops_telemarketing_snapshots WHERE ops_client = '{client}'", engine)
+                    available_brands = ["All"] + sorted([b for b in brand_df['ops_brand'].tolist() if b and b.strip()])
+                    selected_comp_brand = st.selectbox(f"Select Brand for {client}", options=available_brands, key="comp_brand_sel")
+                    
+                    # Operations Data SQL
+                    query_ops = f"SELECT ops_date, records, kpi2_logins as logins, conversions, calls FROM ops_telemarketing_snapshots WHERE ops_client = '{client}'"
+                    if selected_comp_brand != "All":
+                        query_ops += f" AND ops_brand = '{selected_comp_brand}'"
+                    ops_df = pd.read_sql(query_ops, engine)
+
+                    # Financial Validation SQL
+                    query_fin = f"SELECT DISTINCT report_month FROM raw_financial_data WHERE client = '{client}'"
+                    if selected_comp_brand != "All":
+                        query_fin += f" AND brand = '{selected_comp_brand}'"
+                    fin_months_df = pd.read_sql(query_fin, engine)
+                    financial_months_set = set(fin_months_df['report_month'].tolist())
+
+                    def get_financial_completeness(target_month_str, financial_months_set):
+                        if target_month_str in financial_months_set:
+                            return "🟢 Complete"
+                        
+                        now = datetime.now()
+                        try:
+                            y, m = map(int, target_month_str.split('-'))
+                            target_date = datetime(y, m, 1)
+                            current_date_start = datetime(now.year, now.month, 1)
+                            diff_months = (current_date_start.year - target_date.year) * 12 + (current_date_start.month - target_date.month)
+                            
+                            if diff_months <= 0:
+                                return "⚪ Pending"
+                            elif diff_months == 1:
+                                return "🟡 Warning (Missing Last Month)"
+                            else:
+                                return "🔴 Issue (Missing +2 Months)"
+                        except:
+                            return "⚪ Unknown"
+
+                    def get_completeness_status(year_month_str, actual_days_count):
+                        """Evaluates completeness based on calendar days and current date."""
+                        try:
+                            year, month = map(int, year_month_str.split('-'))
+                            _, total_days_in_month = calendar.monthrange(year, month)
+                            now = datetime.now()
+                            # Calculate Expected Days
+                            if now.year == year and now.month == month:
+                                expected_days = max(0, now.day - 1)
+                            elif datetime(year, month, 1) > now:
+                                expected_days = 0
+                            else:
+                                expected_days = total_days_in_month
+                                
+                            if expected_days == 0: return "⚪ N/A (Future)"
+                            if actual_days_count == 0: return "🔴 Incomplete"
+                            if actual_days_count >= expected_days: return "🟢 Complete"
+                            if expected_days - actual_days_count <= 2: return f"🟡 Warning ({actual_days_count}/{expected_days} days)"
+                            return f"🟠 Partial ({actual_days_count}/{expected_days} days)"
+                        except Exception:
+                            return "⚪ Unknown"
+
+                    st.markdown("### 📊 Granular Data Completeness")
+                    if not ops_df.empty and 'ops_date' in ops_df.columns:
+                        ops_df['Month_Str'] = pd.to_datetime(ops_df['ops_date']).dt.strftime('%Y-%m')
+                        
+                        completeness_df = ops_df.groupby('Month_Str').agg(
+                            actual_days=('ops_date', 'nunique'),
+                            records=('records', 'sum'),
+                            logins=('logins', 'sum'),
+                            conversions=('conversions', 'sum'),
+                            calls=('calls', 'sum')
+                        ).reset_index()
+                        
+                        completeness_df.columns = ['Month', 'Actual Days Logged', 'Records', 'Logins', 'Conversions', 'Calls']
+                        
+                        completeness_df['Ops Status'] = completeness_df.apply(lambda row: get_completeness_status(row['Month'], row['Actual Days Logged']), axis=1)
+                        completeness_df['Financial Status'] = completeness_df['Month'].apply(lambda m: get_financial_completeness(m, financial_months_set))
+                        
+                        completeness_df = completeness_df[['Month', 'Actual Days Logged', 'Ops Status', 'Records', 'Logins', 'Conversions', 'Calls', 'Financial Status']]
+                        
+                        st.dataframe(completeness_df.sort_values('Month', ascending=False), use_container_width=True, hide_index=True)
+                        
+                        st.markdown("#### 📅 Daily Ingestion Drill-Down")
+                        available_months = sorted(completeness_df['Month'].tolist(), reverse=True)
+                        if available_months:
+                            selected_month = st.selectbox("Select Month for Daily Breakdown", options=available_months)
+                            if selected_month:
+                                daily_df = ops_df[ops_df['Month_Str'] == selected_month].groupby('ops_date').agg(
+                                    records=('records', 'sum'),
+                                    logins=('logins', 'sum'),
+                                    conversions=('conversions', 'sum'),
+                                    calls=('calls', 'sum')
+                                ).reset_index()
+                                daily_df.columns = ['Date', 'Records', 'Logins', 'Conversions', 'Calls']
+                                st.dataframe(daily_df.sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No Operations data found for this client to evaluate completeness.")
+                        
+                except Exception as e:
+                    st.error(f"Completeness evaluation error: {e}")
+
+                st.markdown("---")
+                st.markdown(f"#### 📥 Upload {client} Financials")
+                st.markdown("*Upload the NGR/Deposits file directly for this client.*")
+                fin_files = st.file_uploader("Upload Financial Files", accept_multiple_files=True, type=["csv", "xlsx"], key="client_fin_upload")
+                if st.button("Run Financial Ingestion") and fin_files:
+                    from src.ingestion import load_all_data_from_uploads
+                    with st.spinner("Processing..."):
+                        df, reg = load_all_data_from_uploads(fin_files)
+                        if not df.empty:
+                            st.session_state["registry"] = reg
+                            if "raw_fin_df" in st.session_state: del st.session_state["raw_fin_df"]
+                            st.success(f"Successfully saved financials for {client}!")
+                            st.rerun()
+
+            # ==========================================
+            # TAB 2: BRAND REGISTRY
+            # ==========================================
+            with t_reg:
+                st.markdown(f"### 🏷️ Brand Registry: {client}")
+                try:
+                    registry_df = pd.read_sql(f"SELECT brand_name as \"Brand Name\", brand_code as \"Ops Tag\" FROM client_mapping WHERE client_name = '{client}' ORDER BY brand_name", engine)
+                    st.dataframe(registry_df, use_container_width=True, hide_index=True)
+                except Exception as e:
+                    st.info("No brands registered yet.")
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("#### ➕ Add Tag")
+                    with st.form("add_client_tag_form"):
+                        new_tag = st.text_input("Ops Tag (e.g., ROJB, LV)")
+                        new_brand = st.text_input("Brand Name (e.g., Rojabet, Leovegas)")
+                        new_format = st.selectbox("Financial Format", ["Standard", "LeoVegas", "Offside"])
+                        if st.form_submit_button("Register Tag"):
+                            execute_query("""INSERT INTO client_mapping (brand_code, brand_name, client_name, financial_format) 
+                                             VALUES (:t, :b, :c, :f) 
+                                             ON CONFLICT (brand_code) DO UPDATE SET brand_name = :b, client_name = :c, financial_format = :f""", 
+                                          {"t": new_tag.upper().strip(), "b": new_brand.strip(), "c": client, "f": new_format})
+
+                            execute_query("UPDATE ops_telemarketing_data SET ops_client = :c, ops_brand = :b WHERE ops_client = 'UNKNOWN' AND ops_brand = :t",
+                                          {"c": client, "b": new_brand.strip(), "t": new_tag.upper().strip()})
+
+                            if "unmapped_tags" in st.session_state and new_tag.upper().strip() in st.session_state.get("unmapped_tags", set()):
+                                st.session_state["unmapped_tags"].remove(new_tag.upper().strip())
+                            st.cache_data.clear()
+                            st.success(f"Saved {new_tag.upper()}!")
+                            st.rerun()
+                with c2:
+                    st.markdown("#### 🗑️ Delete Tag")
+                    with st.form("del_client_tag_form"):
+                        del_tag = st.text_input("Ops Tag to Remove")
+                        if st.form_submit_button("Delete Tag"):
+                            execute_query("DELETE FROM client_mapping WHERE brand_code = :t AND client_name = :c", {"t": del_tag.upper().strip(), "c": client})
+                            if "raw_ops_df" in st.session_state: del st.session_state["raw_ops_df"]
+                            st.success("Deleted!")
+                            st.rerun()
+
+            # ==========================================
+            # TAB 3: SLA & BENCHMARKS
+            # ==========================================
+            with t_sla:
+                st.markdown(f"### ⚖️ SLAs & Benchmarks: {client}")
+                
+                # --- Sub-Tab 1: Monthly Volumes ---
+                st.markdown("#### 1️⃣ Monthly Volume Minimums")
+                try:
+                    vol_df = pd.read_sql(f"SELECT brand_code as \"Brand\", lifecycle as \"Lifecycle\", monthly_minimum_records as \"Min Records\" FROM contractual_volumes WHERE client_name = '{client}'", engine)
+                    st.dataframe(vol_df, use_container_width=True, hide_index=True)
+                except Exception as e:
+                    st.info("No Volume Targets set.")
+                
+                c3, c4 = st.columns(2)
+                with c3:
+                    with st.form("add_client_vol_form"):
+                        vol_brand = st.text_input("Brand (e.g., Rojabet)")
+                        vol_lifecycle = st.selectbox("Lifecycle", ["RND", "WB", "AFF", "ALL"])
+                        vol_min = st.number_input("Monthly Min Records", min_value=0, step=100)
+                        if st.form_submit_button("Set Volume Minimum"):
+                            execute_query("""INSERT INTO contractual_volumes (client_name, brand_code, lifecycle, monthly_minimum_records) 
+                                             VALUES (:c, :b, :l, :m) ON CONFLICT (client_name, brand_code, lifecycle) 
+                                             DO UPDATE SET monthly_minimum_records = :m""",
+                                          {"c": client, "b": vol_brand.strip(), "l": vol_lifecycle.upper(), "m": vol_min})
+                            st.success("Volume Saved!")
+                            st.rerun()
+                with c4:
+                    with st.form("del_client_vol_form"):
+                        del_vol_brand = st.text_input("Brand Name to Remove")
+                        del_vol_lc = st.selectbox("Lifecycle to Remove", ["RND", "WB", "AFF", "ALL"])
+                        if st.form_submit_button("Delete Volume"):
+                            execute_query("DELETE FROM contractual_volumes WHERE client_name = :c AND brand_code = :b AND lifecycle = :l", 
+                                          {"c": client, "b": del_vol_brand.strip(), "l": del_vol_lc.upper()})
+                            st.success("Deleted!")
+                            st.rerun()
+
+                st.markdown("---")
+                
+                # --- Sub-Tab 2: Granular Benchmarks ---
+                st.markdown("#### 2️⃣ Granular Campaign Benchmarks")
+                try:
+                    bench_df = pd.read_sql(f"SELECT brand_code as \"Brand\", campaign_signature as \"Campaign Signature\", target_conv_pct * 100 as \"Target Conv%\", target_li_pct * 100 as \"Target LI%\", target_cac_usd as \"Target True CAC ($)\" FROM granular_benchmarks WHERE client_name = '{client}'", engine)
+                    st.dataframe(bench_df, use_container_width=True, hide_index=True)
+                except Exception as e:
+                    st.info("No Efficiency Benchmarks set.")
+                
+                c5, c6 = st.columns(2)
+                with c5:
+                    with st.form("add_client_bench_form"):
+                        bench_brand = st.text_input("Brand")
+                        bench_sig = st.text_input("Campaign Signature (e.g., BAH-CH-ALL-RND-LI)")
+                        bench_conv = st.number_input("Target Conv (%)", min_value=0.0, step=0.1)
+                        bench_li = st.number_input("Target LI (%)", min_value=0.0, step=0.1)
+                        bench_cac = st.number_input("Target CAC ($)", min_value=0.0, step=0.5)
+                        if st.form_submit_button("Set Benchmark"):
+                            execute_query("""INSERT INTO granular_benchmarks (client_name, brand_code, campaign_signature, target_conv_pct, target_li_pct, target_cac_usd) 
+                                             VALUES (:c, :b, :s, :p, :li, :t) ON CONFLICT (campaign_signature) 
+                                             DO UPDATE SET target_conv_pct = :p, target_li_pct = :li, target_cac_usd = :t, brand_code = :b, client_name = :c""",
+                                          {"c": client, "b": bench_brand.strip(), "s": bench_sig.strip().upper(), "p": bench_conv / 100.0, "li": bench_li / 100.0, "t": bench_cac})
+                            st.success("Benchmark Saved!")
+                            st.rerun()
+                with c6:
+                    with st.form("del_client_bench_form"):
+                        del_bench_sig = st.text_input("Signature to Remove")
+                        if st.form_submit_button("Delete Benchmark"):
+                            execute_query("DELETE FROM granular_benchmarks WHERE client_name = :c AND campaign_signature = :s", 
+                                          {"c": client, "s": del_bench_sig.strip().upper()})
+                            st.success("Deleted!")
+                            st.rerun()
+            
+    elif admin_mode == "👥 User Management":
+        st.markdown("## 👥 USER MANAGEMENT")
+        st.markdown("*Insight: Control system access and restrict data visibility via Role-Based Access Control (RBAC).*")
         st.markdown("---")
         
         from src.database import engine, execute_query
         import pandas as pd
+        import json
         
-        t_comp, t_reg, t_sla = st.tabs(["📊 Completeness & Uploads", "🏷️ Brand Registry", "⚖️ Contractual SLAs"])
-        
-        # ==========================================
-        # TAB 1: COMPLETENESS & UPLOADS
-        # ==========================================
-        with t_comp:
-            st.markdown(f"### 🗃️ Data Completeness: {client}")
-            try:
-                ops_data = pd.read_sql(f"SELECT ops_brand as brand, ops_date as date FROM ops_telemarketing_data WHERE ops_client = '{client}' GROUP BY ops_brand, ops_date", engine)
-                try: fin_data = pd.read_sql(f"SELECT brand, month as date FROM financial_data WHERE client = '{client}' GROUP BY brand, month", engine)
-                except: fin_data = pd.DataFrame(columns=['brand', 'date'])
-                    
-                brands_query = f"SELECT DISTINCT COALESCE(brand_name, brand_code) as brand FROM client_mapping WHERE client_name = '{client}'"
-                all_brands = pd.read_sql(brands_query, engine)
-                
-                data_brands = pd.concat([ops_data[['brand']], fin_data[['brand']]]).drop_duplicates()
-                if not data_brands.empty:
-                    all_brands = pd.concat([all_brands, data_brands]).drop_duplicates(subset=['brand'])
-                    
-                all_brands_list = sorted(all_brands['brand'].dropna().unique().tolist())
-                all_dates = sorted(list(set(ops_data['date'].dropna().tolist() + fin_data['date'].dropna().tolist())), reverse=True)
-                
-                if all_dates and all_brands_list:
-                    col_tuples = []
-                    for b in all_brands_list:
-                        col_tuples.extend([(b, 'Fin'), (b, 'Ops')])
-                        
-                    # Months as Rows, Brands -> Fin/Ops as Columns
-                    matrix_df = pd.DataFrame(index=all_dates, columns=pd.MultiIndex.from_tuples(col_tuples))
-                    matrix_df.index.name = "Month"
-                    
-                    for d in all_dates:
-                        ops_b = ops_data[ops_data['date'] == d]['brand'].tolist()
-                        fin_b = fin_data[fin_data['date'] == d]['brand'].tolist()
-                        
-                        for b in all_brands_list:
-                            matrix_df.loc[d, (b, 'Fin')] = '✅' if b in fin_b else '❌'
-                            matrix_df.loc[d, (b, 'Ops')] = '✅' if b in ops_b else '❌'
-                            
-                    st.dataframe(matrix_df, use_container_width=True)
-                else:
-                    st.info(f"No ops or financial data found for {client}.")
-            except Exception as e:
-                st.error(f"Matrix error: {e}")
-
-            st.markdown("---")
-            st.markdown(f"#### 📥 Upload {client} Financials")
-            st.markdown("*Upload the NGR/Deposits file directly for this client.*")
-            fin_files = st.file_uploader("Upload Financial Files", accept_multiple_files=True, type=["csv", "xlsx"], key="client_fin_upload")
-            if st.button("Run Financial Ingestion") and fin_files:
-                from src.ingestion import load_financial_data_from_uploads
-                with st.spinner("Processing..."):
-                    df = load_financial_data_from_uploads(fin_files)
-                    if not df.empty:
-                        if "raw_fin_df" in st.session_state: del st.session_state["raw_fin_df"]
-                        st.success(f"Successfully saved financials for {client}!")
-                        st.rerun()
-
-        # ==========================================
-        # TAB 2: BRAND REGISTRY
-        # ==========================================
-        with t_reg:
-            st.markdown(f"### 🏷️ Brand Registry: {client}")
-            try:
-                registry_df = pd.read_sql(f"SELECT brand_name as \"Brand Name\", brand_code as \"Ops Tag\" FROM client_mapping WHERE client_name = '{client}' ORDER BY brand_name", engine)
-                st.dataframe(registry_df, use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.info("No brands registered yet.")
-                
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("#### ➕ Add Tag")
-                with st.form("add_client_tag_form"):
-                    new_tag = st.text_input("Ops Tag (e.g., ROJB)")
-                    new_brand = st.text_input("Brand Name (e.g., Rojabet)")
-                    if st.form_submit_button("Register Tag"):
-                        execute_query("INSERT INTO client_mapping (brand_code, brand_name, client_name) VALUES (:t, :b, :c) ON CONFLICT (brand_code) DO UPDATE SET brand_name = :b, client_name = :c", 
-                                      {"t": new_tag.upper().strip(), "b": new_brand.strip(), "c": client})
-                        
-                        # Retroactively fix ops data since they are adding a tag
-                        execute_query("UPDATE ops_telemarketing_data SET ops_client = :c, ops_brand = :b WHERE ops_client = 'UNKNOWN' AND ops_brand = :t",
-                                      {"c": client, "b": new_brand.strip(), "t": new_tag.upper().strip()})
-                        
-                        if "unmapped_tags" in st.session_state and new_tag.upper().strip() in st.session_state.get("unmapped_tags", set()):
-                            st.session_state["unmapped_tags"].remove(new_tag.upper().strip())
-                        if "raw_ops_df" in st.session_state: del st.session_state["raw_ops_df"]
-                            
-                        st.success(f"Saved {new_tag.upper()}! Historical ops data fixed retroactively if orphaned.")
-                        st.rerun()
-            with c2:
-                st.markdown("#### 🗑️ Delete Tag")
-                with st.form("del_client_tag_form"):
-                    del_tag = st.text_input("Ops Tag to Remove")
-                    if st.form_submit_button("Delete Tag"):
-                        execute_query("DELETE FROM client_mapping WHERE brand_code = :t AND client_name = :c", {"t": del_tag.upper().strip(), "c": client})
-                        if "raw_ops_df" in st.session_state: del st.session_state["raw_ops_df"]
-                        st.success("Deleted!")
-                        st.rerun()
-
-        # ==========================================
-        # TAB 3: CONTRACTUAL SLAS
-        # ==========================================
-        with t_sla:
-            st.markdown(f"### ⚖️ Contractual SLAs: {client}")
-            try:
-                sla_df = pd.read_sql(f"SELECT brand_code as \"Brand\", lifecycle as \"Lifecycle\", monthly_minimum_records as \"Min Records\", target_cac_usd as \"Target CAC ($)\", benchmark_conv_pct * 100 as \"Target Conv (%)\" FROM contractual_slas WHERE client_name = '{client}'", engine)
-                st.dataframe(sla_df, use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.info("No SLAs set.")
-                
-            c3, c4 = st.columns(2)
-            with c3:
-                st.markdown("#### ➕ Add SLA")
-                with st.form("add_client_sla_form"):
-                    sla_brand = st.text_input("Brand (e.g., Rojabet)")
-                    sla_lifecycle = st.selectbox("Lifecycle", ["RND", "WB", "AFF", "ALL"])
-                    sla_min = st.number_input("Monthly Min Records", min_value=0, step=100)
-                    sla_cac = st.number_input("Target CAC ($)", min_value=0.0, step=0.5)
-                    sla_conv = st.number_input("Benchmark Conv (%)", min_value=0.0, step=0.1)
-                    if st.form_submit_button("Set SLA"):
-                        execute_query("""INSERT INTO contractual_slas (client_name, brand_code, lifecycle, monthly_minimum_records, target_cac_usd, benchmark_conv_pct) 
-                                         VALUES (:c, :b, :l, :m, :t, :p) ON CONFLICT (client_name, brand_code, lifecycle) 
-                                         DO UPDATE SET monthly_minimum_records = :m, target_cac_usd = :t, benchmark_conv_pct = :p""",
-                                      {"c": client, "b": sla_brand.strip(), "l": sla_lifecycle.upper(), "m": sla_min, "t": sla_cac, "p": sla_conv / 100.0})
-                        st.success("SLA Saved!")
-                        st.rerun()
-            with c4:
-                st.markdown("#### 🗑️ Delete SLA")
-                with st.form("del_client_sla_form"):
-                    del_sla_brand = st.text_input("Brand Name to Remove")
-                    del_sla_lc = st.selectbox("Lifecycle to Remove", ["RND", "WB", "AFF", "ALL"])
-                    if st.form_submit_button("Delete SLA"):
-                        execute_query("DELETE FROM contractual_slas WHERE client_name = :c AND brand_code = :b AND lifecycle = :l", 
-                                      {"c": client, "b": del_sla_brand.strip(), "l": del_sla_lc.upper()})
-                        st.success("Deleted!")
-                        st.rerun()
+        # Show existing users
+        st.markdown("### 📋 Active Users")
+        try:
+            users_df = pd.read_sql("SELECT username, name, role, allowed_clients FROM users", engine)
+            # Format JSON for display
+            users_df["allowed_clients"] = users_df["allowed_clients"].apply(lambda x: ", ".join(json.loads(x)) if isinstance(x, str) else ", ".join(x))
+            st.dataframe(users_df, use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"Could not load users: {e}")
             
+        st.markdown("---")
+        st.markdown("---")
+
+        # Extract existing users for selectboxes
+        try:
+            existing_users = users_df["username"].tolist() if not users_df.empty else []
+            non_super_users = [u for u in existing_users if u != "superadmin"]
+        except:
+            existing_users, non_super_users = [], []
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.markdown("#### ⚙️ User Settings")
+            mode = st.radio("Action", ["➕ Create New User", "✏️ Edit Existing"], horizontal=True)
+
+            target_user = ""
+            default_role = "Operations"
+            default_name = ""
+            default_clients = ["All"]
+
+            if mode == "✏️ Edit Existing" and non_super_users:
+                target_user = st.selectbox("Select User to Edit", non_super_users)
+                if target_user:
+                    # Hydrate form with DB data
+                    user_row = users_df[users_df["username"] == target_user].iloc[0]
+                    default_role = user_row["role"]
+                    default_name = user_row["name"] if pd.notna(user_row["name"]) else ""
+                    raw_ac = user_row["allowed_clients"]
+                    default_clients = [c.strip() for c in raw_ac.split(",")] if isinstance(raw_ac, str) else ["All"]
+            elif mode == "✏️ Edit Existing" and not non_super_users:
+                st.info("No standard users to edit.")
+
+            with st.form("user_crud_form"):
+                u_username = st.text_input("Username (lowercase)", value=target_user, disabled=(mode == "✏️ Edit Existing")).strip().lower()
+                u_password = st.text_input("Password", placeholder="Leave blank to keep existing password" if mode == "✏️ Edit Existing" else "")
+                u_name = st.text_input("Display Name", value=default_name)
+
+                role_index = ["Superadmin", "Admin", "Operations", "Financial"].index(default_role) if default_role in ["Superadmin", "Admin", "Operations", "Financial"] else 2
+                u_role = st.selectbox("Role", ["Superadmin", "Admin", "Operations", "Financial"], index=role_index)
+
+                try:
+                    clients_df = pd.read_sql("SELECT DISTINCT client_name FROM client_mapping", engine)
+                    available_clients = ["All"] + clients_df["client_name"].tolist()
+                except:
+                    available_clients = ["All"]
+
+                # Ensure defaults exist in available options
+                safe_defaults = [c for c in default_clients if c in available_clients]
+                if not safe_defaults: safe_defaults = ["All"]
+
+                u_clients = st.multiselect("Allowed Clients", available_clients, default=safe_defaults)
+
+                if st.form_submit_button("Save User"):
+                    if u_username:
+                        if mode == "✏️ Edit Existing" and not u_password:
+                            # Update without touching password
+                            execute_query("""UPDATE users SET role = :r, name = :n, allowed_clients = :ac WHERE username = :u""",
+                                          {"u": u_username, "r": u_role, "n": u_name, "ac": json.dumps(u_clients)})
+                        else:
+                            # Full UPSERT
+                            execute_query(
+                                """INSERT INTO users (username, password, role, name, allowed_clients) 
+                                   VALUES (:u, :p, :r, :n, :ac) 
+                                   ON CONFLICT (username) DO UPDATE SET 
+                                   password = :p, role = :r, name = :n, allowed_clients = :ac""",
+                                {"u": u_username, "p": u_password, "r": u_role, "n": u_name, "ac": json.dumps(u_clients)}
+                            )
+                        st.success(f"User {u_username} saved!")
+                        st.rerun()
+                    else:
+                        st.error("Username required.")
+
+        with c2:
+            st.markdown("#### 🗑️ Revoke Access")
+            with st.form("delete_user_form"):
+                del_user = st.selectbox("Select User to Delete", non_super_users) if non_super_users else None
+                if st.form_submit_button("Delete User") and del_user:
+                    execute_query("DELETE FROM users WHERE username = :u", {"u": del_user})
+                    st.success(f"User {del_user} deleted!")
+                    st.rerun()
+
     st.stop()  # Don't render Main Workspace below
 
 # 🌍 FINANCIAL DATA FILTERS (for legacy Financial/CRM tabs)
-if st.session_state.get("data_loaded"):
-    _secure_df = st.session_state["df"].copy()
-    if "client" in _secure_df.columns:
-        if "All" not in st.session_state["allowed_clients"]:
-            _secure_df = _secure_df[_secure_df["client"].isin(st.session_state["allowed_clients"])]
-else:
-    _secure_df = pd.DataFrame()
-
-unique_countries = list(_secure_df["country"].unique()) if not _secure_df.empty and "country" in _secure_df.columns else []
+st.session_state["data_loaded"] = not _master_df.empty
 selected_country = "All"
-
-revenue_mode = st.sidebar.radio("Revenue Metric", ["GGR", "NGR"], horizontal=True) if not _secure_df.empty else "GGR"
+revenue_mode = st.sidebar.radio("Revenue Metric", ["GGR", "NGR"], horizontal=True) if not _master_df.empty else "GGR"
 rev_col = "ggr" if revenue_mode == "GGR" else "ngr"
-
-# TIME FRAME FILTER
-unique_months = sorted(_secure_df["report_month"].unique().tolist()) if not _secure_df.empty and "report_month" in _secure_df.columns else []
-if len(unique_months) > 1:
-    start_month, end_month = st.select_slider(
-        "Select Analysis Window",
-        options=unique_months,
-        value=(unique_months[0], unique_months[-1])
-    )
-elif len(unique_months) == 1:
-    start_month, end_month = unique_months[0], unique_months[0]
-else:
-    start_month, end_month = None, None
-
-# CREATE CENTRALIZED FILTERED DATAFRAME FOR ALL TABS
-if st.session_state.get("data_loaded"):
-    _master_df = _secure_df.copy()
-    if start_month and end_month and "report_month" in _master_df.columns:
-        _master_df = _master_df[(_master_df["report_month"] >= start_month) & (_master_df["report_month"] <= end_month)]
-    if selected_client != "All" and "client" in _master_df.columns: _master_df = _master_df[_master_df["client"] == selected_client]
-    if selected_brand != "All" and "brand" in _master_df.columns: _master_df = _master_df[_master_df["brand"] == selected_brand]
-    if selected_country != "All" and "country" in _master_df.columns: _master_df = _master_df[_master_df["country"] == selected_country]
-else:
-    _master_df = pd.DataFrame()
 
 # ── ROUTED VIEWS ──
 tab_map = {}
 run_clicked = False
 
 if view_mode == "📊 Dashboard":
-    tabs = ["📊 Executive Summary", "🕵️ CRM Intelligence", "📈 Campaigns"]
+    tabs = ["📊 Dashboard"]
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
+    with tab_map["📊 Dashboard"]:
+        st.info("Dashboard centralized view is currently under construction. Please navigate to your dedicated workspace.")
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")
-    tabs = ["🗄️ Ops Control Room", "📞 Operations Command"]
+    tabs = ["📞 Operations Command", "🕵️ CRM Intelligence", "📈 Campaigns", "🗄️ Operations Ingestion"]
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
     st.info("Operations Reports and Uploads will be consolidated here.")
-    # Temporary mapping to not break existing code block dependencies below
-    tab_map["🗄️ Data Control Room"] = tab_map["🗄️ Ops Control Room"] 
     
 elif view_mode == "🏦 Financial":
     st.markdown("## 🏦 Financial Workspace")
@@ -544,175 +1077,106 @@ elif view_mode == "🏦 Financial":
     tab_map = dict(zip(tabs, created_tabs))
     st.info("Financial Reports and NGR/Deposits Ingestion will be consolidated here.")
 
-if "🗄️ Data Control Room" in tab_map or "🗄️ Ops Control Room" in tab_map:
-    with tab_map.get("🗄️ Data Control Room", tab_map.get("🗄️ Ops Control Room")):
-        st.markdown("### > SYSTEM STATUS: DETECTING DATA PACKETS...")
-        if "unmapped_tags" in st.session_state and st.session_state["unmapped_tags"]:
-            st.error(f"🚨 **Action Required: Unmapped Campaigns Detected!** The following Ops Tags are not assigned to a Client/Brand: `{', '.join(st.session_state['unmapped_tags'])}`. Go to **⚙️ System Settings** to link them.")
-        st.markdown("---")
-    
-        st.markdown("#### 📅 COMPLIANCE & IMPORT GRID")
-        st.markdown("*Insight: Tracks expected monthly deliveries against actual files.*")
-    
-        # --- ADD THIS: Load from disk if RAM was cleared by a browser refresh ---
+if "📥 Financial Ingestion" in tab_map:
+    with tab_map["📥 Financial Ingestion"]:
+        st.markdown("### 📥 FINANCIAL DATA INGESTION")
+        st.markdown("*Upload NGR, Deposits, and Player Activity reports here. Data saves directly to the secure database.*")
+        
+        # --- COMPLIANCE GRID ---
         if "registry" not in st.session_state or st.session_state["registry"] is None:
             from src.ingestion import IngestionRegistry
             st.session_state["registry"] = IngestionRegistry.load()
-
-        # --- DYNAMIC COMPLIANCE GRID ---
         registry = st.session_state.get("registry")
         if registry and registry._entries:
+            st.markdown("#### 📅 Compliance & Import Grid")
             all_months = set()
-            for brand, months in registry._entries.items():
-                all_months.update(months.keys())
-        
-            # Sort months chronologically
+            for b, m_dict in registry._entries.items(): all_months.update(m_dict.keys())
             sorted_months = sorted(list(all_months), reverse=True)
-        
             grid_data = {"Month": sorted_months}
-            for brand in sorted(registry._entries.keys()):
-                statuses = []
-                for m in sorted_months:
-                    status = registry._entries[brand].get(m, {}).get("status", "MISSING")
-                    statuses.append("🟢 IMPORTED" if status == "COMPLETE" else "🔴 PENDING")
-                grid_data[f"{brand.title()} (Financials)"] = statuses
-            
+            for b in sorted(registry._entries.keys()):
+                grid_data[f"{b.title()}"] = ["🟢 IMPORTED" if registry._entries[b].get(m, {}).get("status") == "COMPLETE" else "🔴 PENDING" for m in sorted_months]
             st.dataframe(pd.DataFrame(grid_data), use_container_width=True, hide_index=True)
         
-            # Check for gaps using the backend registry logic
-            gaps = registry.missing_entries()
-            if gaps:
-                st.error(f"⚠️ DETECTED {len(gaps)} DATA GAP(S): Missing months detected in the timeline. Please upload them to ensure accurate Time-Series and YoY tracking.")
-        else:
-            st.info("Awaiting Data. Upload files below and click 'Run Analytics Pipeline' to populate the tracking grid.")
-
+        # --- UPLOADERS ---
         st.markdown("---")
-        st.markdown("#### 📥 DATA INGESTION ZONES")
-    
-        st.markdown("##### 📁 OFFSIDE GAMING")
-        up_offside_fin = st.file_uploader("Financial CSV/XLSX (Latribet, Rojabet)", type=["csv", "xlsx"], accept_multiple_files=True, key="up_offside_fin")
-    
-        st.markdown("---")
-        st.markdown("##### 📁 LEOVEGAS GROUP")
-        up_leovegas_fin = st.file_uploader("Financial CSV/XLSX (Bet UK, BetMGM, LV)", type=["csv", "xlsx"], accept_multiple_files=True, key="up_leovegas_fin")
+        st.markdown("#### 📁 File Dropzones")
+        fin_files = st.file_uploader("Upload Financial Files (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
+        if st.button("Process Financial Data", use_container_width=True) and fin_files:
+            with st.spinner("Saving securely to PostgreSQL..."):
+                from src.ingestion import load_all_data_from_uploads
+                df, reg = load_all_data_from_uploads(fin_files)
+                st.session_state["registry"] = reg
+                st.success("Successfully ingested to PostgreSQL!")
+                st.rerun()
 
-        st.markdown("---")
-        st.markdown("##### 📁 INTERNAL CAMPAIGNS (CALLSU)")
-        up_agency_ops = st.file_uploader("Daily Trends & CES Reports CSV/XLSX", type=["csv", "xlsx"], accept_multiple_files=True, key="up_agency_ops")
+if "🗄️ Operations Ingestion" in tab_map:
+    with tab_map["🗄️ Operations Ingestion"]:
+        st.markdown("### 📡 OPERATIONS DATA INGESTION")
+        st.markdown("*Upload CallsU or Telemarketing daily summaries here.*")
 
+        st.markdown("### 📡 Automated CallsU API Sync")
+        st.write("Fetch daily operations data directly from the CallsU servers in the background.")
 
-        run_clicked = st.button("🚀 Run Analytics Pipeline", type="primary", use_container_width=True)
+        col_date1, col_date2, col_btn = st.columns([2, 2, 2])
+        with col_date1:
+            sync_start = st.date_input("Start Date")
+        with col_date2:
+            sync_end = st.date_input("End Date")
 
-if run_clicked:
-    with st.status("⏳ Executing ETL Pipeline...", expanded=True) as status:
-        
-        # Combine the uploaded RAM buffers
-        fin_files = (st.session_state.get("up_offside_fin") or []) + (st.session_state.get("up_leovegas_fin") or [])
-        crm_files = [] # Legacy CRM files deprecated in favor of CallsU integration
+        with col_btn:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🚀 Trigger Background Sync", use_container_width=True):
+                if "sync_thread" not in st.session_state or not st.session_state.sync_thread.is_alive():
+                    # Clear old log
+                    open("data/api_sync.log", "w").close()
 
-        # ── Phase 2: Ingestion ───────────────────────────────────────────
-        st.write("> Ingesting financial data...")
-        df = pd.DataFrame()
-        registry = None
-
-        if fin_files:
-            try:
-                df, registry = load_all_data_from_uploads(fin_files)
-                if not df.empty:
-                    st.write(f"> Loaded {len(df):,} player records across {df['report_month'].nunique()} months.")
+                    # Launch detached thread
+                    t = threading.Thread(target=run_historical_pull, args=(sync_start.strftime('%Y-%m-%d'), sync_end.strftime('%Y-%m-%d')))
+                    t.add_script_run_ctx = True
+                    t.start()
+                    st.session_state.sync_thread = t
+                    st.success("Background worker launched!")
                 else:
-                    st.warning("No financial data found after processing uploads.")
-            except Exception as exc:
-                st.error(f"Ingestion failed: {exc}")
-        else:
-            st.info("No financial data uploaded. Skipping financial phases.")
+                    st.warning("A sync is already running in the background!")
 
-        # ── Phase 5: Campaigns (Legacy) ───────────────────────────────────
-        st.write("> Processing campaign data...")
-        campaign_raw = load_campaign_data_from_uploads(crm_files)
-        campaign_summary: pd.DataFrame | None = None
+        # Live Telemetry Console
+        st.markdown("**Live Terminal Output**")
+        log_container = st.empty()
 
-        if campaign_raw.empty:
-            st.write("No campaign data found — skipping.")
-        else:
-            campaign_summary = generate_campaign_summaries(campaign_raw)
-            st.write(f"Campaign summary: {len(campaign_summary)} rows.")
+        # Read log file
+        log_content = "No active logs."
+        if os.path.exists("data/api_sync.log"):
+            with open("data/api_sync.log", "r") as f:
+                log_content = f.read()
 
-        # ── Phase 20: Agency Operations ──────────────────────────
-        st.write("> Processing CallsU operations data...")
-        from src.ingestion import load_operations_data_from_uploads
-        agency_files = st.session_state.get("up_agency_ops") or []
-        ops_df = load_operations_data_from_uploads(agency_files)
-        if not ops_df.empty:
-            st.write(f"Operations summary: {len(ops_df)} campaign rows parsed.")
-        else:
-            st.write("No operations data found — skipping.")
-            
-        # Save to session state
-        st.session_state["ops_df"] = ops_df
+        log_container.code(log_content[-2000:], language="bash") # Show last 2000 chars
 
-        # ── Financial Analytics (only if financial data was loaded) ────────
-        financial_summary = pd.DataFrame()
-        both_business = pd.DataFrame()
-        cohort_matrices = {}
-        segmentation = pd.DataFrame()
-        program_summary = pd.DataFrame()
-        excel_buffer = None
+        if "sync_thread" in st.session_state and st.session_state.sync_thread.is_alive():
+            st.info("🔄 Worker is currently active. Click 'Refresh Log' to see latest terminal output.")
 
-        if not df.empty:
-            st.write("> Computing financial summaries...")
-            financial_summary = generate_monthly_summaries(df)
+        if st.button("🔄 Refresh Log Terminal"):
+            st.rerun()
+        st.markdown("---")
 
-            st.write("> Building cohort retention matrices...")
-            cohort_matrices = generate_cohort_matrix(df)
-
-            st.write("> Building segmentation matrix...")
-            segmentation = generate_segmentation_summary(df)
-
-            st.write("> Building Both Business summary...")
-            both_business = generate_both_business_summary(financial_summary)
-
-            st.write("> Building program summary...")
-            program_summary = generate_program_summary(df)
-
-            st.write("> Generating Excel report...")
-            excel_buffer = export_to_excel(
-                financial_summary,
-                campaign_df=campaign_summary,
-                cohort_matrices=cohort_matrices,
-                segmentation_df=segmentation,
-                both_business_df=both_business,
-            )
-
-        status.update(label="✅ Pipeline complete! Report written.", state="complete", expanded=False)
-
-    # Save to session state so dashboard survives reruns
-    st.session_state["df"] = df
-    st.session_state["registry"] = registry
-    st.session_state["financial_summary"] = financial_summary
-    st.session_state["campaign_summary"] = campaign_summary
-    st.session_state["cohort_matrices"] = cohort_matrices
-    st.session_state["segmentation"] = segmentation
-    st.session_state["both_business"] = both_business
-    st.session_state["program_summary"] = program_summary
-    st.session_state["excel_buffer"] = excel_buffer
-    st.session_state["data_loaded"] = True
-    
-    # Instantly show the grid
-    st.rerun()
+        ops_files = st.file_uploader("Upload Ops Files (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
+        if st.button("Process Operations Data", use_container_width=True) and ops_files:
+            with st.spinner("Saving securely to PostgreSQL..."):
+                from src.ingestion import load_operations_data_from_uploads
+                load_operations_data_from_uploads(ops_files)
+                st.success("Successfully ingested to PostgreSQL!")
+                st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  BI Dashboard — reads from session state
 # ══════════════════════════════════════════════════════════════════════════════
-if st.session_state["data_loaded"]:
-    df = st.session_state["df"]
-    registry = st.session_state["registry"]
-    financial_summary = st.session_state["financial_summary"]
-    campaign_summary = st.session_state["campaign_summary"]
-    cohort_matrices = st.session_state["cohort_matrices"]
-    segmentation = st.session_state["segmentation"]
-    both_business = st.session_state["both_business"]
-    program_summary = st.session_state["program_summary"]
+if not _master_df.empty:
+    df = _master_df
+    # Auto-compute analytics using cached wrappers (instantaneous!)
+    financial_summary = _cached_monthly_summaries(df, start=start_month, end=end_month)
+    cohort_matrices = _cached_cohort_matrix(df)
+    segmentation = _cached_segmentation(df)
+    both_business = _cached_both_business(financial_summary)
+    program_summary = _cached_program_summary(df)
 
     # ══════════════════════════════════════════════════════════════════════
     #  BI Dashboard (Phase 9)
@@ -977,20 +1441,27 @@ if st.session_state["data_loaded"]:
     # ═════════════════════════════════════════════════════════════════════
     #  TAB: Executive Summary (Phase 16)
     # ═════════════════════════════════════════════════════════════════════
-    if "📊 Executive Summary" in tab_map:
-        with tab_map["📊 Executive Summary"]:
+    if "🏦 Financial Deep-Dive" in tab_map:
+        with tab_map["🏦 Financial Deep-Dive"]:
             # ── System Diagnostic (Combined) ──────────────────────────────────
             if not both_business.empty:
-                exec_bb = both_business.iloc[-1]
+                active_bb = both_business[both_business["total_players"] > 0]
+                exec_bb = active_bb.iloc[-1] if not active_bb.empty else both_business.iloc[-1]
                 exec_ts = _cached_time_series(both_business)
                 exec_ts_m = exec_ts["monthly"]
+                
+                # Use active trailing month for text insight and MoM calculations
+                exec_ts_m_active = exec_ts_m[exec_ts_m["total_players"] > 0] if "total_players" in exec_ts_m.columns else exec_ts_m
+                exec_latest = exec_ts_m_active.iloc[-1] if not exec_ts_m_active.empty else (exec_ts_m.iloc[-1] if not exec_ts_m.empty else pd.Series())
 
-                if not exec_ts_m.empty:
-                    exec_latest = exec_ts_m.iloc[-1]
+                if not exec_latest.empty:
                     combined_fin = financial_summary[
                         financial_summary["brand"] == "Combined"
-                    ].sort_values("month").iloc[-1]
-                    e_whale = float(combined_fin.get("top_10_pct_ggr_share", 0))
+                    ].sort_values("month")
+                    com_fin_active = combined_fin[combined_fin["total_players"] > 0]
+                    c_fin_latest = com_fin_active.iloc[-1] if not com_fin_active.empty else (combined_fin.iloc[-1] if not combined_fin.empty else pd.Series())
+                    
+                    e_whale = float(c_fin_latest.get("top_10_pct_ggr_share", 0))
                     e_margin = float(exec_bb.get("margin", 0))
                     e_narrative = generate_smart_narrative(exec_latest, e_margin, e_whale)
                     if e_margin < 2.5 or e_whale >= 70:
@@ -1006,6 +1477,10 @@ if st.session_state["data_loaded"]:
                 st.markdown("#### > CROSS-BRAND EXECUTIVE MATRIX_")
                 st.markdown("*Insight: Tracks core revenue generation, operating margin safety, and top-line agency commissions across all entities.*")
 
+                if not df.empty:
+                    master_excel = _get_master_excel_bytes(financial_summary, cohort_matrices, segmentation, both_business, st.session_state.get("ops_df", pd.DataFrame()))
+                    st.download_button("📥 Download Master Report (Fin + Ops)", data=master_excel, file_name=f"Master_Report_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+
                 latest_month = both_business["month"].max()
 
                 _mom_map = {
@@ -1014,8 +1489,17 @@ if st.session_state["data_loaded"]:
                     "Turnover / Player": "turnover_per_player", "Whale Risk %": None,
                 }
 
+                def _get_true_latest(brand_df):
+                    """Filters out padded structural zeros to find the real latest active month."""
+                    active = brand_df[brand_df["total_players"] > 0]
+                    return active["month"].max() if not active.empty else None
+
                 def _brand_snapshot(brand_name: str) -> dict:
-                    bdata = financial_summary[(financial_summary["brand"] == brand_name) & (financial_summary["month"] == latest_month)]
+                    brand_all = financial_summary[financial_summary["brand"] == brand_name]
+                    if brand_all.empty: return {}
+                    b_latest_month = _get_true_latest(brand_all)
+                    if not b_latest_month: return {}
+                    bdata = brand_all[brand_all["month"] == b_latest_month]
                     if bdata.empty: return {}
                     row = bdata.iloc[0]
                     return {
@@ -1029,8 +1513,9 @@ if st.session_state["data_loaded"]:
                     bdata = financial_summary[financial_summary["brand"] == brand_name].sort_values("month")
                     if bdata.empty: return ["-"] * len(metrics_list)
                     brand_ts_m = _cached_time_series(bdata).get("monthly", pd.DataFrame())
-                    if brand_ts_m.empty: return ["-"] * len(metrics_list)
-                    latest = brand_ts_m.iloc[-1]
+                    active_ts = brand_ts_m[brand_ts_m["total_players"] > 0] if "total_players" in brand_ts_m.columns else brand_ts_m
+                    if active_ts.empty: return ["-"] * len(metrics_list)
+                    latest = active_ts.iloc[-1]
                     return [f"{latest.get(f'{_mom_map.get(m)}_mom_pct'):+.1f}%" if pd.notna(latest.get(f"{_mom_map.get(m)}_mom_pct")) else "-" for m in metrics_list]
 
                 def _bb_mom() -> list:
@@ -1042,8 +1527,9 @@ if st.session_state["data_loaded"]:
                     bdata = financial_summary[financial_summary["brand"] == brand_name].sort_values("month")
                     if bdata.empty: return ["-"] * len(metrics_list)
                     brand_ts_m = _cached_time_series(bdata).get("monthly", pd.DataFrame())
-                    if brand_ts_m.empty: return ["-"] * len(metrics_list)
-                    latest = brand_ts_m.iloc[-1]
+                    active_ts = brand_ts_m[brand_ts_m["total_players"] > 0] if "total_players" in brand_ts_m.columns else brand_ts_m
+                    if active_ts.empty: return ["-"] * len(metrics_list)
+                    latest = active_ts.iloc[-1]
                     return [f"{latest.get(f'{_mom_map.get(m)}_yoy_pct'):+.1f}%" if pd.notna(latest.get(f"{_mom_map.get(m)}_yoy_pct")) else "-" for m in metrics_list]
 
                 def _bb_yoy() -> list:
@@ -1085,8 +1571,10 @@ if st.session_state["data_loaded"]:
                 st.markdown("#### > BRAND vs BRAND TRAJECTORY_")
                 fig = go.Figure()
             
-                # Expanded color palette for 6+ brands
-                colors = ["#FF4444", "#00FF41", "#1E90FF", "#FFD700", "#FF1493", "#9400D3"]
+                # Expanded color palette for up to 15 brands
+                colors = ["#FF4444", "#00FF41", "#1E90FF", "#FFD700", "#FF1493", "#9400D3", 
+                          "#00FFFF", "#FF8C00", "#7CFC00", "#FF00FF", "#00CED1", "#DC143C",
+                          "#B8860B", "#ADFF2F", "#8B008B"]
             
                 # Fix the unpacking crash by using enumerate()
                 for i, brand in enumerate(active_brands):
@@ -1122,30 +1610,20 @@ if st.session_state["data_loaded"]:
 
                 demo_data = {"Metric": [label for label, _ in demo_metrics], combined_label: [int(exec_bb.get(col, 0)) for _, col in demo_metrics]}
                 for brand in active_brands:
-                    bdata = financial_summary[(financial_summary["brand"] == brand) & (financial_summary["month"] == latest_month)]
-                    demo_data[brand] = [int(bdata.iloc[0].get(col, 0)) if not bdata.empty else 0 for _, col in demo_metrics]
+                    brand_all = financial_summary[financial_summary["brand"] == brand]
+                    b_latest = _get_true_latest(brand_all)
+                    bdata = brand_all[brand_all["month"] == b_latest] if b_latest else pd.DataFrame()
+                    # --- SAFE DEMOGRAPHICS UNPACKING ---
+                    demo_data[brand] = []
+                    for _, col in demo_metrics:
+                        if not bdata.empty and col in bdata.columns:
+                            demo_data[brand].append(int(bdata.iloc[0].get(col, 0)))
+                        else:
+                            demo_data[brand].append(0)
             
                 cfg_demo = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
                 for brand in active_brands: cfg_demo[brand] = st.column_config.NumberColumn(brand, format="%d")
                 st.dataframe(pd.DataFrame(demo_data), use_container_width=True, hide_index=True, column_config=cfg_demo)
-
-                # ── Cross-Brand VIP Health ────────────────────────────────────
-                st.markdown("---")
-                st.markdown("#### > CROSS-BRAND VIP HEALTH_")
-                tier_labels, tier_search = ["True VIPs", "Churn Risk VIPs", "Casuals"], ["True VIP", "Churn Risk", "Casual"]
-
-                def _vip_snap(raw_subset):
-                    rfm = _cached_rfm_summary(raw_subset, latest_month)
-                    if rfm.empty: return [0] * len(tier_labels)
-                    return [int(rfm.loc[rfm.iloc[:, 0].str.contains(s, na=False, case=False), rfm.columns[1]].sum()) if rfm.iloc[:, 0].str.contains(s, na=False, case=False).any() else 0 for s in tier_search]
-
-                vip_data = {"Tier": tier_labels, combined_label: _vip_snap(df)}
-                for brand in active_brands:
-                    vip_data[brand] = _vip_snap(df[df["brand"] == brand])
-
-                cfg_vip = {"Tier": st.column_config.TextColumn("Tier"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
-                for brand in active_brands: cfg_vip[brand] = st.column_config.NumberColumn(brand, format="%d")
-                st.dataframe(pd.DataFrame(vip_data), use_container_width=True, hide_index=True, column_config=cfg_vip)
 
                 # ── Cross-Brand Cash Flow & Promo ─────────────────────────────
                 if "LeoVegas Group" in df["client"].unique():
@@ -1157,8 +1635,16 @@ if st.session_state["data_loaded"]:
 
                     cf_data = {"Metric": [label for label, _ in cf_metrics], combined_label: [float(exec_bb.get(col, 0)) for _, col in cf_metrics]}
                     for brand in active_brands:
-                        bdata = financial_summary[(financial_summary["brand"] == brand) & (financial_summary["month"] == latest_month)]
-                        cf_data[brand] = [float(bdata.iloc[0].get(col, 0)) if not bdata.empty else 0.0 for _, col in cf_metrics]
+                        brand_all = financial_summary[financial_summary["brand"] == brand]
+                        b_latest = _get_true_latest(brand_all)
+                        bdata = brand_all[brand_all["month"] == b_latest] if b_latest else pd.DataFrame()
+                        # --- SAFE CASH FLOW UNPACKING ---
+                        cf_data[brand] = []
+                        for _, col in cf_metrics:
+                            if not bdata.empty and col in bdata.columns:
+                                cf_data[brand].append(float(bdata.iloc[0].get(col, 0.0)))
+                            else:
+                                cf_data[brand].append(0.0)
 
                     cfg_cf = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="$%.2f")}
                     for brand in active_brands: cfg_cf[brand] = st.column_config.NumberColumn(brand, format="$%.2f")
@@ -1210,17 +1696,6 @@ if st.session_state["data_loaded"]:
                     }
                 )
 
-                # ── Cross-Brand Cannibalization ──────────────────────────────
-                st.markdown("---")
-                st.markdown("#### > CROSS-BRAND CANNIBALIZATION (ALL-TIME)_")
-                st.markdown("*Insight: Identifies players active on both platforms to expose duplicate customer acquisition costs and shared revenue dependency.*")
-
-                overlap = generate_overlap_stats(df)
-                ov1, ov2 = st.columns(2)
-                with ov1:
-                    st.metric("Shared Players (Overlap)", f"{overlap['overlap_count']:,}")
-                with ov2:
-                    st.metric("Shared Lifetime GGR", f"${overlap['overlap_ggr']:,.2f}")
             else:
                 st.warning("No financial data available for Executive Summary.")
 
@@ -1259,6 +1734,10 @@ if st.session_state["data_loaded"]:
 
                 # --- 2. REVENUE TREND ---
                 st.markdown("#### 📈 Revenue Trend (Month-over-Month)")
+                
+                fin_excel = _get_financial_excel_bytes(filtered_monthly, cohort_matrices, segmentation, filtered_both)
+                st.download_button("📥 Download Financial Detail Report", data=fin_excel, file_name=f"Financial_Detail_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
                 chart_data = filtered_both[["month", rev_col]].set_index("month")
                 st.bar_chart(chart_data, use_container_width=True)
 
@@ -1642,6 +2121,8 @@ if st.session_state["data_loaded"]:
 
     if "🕵️ CRM Intelligence" in tab_map:
         with tab_map["🕵️ CRM Intelligence"]:
+            _raw_df = df.copy()  # <-- ADDED DECLARATION
+
             # ── Early-Warning VIP Churn Radar ────────────────────────────────
             st.markdown("#### > 📉 EARLY-WARNING VIP CHURN RADAR_")
             st.markdown("*Insight: Proactively flags high-value VIPs whose month-over-month NGR trajectory has crashed by >30%. Call them before they leave.*")
@@ -1672,11 +2153,50 @@ if st.session_state["data_loaded"]:
         
             st.markdown("---")
 
+            # Initialize tracking scope variables formerly tied to the generic Dashboard setup
+            active_brands = sorted([b for b in _raw_df["brand"].unique() if b != "Combined"]) if "brand" in _raw_df.columns else []
+            combined_label = "All Business" if len(active_brands) > 2 else "Both Business"
+            latest_month = _raw_df["month"].max() if "month" in _raw_df.columns and not _raw_df.empty else pd.Timestamp.today().strftime('%Y-%m')
+
+            # ── Cross-Brand VIP Health ────────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### > CROSS-BRAND VIP HEALTH_")
+            tier_labels, tier_search = ["True VIPs", "Churn Risk VIPs", "Casuals"], ["True VIP", "Churn Risk", "Casual"]
+
+            def _vip_snap(raw_subset):
+                b_latest = raw_subset["month"].max() if "month" in raw_subset.columns and not raw_subset.empty else latest_month
+                rfm = _cached_rfm_summary(raw_subset, b_latest)
+                if rfm.empty: return [0] * len(tier_labels)
+                return [int(rfm.loc[rfm.iloc[:, 0].str.contains(s, na=False, case=False), rfm.columns[1]].sum()) if rfm.iloc[:, 0].str.contains(s, na=False, case=False).any() else 0 for s in tier_search]
+
+            vip_data = {"Tier": tier_labels, combined_label: _vip_snap(df)}
+            for brand in active_brands:
+                b_vip = _vip_snap(df[df["brand"] == brand])
+                vip_data[brand] = b_vip if b_vip else [0] * len(tier_labels)
+
+            cfg_vip = {"Tier": st.column_config.TextColumn("Tier"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
+            for brand in active_brands: cfg_vip[brand] = st.column_config.NumberColumn(brand, format="%d")
+            st.dataframe(pd.DataFrame(vip_data), use_container_width=True, hide_index=True, column_config=cfg_vip)
+
+
+            # ── Cross-Brand Cannibalization ──────────────────────────────
+            st.markdown("---")
+            st.markdown("#### > CROSS-BRAND CANNIBALIZATION (ALL-TIME)_")
+            st.markdown("*Insight: Identifies players active on both platforms to expose duplicate customer acquisition costs and shared revenue dependency.*")
+
+            from src.analytics import generate_overlap_stats
+            overlap = generate_overlap_stats(df)
+            ov1, ov2 = st.columns(2)
+            with ov1:
+                st.metric("Shared Players (Overlap)", f"{overlap['overlap_count']:,}")
+            with ov2:
+                st.metric("Shared Lifetime GGR", f"${overlap['overlap_ggr']:,.2f}")
+
+
             st.markdown("#### > VIP & RISK LEADERBOARDS_")
             st.caption(f"Currently viewing CRM targets for: {selected_client} | {selected_brand} | {selected_country}")
         
             # Use the globally filtered raw data
-            _raw_df = _master_df.copy()
             master_df = _cached_player_master_list(_raw_df)
             filtered_master = master_df.copy()
         
@@ -1970,6 +2490,8 @@ if st.session_state["data_loaded"]:
     # ==========================================
     if "📈 Campaigns" in tab_map:
         with tab_map["📈 Campaigns"]:
+            _raw_df = df.copy()  # <-- ADDED DECLARATION
+
             st.markdown("#### > 🎯 SEGMENT & CAMPAIGN ROI MATRIX_")
             st.markdown("*Insight: Evaluates the true profitability and player quality of distinct marketing segments and acquisition channels.*")
 
@@ -2020,162 +2542,621 @@ if st.session_state["data_loaded"]:
             else:
                 st.info("No segment data available in the current slice.")
 
-    # ==========================================
-    # 📞 TAB: OPERATIONS COMMAND (Phase 3 - Telemarketing)
-    # ==========================================
-    if "📞 Operations Command" in tab_map:
-        with tab_map["📞 Operations Command"]:
-            st.markdown("#### > 📡 CALLSU & OPERATIONS COMMAND_")
-            st.markdown("*Insight: Tracks True CAC, Lead Quality, and Contractual SLA Fulfillment.*")
+# ==========================================
+# 📞 TAB: OPERATIONS COMMAND (Phase 3 - Telemarketing)
+# ==========================================
+if "📞 Operations Command" in tab_map:
+    with tab_map["📞 Operations Command"]:
+        st.markdown("#### > 📡 CALLSU & OPERATIONS COMMAND_")
+        st.markdown("*Insight: Tracks True CAC, Lead Quality, and Contractual SLA Fulfillment.*")
+        
+        if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
+            ops_df = st.session_state["ops_df"].copy()
+            # Map DB column names back to UI-expected names
+            ops_df.rename(columns={
+                "campaign_name": "Campaign Name",
+                "records": "Records",
+                "total_cost": "Total_Campaign_Cost",
+                "conversions": "KPI1-Conv.",
+                "true_cac": "True_CAC",
+                "calls": "Calls",
+                "d_total": "D",
+                "d_plus": "D+",
+                "d_minus": "D-",
+                "d_ratio": "D Ratio",
+                "tech_issues": "T",
+                "am": "AM",
+                "dnc": "DNC",
+                "na": "NA",
+                "dx": "DX",
+                "wn": "WN",
+            }, inplace=True)
+
+            # Fetch SLAs from persistent DB
+            from src.database import engine as _db_engine
+            try:
+                vol_df = pd.read_sql("SELECT * FROM contractual_volumes", _db_engine)
+            except:
+                vol_df = pd.DataFrame()
+                
+            try:
+                bench_df = pd.read_sql("SELECT * FROM granular_benchmarks", _db_engine)
+            except:
+                bench_df = pd.DataFrame()
             
-            if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
-                ops_df = st.session_state["ops_df"].copy()
-                # Map DB column names back to UI-expected names
-                ops_df.rename(columns={
-                    "campaign_name": "Campaign Name",
-                    "total_cost": "Total_Campaign_Cost",
-                    "conversions": "KPI1-Conv.",
-                    "true_cac": "True_CAC",
-                    "calls": "Calls",
-                    "d_total": "D",
-                    "d_plus": "D+",
-                    "d_minus": "D-",
-                    "d_ratio": "D Ratio",
-                    "tech_issues": "T",
-                    "am": "AM",
-                    "dnc": "DNC",
-                    "na": "NA",
-                    "dx": "DX",
-                    "wn": "WN",
+            # Determine selected_client for the filename
+            unique_clients = ops_df["ops_client"].unique()
+            if len(unique_clients) == 1:
+                selected_client = unique_clients[0]
+            else:
+                selected_client = "All" # Or prompt user to select if multiple
+
+            ops_excel = _get_ops_excel_bytes(ops_df)
+            st.download_button("📥 Download Operations Ledger", data=ops_excel, file_name=f"Operations_Ledger_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+
+            st.markdown("---")
+            st.markdown("##### ⚖️ SLA Fulfillment Tracker (Volume vs. Contract)")
+            
+            if not vol_df.empty:
+                # Calculate number of days in the current slice to scale the monthly SLA
+                num_days = ops_df['ops_date'].nunique() if 'ops_date' in ops_df.columns else 1
+                sla_scale_factor = num_days / 30.0
+
+                # Derive ops_lifecycle from Campaign Name (RND vs WB)
+                ops_df['ops_lifecycle'] = ops_df['Campaign Name'].apply(
+                    lambda x: 'WB' if '-WB' in str(x).upper() or '_WB' in str(x).upper() or ' WB' in str(x).upper() else (
+                        'RND' if '-RND' in str(x).upper() or '_RND' in str(x).upper() or ' RND' in str(x).upper() else 'UNKNOWN'
+                    )
+                )
+                
+                # Aggregate actuals to match Volume SLAs
+                actuals = ops_df.groupby(["ops_client", "ops_brand", "ops_lifecycle"]).agg(
+                    Actual_Records=("Records", "sum")
+                ).reset_index()
+                
+                # Merge uploaded data with Volume rules
+                merged_vol = pd.merge(
+                    actuals, vol_df, 
+                    left_on=["ops_client", "ops_brand", "ops_lifecycle"], 
+                    right_on=["client_name", "brand_code", "lifecycle"], 
+                    how="inner"
+                )
+                
+                if not merged_vol.empty:
+                    for _, row in merged_vol.iterrows():
+                        # Scale the volume minimum by the time slice
+                        target_min_records = max(1, int(row["monthly_minimum_records"] * sla_scale_factor))
+                        
+                        # Calculations
+                        pct_complete = min(row["Actual_Records"] / target_min_records, 1.0) if target_min_records > 0 else 0
+                        
+                        # UI Rendering
+                        st.markdown(f"**{row['client_name']} - {row['brand_code']} ({row['lifecycle']})** — *{num_days}-Day Target*")
+                        
+                        progress_color = "normal" if pct_complete >= 0.9 else "error"
+                        st.progress(pct_complete, text=f"{int(row['Actual_Records']):,} / {target_min_records:,} Minimum Records Received (Scaled from {int(row['monthly_minimum_records']):,}/mo)")
+                        st.markdown("---")
+                else:
+                    st.info("No active Volume SLAs match the currently loaded operations data. Add them in System Settings.")
+            else:
+                st.info("No Volume SLAs configured in System Settings.")
+
+            # --- Upgraded Top Level Metrics & Charts ---
+            st.markdown("##### 💸 True CAC & Telecom Burn")
+            total_spend = ops_df["Total_Campaign_Cost"].sum()
+            total_conv = ops_df["KPI1-Conv."].sum()
+            true_cac = total_spend / total_conv if total_conv > 0 else 0
+            
+            total_calls = ops_df["Calls"].sum()
+            
+            # Safely extract new metrics
+            total_d = ops_df["D"].sum() if "D" in ops_df.columns else 0
+            contact_rate = (total_d / total_calls * 100) if total_calls > 0 else 0
+            
+            o1, o2, o3, o4, o5 = st.columns(5)
+            o1.metric("Total Telecom Spend", f"${total_spend:,.2f}")
+            o2.metric("Total SIP Calls", f"{int(total_calls):,}")
+            o3.metric("Contact Rate (D Ratio)", f"{contact_rate:.1f}%")
+            o4.metric("Total Conversions", f"{int(total_conv):,}")
+            o5.metric("Global True CAC", f"${true_cac:,.2f}")
+            
+            st.markdown("---")
+            st.markdown("### 📊 Campaign Performance Distributions")
+            pie_col1, pie_col2, pie_col3 = st.columns(3)
+
+            import plotly.express as px
+            if not ops_df.empty:
+                # Calculate aggregates for pies
+                tot_d_plus = ops_df['D+'].sum() if 'D+' in ops_df.columns else 0
+                tot_d_minus = ops_df['D-'].sum() if 'D-' in ops_df.columns else 0
+                tot_d_neutral = ops_df['D'].sum() if 'D' in ops_df.columns else 0
+                tot_deliveries = tot_d_plus + tot_d_minus + tot_d_neutral
+
+                tot_na = ops_df['NA'].sum() if 'NA' in ops_df.columns else 0
+                tot_wn = ops_df['WN'].sum() if 'WN' in ops_df.columns else 0
+                tot_dnc = ops_df['DNC'].sum() if 'DNC' in ops_df.columns else 0
+                tot_dx = ops_df['DX'].sum() if 'DX' in ops_df.columns else 0
+                tot_t = ops_df['T'].sum() if 'T' in ops_df.columns else 0
+                tot_issues = tot_wn + tot_dnc + tot_dx + tot_t
+
+                with pie_col1:
+                    st.markdown("**Overall Outcomes**")
+                    pie_df1 = pd.DataFrame({'Outcome': ['Deliveries', 'No Answer', 'Issues'], 'Value': [tot_deliveries, tot_na, tot_issues]})
+                    fig1 = px.pie(pie_df1, names='Outcome', values='Value', hole=0.4, color='Outcome', 
+                                  color_discrete_map={'Deliveries': '#22c55e', 'No Answer': '#eab308', 'Issues': '#ef4444'})
+                    fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                    st.plotly_chart(fig1, use_container_width=True)
+
+                with pie_col2:
+                    st.markdown("**Deliveries Breakdown**")
+                    pie_df2 = pd.DataFrame({'Outcome': ['D+', 'D', 'D-'], 'Value': [tot_d_plus, tot_d_neutral, tot_d_minus]})
+                    fig2 = px.pie(pie_df2, names='Outcome', values='Value', hole=0.4, color='Outcome',
+                                  color_discrete_map={'D+': '#22c55e', 'D': '#16a34a', 'D-': '#86efac'})
+                    fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                    st.plotly_chart(fig2, use_container_width=True)
+
+                with pie_col3:
+                    st.markdown("**Issues Breakdown**")
+                    issue_names = ['WN', 'DNC', 'DX', 'T']
+                    issue_vals = [tot_wn, tot_dnc, tot_dx, tot_t]
+                    i_names, i_vals = zip(*[(n, v) for n, v in zip(issue_names, issue_vals) if v > 0]) if sum(issue_vals) > 0 else (['None'], [1])
+                    pie_df3 = pd.DataFrame({'Outcome': list(i_names), 'Value': list(i_vals)})
+                    fig3 = px.pie(pie_df3, names='Outcome', values='Value', hole=0.4, color='Outcome',
+                                  color_discrete_map={'WN': '#ef4444', 'DNC': '#dc2626', 'DX': '#b91c1c', 'T': '#991b1b', 'None': '#333333'})
+                    fig3.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                    st.plotly_chart(fig3, use_container_width=True)
+
+            st.markdown("---")
+            
+            # Fetch snapshots for historical trendlines (bypass start_date filter for 90/365 lookback)
+            raw_snaps = st.session_state.get("raw_ops_snapshots_df", pd.DataFrame())
+            if not raw_snaps.empty:
+                try:
+                    # Re-apply dimension filters (Client, Brand, Category, Segment)
+                    if selected_client != "All" and 'ops_client' in raw_snaps.columns:
+                        raw_snaps = raw_snaps[raw_snaps['ops_client'] == selected_client]
+                    if selected_brand != "All" and 'ops_brand' in raw_snaps.columns:
+                        raw_snaps = raw_snaps[raw_snaps['ops_brand'] == selected_brand]
+                    if selected_category != "All" and 'campaign_name' in raw_snaps.columns:
+                        raw_snaps = raw_snaps[raw_snaps['campaign_name'].str.upper().str.contains(selected_category)]
+                    if selected_segment != "All" and 'campaign_name' in raw_snaps.columns:
+                        raw_snaps = raw_snaps[raw_snaps['campaign_name'].str.upper().str.contains(selected_segment)]
+                    # Apply upper-bound date filter only
+                    end_str = end_date_val.strftime("%Y-%m-%d")
+                    raw_snaps = raw_snaps[raw_snaps['ops_date'] <= end_str]
+                except Exception as e:
+                    pass
+                snap_df = raw_snaps.copy()
+            else:
+                snap_df = ops_df.copy() # Fallback
+            
+            st.markdown("### 📈 Daily SLA Trends & Performance")
+            
+            # --- SLA BREACH WATCHDOG ---
+            if not filtered_ops.empty:
+                try:
+                    timeframe_days = (end_date_val - start_date_val).days + 1
+                    
+                    # 1. Fetch Contractual SLAs from DB & Aggregate by Client/Lifecycle
+                    slas_df = pd.read_sql("SELECT client_name, lifecycle, SUM(monthly_minimum_records) as monthly_minimum_records FROM contractual_volumes WHERE monthly_minimum_records > 0 GROUP BY client_name, lifecycle", _db_engine)
+                    
+                    breaches = []
+                    # 2. Check active clients in the current filtered view
+                    active_clients = filtered_ops['ops_client'].unique()
+                    
+                    for client_target in active_clients:
+                        client_slas = slas_df[slas_df['client_name'] == client_target]
+                        if client_slas.empty: continue
+                        
+                        client_data = filtered_ops[filtered_ops['ops_client'] == client_target]
+                        
+                        for _, sla_row in client_slas.iterrows():
+                            c_type = sla_row['lifecycle']  # e.g., 'RND' or 'WB'
+                            aggregated_monthly_minimum = sla_row['monthly_minimum_records']
+                            
+                            # Filter data by campaign type (matching the string in campaign_name)
+                            type_data = client_data[client_data['campaign_name'].str.contains(c_type, case=False, na=False)]
+                            actual_vol = type_data['Records'].sum() if 'Records' in type_data.columns else type_data['records'].sum()
+                            
+                            # Calculate the Pro-Rated Minimum Target:
+                            pro_rated_target = (aggregated_monthly_minimum / 30) * timeframe_days
+                            
+                            # Compare the pacing:
+                            if actual_vol < pro_rated_target:
+                                breaches.append(f"**{client_target} ({c_type})**: Delivered {int(actual_vol):,} / {pro_rated_target:,.0f} expected records for this timeframe (Monthly Goal: {int(aggregated_monthly_minimum):,}).")
+                    
+                    # 3. Render the Alert Box if breaches exist
+                    if breaches:
+                        st.warning(f"⚠️ **Contractual SLA Breach Detected (Current Timeframe - {timeframe_days} days)**")
+                        for b in breaches:
+                            st.markdown(f"- {b}")
+                        st.markdown("---")
+                except Exception as e:
+                    pass # Fail silently if SLA table is empty or missing
+
+            if not snap_df.empty and 'ops_date' in snap_df.columns:
+                # Group by exact daily date using the latest Snapshot record per campaign/date
+                latest_snaps = snap_df.sort_values('snapshot_timestamp').drop_duplicates(subset=['campaign_name', 'ops_date'], keep='last') if 'snapshot_timestamp' in snap_df.columns else snap_df
+                
+                # Identify granular campaign signature for benchmark targeting
+                def get_sig(c):
+                    parts = c.replace("-", "_").split('_')
+                    if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
+                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                    if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
+                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                    return c
+                
+                camp_col = 'Campaign Name' if 'Campaign Name' in latest_snaps.columns else 'campaign_name'
+                latest_snaps['campaign_signature'] = latest_snaps[camp_col].apply(get_sig)
+                u_sigs = latest_snaps['campaign_signature'].unique()
+                active_sig = u_sigs[0] if len(u_sigs) == 1 else None
+                
+                # Fetch Benchmark for active sig
+                target_cac, target_conv, target_li = None, None, None
+                if active_sig and not bench_df.empty:
+                    b_row = bench_df[bench_df['campaign_signature'] == active_sig]
+                    if not b_row.empty:
+                        target_cac = b_row.iloc[0]['target_cac_usd']
+                        target_conv = b_row.iloc[0]['target_conv_pct'] * 100 if pd.notnull(b_row.iloc[0]['target_conv_pct']) else None
+                        target_li = b_row.iloc[0]['target_li_pct'] * 100 if pd.notnull(b_row.iloc[0]['target_li_pct']) else None
+                # Determine if we are using the fallback ops_df (which has already been renamed)
+                is_fallback = 'Calls' in latest_snaps.columns
+                
+                c_calls = 'Calls' if is_fallback else 'calls'
+                c_conv = 'KPI1-Conv.' if is_fallback else 'conversions'
+                c_logins = 'KPI2-Login' if is_fallback else 'kpi2_logins'
+                c_li = 'LI%' if is_fallback else 'li_pct'
+                
+                # 1. Group by exact daily date
+                daily_trends = latest_snaps.groupby('ops_date').agg({
+                    c_calls: 'sum',
+                    c_conv: 'sum',
+                    c_logins: 'sum' if c_logins in latest_snaps.columns else lambda x: 0,
+                    c_li: 'mean' if c_li in latest_snaps.columns else lambda x: 0
+                }).reset_index().sort_values('ops_date')
+                
+                # 2. Rename back to UI standard for Plotly and downstream efficiency math
+                daily_trends.rename(columns={
+                    c_calls: 'Records', 
+                    c_conv: 'KPI1-Conv.',
+                    c_logins: 'KPI2-Login',
+                    c_li: 'LI%'
                 }, inplace=True)
 
-                # Fetch SLAs from persistent DB
-                from src.database import engine as _db_engine
-                try:
-                    slas_df = pd.read_sql("SELECT * FROM contractual_slas", _db_engine)
-                except:
-                    slas_df = pd.DataFrame()
-                
-                st.markdown("---")
-                st.markdown("##### ⚖️ SLA Fulfillment Tracker (Volume vs. Contract)")
-                
-                if not slas_df.empty:
-                    # Aggregate actuals to match SLAs
-                    actuals = ops_df.groupby(["ops_client", "ops_brand", "ops_lifecycle"]).agg(
-                        Actual_Calls=("Calls", "sum"),
-                        Actual_Convs=("KPI1-Conv.", "sum"),
-                        Total_Spend=("Total_Campaign_Cost", "sum")
-                    ).reset_index()
-                    
-                    # Merge uploaded data with DB rules
-                    merged_sla = pd.merge(
-                        actuals, slas_df, 
-                        left_on=["ops_client", "ops_brand", "ops_lifecycle"], 
-                        right_on=["client_name", "brand_code", "lifecycle"], 
-                        how="inner"
-                    )
-                    
-                    if not merged_sla.empty:
-                        for _, row in merged_sla.iterrows():
-                            # Calculations
-                            pct_complete = min(row["Actual_Calls"] / row["monthly_minimum_records"], 1.0) if row["monthly_minimum_records"] > 0 else 0
-                            actual_cac = row["Total_Spend"] / row["Actual_Convs"] if row["Actual_Convs"] > 0 else 0
-                            target_cac = row["target_cac_usd"]
+                # Helper function to generate and display trend charts
+                def display_trend_charts(df_filtered, duration):
+                    if len(df_filtered) > 0:
+                        tc1, tc2 = st.columns(2)
+                        with tc1:
+                            # Volume Trends
+                            active_b = filtered_ops['ops_brand'].unique() if not filtered_ops.empty else []
+                            vol_y_cols = ['Records']
                             
-                            actual_conv_pct = (row["Actual_Convs"] / row["Actual_Calls"] * 100) if row["Actual_Calls"] > 0 else 0
-                            target_conv_pct = row["benchmark_conv_pct"] * 100 if pd.notnull(row["benchmark_conv_pct"]) else 0
-                            
-                            # UI Rendering
-                            st.markdown(f"**{row['client_name']} - {row['brand_code']} ({row['lifecycle']})**")
-                            c1, c2, c3 = st.columns([2, 1, 1])
-                            
-                            with c1:
-                                # Determine color based on progress (Red if under 50%, Yellow if under 90%, Green if 90%+)
-                                progress_color = "normal" if pct_complete >= 0.9 else "error"
-                                st.progress(pct_complete, text=f"{int(row['Actual_Calls']):,} / {int(row['monthly_minimum_records']):,} Minimum Calls Dialed")
-                            
-                            with c2:
-                                delta_cac = actual_cac - target_cac
-                                st.metric("True CAC", f"${actual_cac:.2f}", delta=f"${delta_cac:.2f} vs Target", delta_color="inverse")
-                            
-                            with c3:
-                                delta_conv = actual_conv_pct - target_conv_pct
-                                st.metric("Conversion Rate", f"{actual_conv_pct:.2f}%", delta=f"{delta_conv:.2f}% vs Target", delta_color="normal")
+                            # Setup target overlays if exactly 1 brand
+                            if len(active_b) == 1:
+                                sla_min = 0
+                                try:
+                                    slas_df = pd.read_sql(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE brand_code = '{active_b[0]}'", _db_engine)
+                                    if not slas_df.empty: 
+                                        sla_min = slas_df['monthly_minimum_records'].sum()
+                                except: pass
                                 
-                        st.markdown("---")
+                                if sla_min > 0:
+                                    df_filtered['SLA Minimum'] = sla_min / 30.0
+                                    vol_y_cols.append('SLA Minimum')
+                                    
+                            fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
+                                                    labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title=f"{duration} Volume Trends")
+                            fig_trend_vol.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                            
+                            for trace in fig_trend_vol.data:
+                                if 'SLA' in trace.name or 'Benchmark' in trace.name:
+                                    trace.line.dash = 'dash'
+                                    
+                            st.plotly_chart(fig_trend_vol, use_container_width=True)
+                        with tc2:
+                            # Efficiency Trends (Dual-Axis)
+                            from plotly.subplots import make_subplots
+                            import plotly.graph_objects as go
+                            
+                            df_filtered['Conv%'] = (df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100
+                            df_filtered['Logins%'] = (df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100
+                            
+                            fig_trend_pct = make_subplots(specs=[[{"secondary_y": True}]])
+                            
+                            # Add bars for raw numbers (primary y-axis)
+                            if 'KPI2-Login' in df_filtered.columns:
+                                fig_trend_pct.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.4)', hovertemplate='Logins: %{y} (%{customdata:.2f}%)<extra></extra>', customdata=df_filtered['Logins%']), secondary_y=False)
+                            if 'KPI1-Conv.' in df_filtered.columns:
+                                fig_trend_pct.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.4)', hovertemplate='Conversions: %{y} (%{customdata:.2f}%)<extra></extra>', customdata=df_filtered['Conv%']), secondary_y=False)
+                                
+                            # Add lines for percentages (secondary y-axis)
+                            fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login %: %{y:.2f}%<extra></extra>'), secondary_y=True)
+                            fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conversion %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conversion %: %{y:.2f}%<extra></extra>'), secondary_y=True)
+                            
+                            if target_conv is not None:
+                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=[target_conv]*len(df_filtered), name="Target Conv%", mode='lines', line=dict(color='#22c55e', dash='dash'), hovertemplate='Target Conv: %{y:.2f}%<extra></extra>'), secondary_y=True)
+                            if target_li is not None and 'LI%' in df_filtered.columns:
+                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=[target_li]*len(df_filtered), name="Target LI%", mode='lines', line=dict(color='#eab308', dash='dash'), hovertemplate='Target LI: %{y:.2f}%<extra></extra>'), secondary_y=True)
+                            
+                            fig_trend_pct.update_layout(
+                                title=f"{duration} Efficiency Trends",
+                                paper_bgcolor="rgba(0,0,0,0)", 
+                                plot_bgcolor="rgba(0,0,0,0)", 
+                                font_color="#00FF41",
+                                barmode='group',
+                                hovermode='x unified',
+                                margin=dict(t=40, b=20, l=40, r=40)
+                            )
+                            fig_trend_pct.update_yaxes(title_text="Volume (Raw)", secondary_y=False, showgrid=False)
+                            fig_trend_pct.update_yaxes(title_text="Efficiency (%)", secondary_y=True, showgrid=False)
+                            
+                            st.plotly_chart(fig_trend_pct, use_container_width=True)
                     else:
-                        st.info("No active SLAs match the currently loaded operations data. Add them in System Settings.")
-                else:
-                    st.info("No SLAs configured in System Settings.")
+                        st.info(f"Not enough data for {duration} trend.")
 
-                # --- Upgraded Top Level Metrics & Charts ---
-                st.markdown("##### 💸 True CAC & Telecom Burn")
-                total_spend = ops_df["Total_Campaign_Cost"].sum()
-                total_conv = ops_df["KPI1-Conv."].sum()
-                true_cac = total_spend / total_conv if total_conv > 0 else 0
-                
-                total_calls = ops_df["Calls"].sum()
-                
-                # Safely extract new funnel metrics (fallback to 0 if not present in older data)
-                total_d = ops_df["D"].sum() if "D" in ops_df.columns else 0
-                total_d_plus = ops_df["D+"].sum() if "D+" in ops_df.columns else 0
-                contact_rate = (total_d / total_calls * 100) if total_calls > 0 else 0
-                
-                o1, o2, o3, o4, o5 = st.columns(5)
-                o1.metric("Total Telecom Spend", f"${total_spend:,.2f}")
-                o2.metric("Total SIP Calls", f"{int(total_calls):,}")
-                o3.metric("Contact Rate (D Ratio)", f"{contact_rate:.1f}%")
-                o4.metric("Total Conversions", f"{int(total_conv):,}")
-                o5.metric("Global True CAC", f"${true_cac:,.2f}")
-                
-                st.markdown("---")
-                v1, v2 = st.columns([1, 1])
-                
-                with v1:
-                    # 1. The Delivery Funnel
-                    import plotly.express as px
-                    funnel_data = dict(
-                        Stage=["1. Total Dialed", "2. Delivered / Answered (D)", "3. Interested (D+)", "4. Converted (KPI1)"],
-                        Volume=[total_calls, total_d, total_d_plus, total_conv]
-                    )
-                    fig_funnel = px.funnel(funnel_data, x='Volume', y='Stage', title="The Delivery Funnel (Drop-off Analysis)")
-                    fig_funnel.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
-                    fig_funnel.update_traces(marker=dict(color=["#4444FF", "#00AAFF", "#00FF88", "#00FF41"]))
-                    st.plotly_chart(fig_funnel, use_container_width=True)
+                # Calculate max date to base 7, 30, and 365 day periods off of
+                max_date = pd.to_datetime(daily_trends['ops_date']).max()
+
+                t1, t2, t3, t4 = st.tabs(["7-Day", "30-Day", "90-Day", "12-Month"])
+                with t1:
+                    seven_days_ago = max_date - pd.Timedelta(days=7)
+                    df_7d = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= seven_days_ago].copy()
+                    display_trend_charts(df_7d, "7-Day")
+
+                with t2:
+                    thirty_days_ago = max_date - pd.Timedelta(days=30)
+                    df_30d = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= thirty_days_ago].copy()
+                    display_trend_charts(df_30d, "30-Day")
                     
-                with v2:
-                    # 2. Expanded Wasted SIP Dials Pie Chart
-                    safe_sum = lambda col: ops_df[col].sum() if col in ops_df.columns else 0
-                    decay_data = {
-                        "Disposition": ["DNC (Do Not Call)", "WN (Wrong Number)", "NA (No Answer)", "AM (Voicemail)", "DX (Disconnected)", "T (Tech Issues)"],
-                        "Volume": [safe_sum("DNC"), safe_sum("WN"), safe_sum("NA"), safe_sum("AM"), safe_sum("DX"), safe_sum("T")]
-                    }
-                    # Filter out zeros to keep the pie chart clean
-                    filtered_decay = pd.DataFrame(decay_data)
-                    filtered_decay = filtered_decay[filtered_decay["Volume"] > 0]
+                with t3:
+                    ninety_days_ago = max_date - pd.Timedelta(days=90)
+                    df_90d = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= ninety_days_ago].copy()
+                    display_trend_charts(df_90d, "90-Day")
                     
-                    if not filtered_decay.empty:
-                        fig_decay = px.pie(filtered_decay, names="Disposition", values="Volume", hole=0.5, title="Lead Quality Decay (Wasted Dials)", 
-                                           color_discrete_sequence=["#FF4444", "#FFA500", "#555555", "#888888", "#AA0000", "#FF00FF"])
-                        fig_decay.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
-                        st.plotly_chart(fig_decay, use_container_width=True)
+                with t4:
+                    twelve_months_ago = max_date - pd.Timedelta(days=365)
+                    df_12m = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= twelve_months_ago].copy()
+                    
+                    # Roll up to monthly granularity for cleaner 12-month charts
+                    if len(df_12m) > 0:
+                        df_12m['Month'] = pd.to_datetime(df_12m['ops_date']).dt.to_period('M').astype(str)
+                        # --- SAFE MONTHLY ROLL-UP ---
+                        # Group by Month using the newly renamed UI-facing columns inherited from daily_trends
+                        monthly_trends = df_12m.groupby('Month').agg({
+                            'Records': 'sum', 
+                            'KPI1-Conv.': 'sum', 
+                            'KPI2-Login': 'sum', 
+                            'LI%': 'mean'
+                        }).reset_index()
+                        # Reuse renamed column axis
+                        monthly_trends.rename(columns={'Month': 'ops_date'}, inplace=True)
+                        display_trend_charts(monthly_trends, "12-Month")
                     else:
-                        st.info("No disposition data available in the current dataset to render the Decay chart.")
+                        st.info("Not enough data for 12-Month trend.")
+
+            # --- 🎯 Pitch vs. List Scorecard ---
+            st.markdown("---")
+            st.markdown("### 🎯 Pitch vs. List Scorecard")
+            st.markdown("*Insight: Analyzes the raw list quality vs. the dial floor execution. Isolates script fatigue from telecom blocking and bad data.*")
+
+            if not ops_df.empty:
+                # Ensure previously unmapped columns default to 0 to prevent KeyError
+                req_cols = ["Records", "Calls", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "ev", "es", "ed", "eo", "ec", "D"]
+                for c in req_cols:
+                    if c not in ops_df.columns:
+                        ops_df[c] = 0
+
+                agg_dict = {c: 'sum' for c in req_cols}
+                scorecard_df = ops_df.groupby("Campaign Name").agg(agg_dict).reset_index()
+
+                # Calculate Engine Metrics
+                # Net Records excludes HLRV & 2XRV
+                scorecard_df["Net_Records"] = scorecard_df["Records"] - scorecard_df["hlrv"] - scorecard_df["twoxrv"]
+                scorecard_df["Net_Records"] = scorecard_df["Net_Records"].apply(lambda x: max(x, 1)) # Prevent Div by Zero
+
+                # Completion %
+                scorecard_df["Gross_Completion"] = (scorecard_df["Calls"] / scorecard_df["Records"].replace(0, 1)).clip(0, 1)
+                scorecard_df["Net_Completion"] = (scorecard_df["Calls"] / scorecard_df["Net_Records"]).clip(0, 1)
+
+                # Quality Matrix
+                # We use d_neutral as requested, or D if d_neutral is empty for backward compat.
+                scorecard_df["Deliveries"] = scorecard_df["D+"] + scorecard_df["d_neutral"] + scorecard_df["D-"]
+                scorecard_df["Issues"] = scorecard_df["AM"] + scorecard_df["DNC"] + scorecard_df["DX"] + scorecard_df["WN"] + scorecard_df["T"]
+
+                # Render All Campaigns by Calls
+                rendered_scorecard = scorecard_df.sort_values(by="Calls", ascending=False).copy()
+
+                # Calculate percentages for rendering
+                rendered_scorecard["Gross_Completion_%"] = rendered_scorecard["Gross_Completion"] * 100
+                rendered_scorecard["Net_Completion_%"] = rendered_scorecard["Net_Completion"] * 100
+                rendered_scorecard["Deliveries_%"] = (rendered_scorecard["Deliveries"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
+                rendered_scorecard["NA_%"] = (rendered_scorecard["NA"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
+                rendered_scorecard["Issues_%"] = (rendered_scorecard["Issues"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
+
+                # Render Dataframe
+                st.dataframe(
+                    rendered_scorecard, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "Campaign Name": st.column_config.TextColumn("Campaign"),
+                        "Calls": st.column_config.NumberColumn("Calls", format="%d"),
+                        "Gross_Completion_%": st.column_config.ProgressColumn("Gross Completion", format="%.1f%%", min_value=0, max_value=100),
+                        "Net_Completion_%": st.column_config.ProgressColumn("Net Completion", format="%.1f%%", min_value=0, max_value=100),
+                        "Deliveries_%": st.column_config.NumberColumn("Deliveries", format="%.1f%%"),
+                        "NA_%": st.column_config.NumberColumn("No Answers", format="%.1f%%"),
+                        "Issues_%": st.column_config.NumberColumn("Issues", format="%.1f%%"),
+                        "sa": st.column_config.NumberColumn("SMS", format="%d"),
+                        "es": st.column_config.NumberColumn("Email", format="%d")
+                    },
+                    column_order=["Campaign Name", "Gross_Completion_%", "Net_Completion_%", "Deliveries_%", "NA_%", "Issues_%", "sa", "es"]
+                )
+
+
+            # --- 📦 Client SLA Volume Fulfillment ---
+            st.markdown("---")
+            st.subheader("📦 Client SLA Volume Fulfillment")
+            
+            # 1. Extensible SLA Config Dictionary
+            sla_targets = {
+                "LeoVegas Group": {"WB": 6500, "ACQ": 2000, "RET": 2000}
+            }
+            default_sla_target = 5000
+
+            if not ops_df.empty:
+                sla_ops_df = ops_df.copy()
+                
+                # 2. Segment Mapping Logic
+                def map_sla_segment(campaign_name):
+                    c_upper = str(campaign_name).upper()
+                    if "-WB" in c_upper or "_WB" in c_upper or " WB" in c_upper:
+                        return "WB"
+                    elif "-ACQ" in c_upper or "_ACQ" in c_upper or " ACQ" in c_upper:
+                        return "ACQ"
+                    elif "-RET" in c_upper or "_RET" in c_upper or " RET" in c_upper:
+                        return "RET"
+                    elif "-RND" in c_upper or "_RND" in c_upper or " RND" in c_upper:
+                        return "WB"  # Map RND to WB functionally
+                    return "UNKNOWN"
+
+                sla_ops_df["SLA_Segment"] = sla_ops_df["Campaign Name"].apply(map_sla_segment)
+                
+                # Filter out UNKNOWN segments as they don't count towards these specific SLAs
+                sla_ops_df = sla_ops_df[sla_ops_df["SLA_Segment"] != "UNKNOWN"]
+                
+                if not sla_ops_df.empty:
+                    # Calculate number of days in the current slice to scale the monthly SLA
+                    num_days_sla = sla_ops_df['ops_date'].nunique() if 'ops_date' in sla_ops_df.columns else 1
+                    local_sla_scale_factor = max(num_days_sla / 30.0, 1.0) if num_days_sla >= 28 else (num_days_sla / 30.0)
                     
-                st.markdown("##### 📋 Campaign True Cost Ledger")
-                display_cols = ["Campaign Name", "ops_client", "ops_brand", "Calls", "D Ratio", "Total_Campaign_Cost", "KPI1-Conv.", "True_CAC"]
-                # Only display columns that actually exist in the dataframe
-                display_cols = [c for c in display_cols if c in ops_df.columns]
+                    # 3. Group by Client and Segment
+                    sla_agg = sla_ops_df.groupby(["ops_client", "SLA_Segment"]).agg({"Records": "sum"}).reset_index()
+                    
+                    # 4. Math & Target Mapping
+                    def get_sla_target(row):
+                        client = row["ops_client"]
+                        segment = row["SLA_Segment"]
+                        raw_target = default_sla_target
+                        if client in sla_targets and segment in sla_targets[client]:
+                            raw_target = sla_targets[client][segment]
+                        
+                        # Scale the monthly target to represent the current timeframe slice
+                        return max(1, int(raw_target * local_sla_scale_factor))
+                    
+                    sla_agg["SLA Target"] = sla_agg.apply(get_sla_target, axis=1)
+                    sla_agg["Fulfillment %"] = (sla_agg["Records"] / sla_agg["SLA Target"].replace(0, 1)) * 100
+                    
+                    # Rename columns for final display dataframe
+                    sla_agg.rename(columns={
+                        "ops_client": "Client",
+                        "SLA_Segment": "Segment",
+                        "Records": "Records Received"
+                    }, inplace=True)
+                    
+                    # 5. Conditional Red/Green Styling
+                    def style_fulfillment(val):
+                        if pd.isna(val):
+                            return ''
+                        if val >= 100:
+                            return 'color: #4ade80; font-weight: bold;' # Green text (Tailwind green-400)
+                        else:
+                            return 'color: #f87171; font-weight: bold;' # Red text (Tailwind red-400)
+                    
+                    styled_sla_df = sla_agg.style.format({
+                        "Records Received": "{:,.0f}",
+                        "SLA Target": "{:,.0f}",
+                        "Fulfillment %": "{:.1f}%"
+                    }).map(style_fulfillment, subset=["Fulfillment %"])
+                    
+                    # 6. Render
+                    st.dataframe(styled_sla_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No recognizable SLA segments (WB, ACQ, RET, RND) found in the current dataset.")
+
+
+            # --- Campaign Comparison Matrix ---
+            st.markdown("---")
+            st.markdown("### 🔍 Campaign Comparison Matrix")
+            if not ops_df.empty:
+                # Strip date suffix (e.g., _2025_02 or _2025-02-15) to aggregate generic campaign logic
+                def strip_campaign_date(c):
+                    parts = c.replace("-", "_").split('_')
+                    # Check for YYYY_MM_DD
+                    if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
+                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                    # Check for YYYY_MM
+                    if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
+                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                    return c
+                
+                comp_df = ops_df.copy()
+                comp_df['Base Campaign'] = comp_df['Campaign Name'].apply(strip_campaign_date)
+                
+                if 'ops_date' in comp_df.columns:
+                    try:
+                        comp_df['Week'] = pd.to_datetime(comp_df['ops_date']).dt.isocalendar().week
+                        comp_df['Month'] = pd.to_datetime(comp_df['ops_date']).dt.month
+                    except:
+                        comp_df['Week'] = 1
+                        comp_df['Month'] = 1
+                else:
+                    comp_df['Week'] = 1
+                    comp_df['Month'] = 1
+                    
+                group_by = st.selectbox("Compare Timeframe By:", ["Month", "Week", "Overall"])
+                
+                pivot_cols = ['Base Campaign']
+                if group_by != "Overall":
+                    pivot_cols.append(group_by)
+                    
+                matrix = comp_df.groupby(pivot_cols).agg({
+                    'Records': 'sum',
+                    'Calls': 'sum',
+                    'KPI1-Conv.': 'sum',
+                    'Total_Campaign_Cost': 'sum',
+                    'D Ratio': 'mean'
+                }).reset_index()
+                
+                matrix['True_CAC'] = matrix['Total_Campaign_Cost'] / matrix['KPI1-Conv.']
+                matrix['True_CAC'] = matrix['True_CAC'].replace([float('inf'), -float('inf')], 0).fillna(0)
+                matrix['D Ratio'] = matrix['D Ratio'] * 100
                 
                 st.dataframe(
-                    ops_df[display_cols].sort_values("True_CAC", ascending=False),
+                    matrix.sort_values(by=pivot_cols),
                     use_container_width=True, hide_index=True,
                     column_config={
+                        "Records": st.column_config.NumberColumn("Total Records", format="%d"),
                         "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend", format="$%.2f"),
                         "True_CAC": st.column_config.NumberColumn("True CAC", format="$%.2f"),
-                        "D Ratio": st.column_config.NumberColumn("Contact Rate", format="%.2f")
+                        "D Ratio": st.column_config.NumberColumn("Avg Contact Rate", format="%.2f%%")
                     }
                 )
             else:
-                st.info("No CallsU operations data loaded. Upload an Internal Campaigns file in the Control Room.")
+                st.info("No campaign data available for comparison.")
+
+                
+            st.markdown("---")
+            st.markdown("##### 📋 Campaign True Cost Ledger")
+            display_cols = ["Campaign Name", "ops_client", "ops_brand", "Records", "Calls", "D Ratio", "Total_Campaign_Cost", "KPI1-Conv.", "True_CAC"]
+            # Only display columns that actually exist in the dataframe
+            display_cols = [c for c in display_cols if c in ops_df.columns]
+            
+            ledger_df = ops_df[display_cols].copy()
+            if "D Ratio" in ledger_df.columns:
+                ledger_df["D Ratio"] = ledger_df["D Ratio"] * 100
+                
+            st.dataframe(
+                ledger_df.sort_values("True_CAC", ascending=False),
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "Records": st.column_config.NumberColumn("Total Records", format="%d"),
+                    "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend", format="$%.2f"),
+                    "True_CAC": st.column_config.NumberColumn("True CAC", format="$%.2f"),
+                    "D Ratio": st.column_config.NumberColumn("Contact Rate", format="%.2f%%")
+                }
+            )
+        else:
+            st.info("No CallsU operations data loaded. Upload an Internal Campaigns file in the Control Room.")
 
