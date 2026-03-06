@@ -843,6 +843,9 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             campaign = str(row.get("Campaign Name", "UNKNOWN"))
             tokens = [t for t in campaign.upper().replace('_', '-').split('-') if t]
             
+            # Normalize WBD -> WB
+            tokens = ['WB' if t == 'WBD' else t for t in tokens]
+            
             tag = tokens[0] if len(tokens) > 0 else "UNKNOWN"
             
             if tag != "UNKNOWN" and tag not in live_map:
@@ -851,6 +854,24 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             mapped_info = live_map.get(tag, {})
             client = mapped_info.get('client', "UNKNOWN")
             brand_name = mapped_info.get('brand', tag)
+
+            # Extract Benchmarking Data
+            extracted_lifecycle = next((t for t in tokens if t in ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER']), "UNKNOWN")
+            extracted_segment = next((t for t in tokens if t in ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4']), "UNKNOWN")
+            extracted_engagement = next((t for t in tokens if t in ['NLI', 'LI']), "UNKNOWN")
+            
+            # Extract Country
+            # Look for a 2 or 3 letter alphabetical code not in the blocklist
+            blocklist = ['SPO', 'CAS', 'LIVE', 'ALL', 'DAY', 'A', 'B', 'J1', 'J2', 'J3', 'NLI', 'LI', 'NEW'] + \
+                        ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER'] + \
+                        ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4'] + \
+                        [tag.upper()]
+            
+            country = "Global"
+            for t in tokens[1:]:
+                if t not in blocklist and t.isalpha() and 2 <= len(t) <= 3:
+                    country = t
+                    break
             
             calls = int(row["Calls"])
             convs = int(row["KPI1-Conv."])
@@ -901,7 +922,11 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
                 "optouts_all": int(row.get("Optouts (All)", 0)),
                 "optout_call": int(row.get("Optout - Call", 0)),
                 "optout_sms": int(row.get("Optout - SMS", 0)),
-                "optout_email": int(row.get("Optout - Email", 0))
+                "optout_email": int(row.get("Optout - Email", 0)),
+                "extracted_engagement": extracted_engagement,
+                "extracted_lifecycle": extracted_lifecycle,
+                "extracted_segment": extracted_segment,
+                "country": country
             })
             
         if records_to_insert:

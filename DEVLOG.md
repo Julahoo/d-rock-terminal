@@ -870,3 +870,7 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Cleaned up the app sidebar layout by removing two redundant horizontal divider lines.
 - Injected a clean text logo (`### 🦅 CallsU Command`) at the very top of the sidebar.
 - Re-oriented the date "Quick Select" preset radio buttons to stack vertically (`horizontal=False`) rather than a clumped horizontal list, drastically improving visual readability.
+
+### [Feature - Benchmarking Phase 1 & 2] - Current
+- Updated `src/database.py` schema injection to include `extracted_engagement`, `extracted_segment`, `extracted_lifecycle`, and `country` across both telemetry and snapshot tables.
+- Overhauled `src/ingestion.py` and `src/cron_callsu.py` parsing heuristics to accurately separate Lifecycles from Segments and capture LI/NLI engagement markers.

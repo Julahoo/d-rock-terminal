@@ -83,10 +83,30 @@ def process_ops_files(input_dir: str, dry_run: bool = False):
         for _, row in df.iterrows():
             campaign = str(row.get("Campaign Name", "UNKNOWN"))
             tokens = [t for t in campaign.upper().replace('_', '-').split('-') if t]
+            
+            # Normalize WBD -> WB
+            tokens = ['WB' if t == 'WBD' else t for t in tokens]
+            
             tag = tokens[0] if len(tokens) > 0 else "UNKNOWN"
             mapped_info = live_map.get(tag, {})
             client = mapped_info.get('client', "UNKNOWN")
             brand_name = mapped_info.get('brand', tag)
+            
+            # Extract Benchmarking Data
+            extracted_lifecycle = next((t for t in tokens if t in ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER']), "UNKNOWN")
+            extracted_segment = next((t for t in tokens if t in ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4']), "UNKNOWN")
+            extracted_engagement = next((t for t in tokens if t in ['NLI', 'LI']), "UNKNOWN")
+            
+            # Extract Country
+            blocklist = ['SPO', 'CAS', 'LIVE', 'ALL', 'DAY', 'A', 'B', 'J1', 'J2', 'J3', 'NLI', 'LI', 'NEW'] + \
+                        ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER'] + \
+                        ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4'] + \
+                        [tag.upper()]
+            country = "Global"
+            for t in tokens[1:]:
+                if t not in blocklist and t.isalpha() and 2 <= len(t) <= 3:
+                    country = t
+                    break
             
             start_date = tokens[8] if len(tokens) > 8 else "UNKNOWN"
             calls = int(row.get("Calls", 0))
@@ -112,7 +132,11 @@ def process_ops_files(input_dir: str, dry_run: bool = False):
                 "dnc": int(row["DNC"]),
                 "na": int(row["NA"]),
                 "dx": int(row["DX"]),
-                "wn": int(row["WN"])
+                "wn": int(row["WN"]),
+                "extracted_engagement": extracted_engagement,
+                "extracted_lifecycle": extracted_lifecycle,
+                "extracted_segment": extracted_segment,
+                "country": country
             })
 
         print(f"📊 Parsed {len(records_to_insert)} campaign rows from {filename}")
@@ -129,17 +153,23 @@ def process_ops_files(input_dir: str, dry_run: bool = False):
                     """INSERT INTO ops_telemarketing_data 
                        (campaign_name, ops_client, ops_brand, ops_date, calls, conversions, 
                         total_cost, true_cac, d_total, d_plus, d_minus, d_ratio, 
-                        tech_issues, am, dnc, na, dx, wn)
+                        tech_issues, am, dnc, na, dx, wn, 
+                        extracted_engagement, extracted_lifecycle, extracted_segment, country)
                        VALUES (:campaign_name, :ops_client, :ops_brand, :ops_date, :calls, :conversions,
                                :total_cost, :true_cac, :d_total, :d_plus, :d_minus, :d_ratio,
-                               :tech_issues, :am, :dnc, :na, :dx, :wn)
+                               :tech_issues, :am, :dnc, :na, :dx, :wn, 
+                               :extracted_engagement, :extracted_lifecycle, :extracted_segment, :country)
                        ON CONFLICT (campaign_name) DO UPDATE SET
                            calls = EXCLUDED.calls, conversions = EXCLUDED.conversions,
                            total_cost = EXCLUDED.total_cost, true_cac = EXCLUDED.true_cac,
                            d_total = EXCLUDED.d_total, d_plus = EXCLUDED.d_plus, 
                            d_minus = EXCLUDED.d_minus, d_ratio = EXCLUDED.d_ratio,
                            tech_issues = EXCLUDED.tech_issues, am = EXCLUDED.am, 
-                           dnc = EXCLUDED.dnc, na = EXCLUDED.na, dx = EXCLUDED.dx, wn = EXCLUDED.wn
+                           dnc = EXCLUDED.dnc, na = EXCLUDED.na, dx = EXCLUDED.dx, wn = EXCLUDED.wn,
+                           extracted_engagement = EXCLUDED.extracted_engagement, 
+                           extracted_lifecycle = EXCLUDED.extracted_lifecycle, 
+                           extracted_segment = EXCLUDED.extracted_segment, 
+                           country = EXCLUDED.country
                     """,
                     rec
                 )
