@@ -844,3 +844,7 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Discovered that the `🕵️ CRM Intelligence` and `📈 Campaigns` tabs in `app.py` were nested entirely inside the global `if not _master_df.empty:` financial data check.
 - When the cloud database was fresh and lacked financial data, Streamlit skipped the entire rendering block, resulting in a blank white screen when users clicked those tabs.
 - Injected a graceful `else:` block that explicitly renders these tabs with a bright yellow warning: `"⚠️ No Financial Data Loaded. Please navigate to the 📥 Financial Ingestion tab..."` instead of leaving the user with a broken UI.
+
+### [Hotfix - Date Slider Crash on Single-Day Datasets] - Current
+- The Operations Command tab was crashing with `StreamlitAPIException: Slider min_value must be less than the max_value` when users uploaded exactly one day of data.
+- Added a safeguard to the global date range calculation that evaluates `if min_db_date.date() >= max_date.date()` and automatically adds `pd.Timedelta(days=1)` to the `max_date` if true. This ensures Streamlit sliders always have a valid, strict range.

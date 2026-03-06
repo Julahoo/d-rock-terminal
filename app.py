@@ -382,6 +382,10 @@ with st.sidebar:
     if pd.isna(min_db_date): min_db_date = pd.Timestamp("2024-01-01")
     if pd.isna(max_date): max_date = pd.Timestamp.today()
 
+    # Streamlit slider min_value must be STRICTLY less than max_value
+    if min_db_date.date() >= max_date.date():
+        max_date = min_db_date + pd.Timedelta(days=1)
+
     def update_slider():
         preset = st.session_state["date_preset"]
         if preset == "Custom": return
