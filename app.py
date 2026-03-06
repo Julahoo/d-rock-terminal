@@ -2870,6 +2870,11 @@ if "📞 Operations Command" in tab_map:
                                     df_filtered['SLA Minimum'] = sla_min / 30.0
                                     vol_y_cols.append('SLA Minimum')
                                     
+                            # Add Average Line
+                            if 'Records' in df_filtered.columns and len(df_filtered) > 1:
+                                df_filtered['Average Volume'] = df_filtered['Records'].mean()
+                                vol_y_cols.append('Average Volume')
+                                    
                             fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
                                                     labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title=f"{duration} Volume Trends")
                             fig_trend_vol.update_layout(
@@ -2880,8 +2885,11 @@ if "📞 Operations Command" in tab_map:
                             )
                             
                             for trace in fig_trend_vol.data:
-                                if 'SLA' in trace.name or 'Benchmark' in trace.name:
+                                if 'SLA' in trace.name or 'Benchmark' in trace.name or 'Average' in trace.name:
                                     trace.line.dash = 'dash'
+                                    
+                                if 'Average Volume' in trace.name:
+                                    trace.line.color = 'rgba(255, 255, 255, 0.4)' # Subtle white/grey line
                                     
                             st.plotly_chart(fig_trend_vol, use_container_width=True)
                         with tc2:
