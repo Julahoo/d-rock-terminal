@@ -815,3 +815,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Hardened `.gitignore` to prevent raw data files (CSVs/Excel) and `.env` secrets from leaking to GitHub.
 - Drafted a comprehensive `README.md` outlining the project architecture, tech stack, local setup, and SDD development guidelines.
 - Sanitized codebase of leftover debug statements.
+
+### [Feature - Codebase Organization] - Current
+- Cleaned the root directory by deleting 10+ dead scratchpad, testing, and formatting files.
+- Created a `scripts/database/` directory and consolidated all one-off healing and migration scripts.
+- Removed duplicate files to ensure a clean deployment structure.
