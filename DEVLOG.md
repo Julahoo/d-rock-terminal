@@ -851,7 +851,9 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 
 ### [UI Enhancement - Trend Chart Legends] - Current
 - Updated the "Daily SLA Trends & Performance" charts layout in `app.py`.
-- Moved the legends from the default side position to the bottom (`orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5`) to free up horizontal space for the graphs.
+- Moved the legends from the default side position to the bottom (`orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5`).
+- Applied explicit bottom padding (`margin=dict(t=40, b=80, l=40, r=40)`) to permanently fix the legends physically overlapping the X-axis dates.
+- Debugged the Average Volume line logic (`len(df_filtered) > 0`) to assure it renders even on single-day telemetry, and brightened its opacity to `rgba(255, 255, 255, 0.9)` to guarantee visibility against the dark background.
 
 ### [Feature - Daily Operations Automation] - Current
 - Created `scripts/jobs/daily_operations_sync.py` to automate the daily CallsU API data pull.

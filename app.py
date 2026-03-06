@@ -2871,7 +2871,7 @@ if "📞 Operations Command" in tab_map:
                                     vol_y_cols.append('SLA Minimum')
                                     
                             # Add Average Line
-                            if 'Records' in df_filtered.columns and len(df_filtered) > 1:
+                            if 'Records' in df_filtered.columns and len(df_filtered) > 0:
                                 df_filtered['Average Volume'] = df_filtered['Records'].mean()
                                 vol_y_cols.append('Average Volume')
                                     
@@ -2881,7 +2881,8 @@ if "📞 Operations Command" in tab_map:
                                 paper_bgcolor="rgba(0,0,0,0)", 
                                 plot_bgcolor="rgba(0,0,0,0)", 
                                 font_color="#00FF41",
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5, title_text=""),
+                                margin=dict(t=40, b=80, l=40, r=40)
                             )
                             
                             for trace in fig_trend_vol.data:
@@ -2889,7 +2890,7 @@ if "📞 Operations Command" in tab_map:
                                     trace.line.dash = 'dash'
                                     
                                 if 'Average Volume' in trace.name:
-                                    trace.line.color = 'rgba(255, 255, 255, 0.4)' # Subtle white/grey line
+                                    trace.line.color = 'rgba(255, 255, 255, 0.9)' # Brighter white line
                                     
                             st.plotly_chart(fig_trend_vol, use_container_width=True)
                         with tc2:
@@ -2924,8 +2925,8 @@ if "📞 Operations Command" in tab_map:
                                 font_color="#00FF41",
                                 barmode='group',
                                 hovermode='x unified',
-                                margin=dict(t=40, b=20, l=40, r=40),
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+                                margin=dict(t=40, b=80, l=40, r=40),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5, title_text="")
                             )
                             fig_trend_pct.update_yaxes(title_text="Volume (Raw)", secondary_y=False, showgrid=False)
                             fig_trend_pct.update_yaxes(title_text="Efficiency (%)", secondary_y=True, showgrid=False)
