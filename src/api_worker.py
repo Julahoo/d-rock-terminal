@@ -77,7 +77,7 @@ def run_historical_pull(start_date, end_date):
                 return False
             job_id = response.json()['data']['id']
         except Exception as e:
-            log_msg(f"⚠️ Connection blip: {e}")
+            log_msg(f"Failed to fetch {target_date}: {e}")
             return False
 
         log_msg(f"⏳ Job {job_id} created! Waiting for CallsU server...")

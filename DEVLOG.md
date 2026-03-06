@@ -852,3 +852,9 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 ### [UI Enhancement - Trend Chart Legends] - Current
 - Updated the "Daily SLA Trends & Performance" charts layout in `app.py`.
 - Moved the legends from the default side position to the bottom (`orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5`) to free up horizontal space for the graphs.
+
+### [Feature - Daily Operations Automation] - Current
+- Created `scripts/jobs/daily_operations_sync.py` to automate the daily CallsU API data pull.
+- Engineered safe timezone logic to fetch "yesterday's" data relative to UTC (`datetime.now(timezone.utc) - timedelta(days=1)`).
+- Configured exit codes (`sys.exit`) for cloud cron monitoring to ping success (`0`) or failure (`1`).
+- Target deployment schedule calculated: `30 3 * * *` (4:30 AM CET corresponds to 03:30 UTC for the Railway container).
