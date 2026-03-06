@@ -327,33 +327,70 @@ with st.sidebar:
     default_brand_index = 1 if len(sorted_brands) == 1 else 0
     selected_brand = st.sidebar.selectbox("🏷️ Target Brand", brand_options, index=default_brand_index)
 
-    # 4. Extract Category and Segment using heuristics from Campaign Name
+    # 4. Extract Category and Sidebar Dropdowns
     selected_category = "All"
+    selected_country = "All"
+    selected_lifecycle = "All"
     selected_segment = "All"
+    selected_engagement = "All"
+    selected_campaign = "All"
     
-    if not raw_ops.empty and 'campaign_name' in raw_ops.columns:
+    if not raw_ops.empty:
         CATEGORY_LIST = ['SPO', 'CAS', 'LIVE', 'ALL']
-        SEGMENT_LIST = ['HIGH', 'MID', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4']
         
-        def parse_tokens(x, target_list):
+        def parse_category(x):
             if pd.isna(x): return None
             import re
             tokens = re.split(r'[-_ ]+', str(x).upper())
             for t in tokens:
-                if t in target_list: return t
+                if t in CATEGORY_LIST: return t
             return None
         
-        if '__extracted_category' not in raw_ops.columns:
-            raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(lambda x: parse_tokens(x, CATEGORY_LIST))
-            raw_ops['__extracted_segment'] = raw_ops['campaign_name'].apply(lambda x: parse_tokens(x, SEGMENT_LIST))
+        if '__extracted_category' not in raw_ops.columns and 'campaign_name' in raw_ops.columns:
+            raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(parse_category)
             
-        avail_categories = sorted([c for c in raw_ops['__extracted_category'].dropna().unique() if c])
-        avail_segments = sorted([s for s in raw_ops['__extracted_segment'].dropna().unique() if s])
-        
+        avail_categories = sorted([str(c) for c in raw_ops['__extracted_category'].dropna().unique() if c])
         if avail_categories:
             selected_category = st.sidebar.selectbox("📦 Target Category", ["All"] + avail_categories)
-        if avail_segments:
-            selected_segment = st.sidebar.selectbox("🎯 Target Segment", ["All"] + avail_segments)
+
+        if 'country' in raw_ops.columns:
+            # Full country name mapping
+            country_map = {
+                'PE': 'Peru', 'CL': 'Chile', 'EC': 'Ecuador', 'MX': 'Mexico', 'BR': 'Brazil',
+                'AR': 'Argentina', 'CO': 'Colombia', 'ES': 'Spain', 'NZ': 'New Zealand', 
+                'CA': 'Canada', 'IE': 'Ireland', 'DK': 'Denmark', 'SE': 'Sweden', 'NO': 'Norway',
+                'FI': 'Finland', 'DE': 'Germany', 'AT': 'Austria', 'CH': 'Switzerland', 
+                'UK': 'United Kingdom', 'GB': 'United Kingdom', 'IT': 'Italy', 'FR': 'France',
+                'GLOBAL': 'Global'
+            }
+            avail_countries = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
+            display_countries = [country_map.get(c, c) for c in avail_countries]
+            country_options = ["All"] + display_countries
+            selected_country_display = st.sidebar.selectbox("🌍 Target Country", country_options)
+            
+            if selected_country_display != "All":
+                inv_map = {v: k for k, v in country_map.items()}
+                selected_country = inv_map.get(selected_country_display, selected_country_display)
+
+        if 'extracted_lifecycle' in raw_ops.columns:
+            avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"])
+            if avail_lifecycles:
+                selected_lifecycle = st.sidebar.selectbox("🔁 Target Lifecycle", ["All"] + avail_lifecycles)
+                
+        if 'extracted_segment' in raw_ops.columns:
+            avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"])
+            if avail_segments:
+                selected_segment = st.sidebar.selectbox("🎯 Target Segment", ["All"] + avail_segments)
+                
+        if 'extracted_engagement' in raw_ops.columns:
+            avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"])
+            if avail_engagements:
+                selected_engagement = st.sidebar.selectbox("🔥 Target Engagement", ["All"] + avail_engagements)
+                
+        if 'campaign_name' in raw_ops.columns:
+            avail_campaigns = sorted([str(c) for c in raw_ops['campaign_name'].dropna().unique() if c])
+            if avail_campaigns:
+                selected_campaign = st.sidebar.selectbox("🏷️ Target Campaign", ["All"] + avail_campaigns)
 
     # 5. Elite Date Range Quick-Select Helper
     import re
@@ -466,11 +503,25 @@ with st.sidebar:
         if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
             filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_category)]
             
+    if selected_country != "All":
+        if not filtered_ops.empty and 'country' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
+            
+    if selected_lifecycle != "All":
+        if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == selected_lifecycle]
+            
     if selected_segment != "All":
-        if not filtered_ops.empty and '__extracted_segment' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['__extracted_segment'] == selected_segment]
-        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_segment)]
+        if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
+            
+    if selected_engagement != "All":
+        if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
+            
+    if selected_campaign != "All":
+        if not filtered_ops.empty and 'campaign_name' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['campaign_name'] == selected_campaign]
 
     # Apply Time Frame Filter
     if start_date_val and end_date_val:
@@ -2495,14 +2546,14 @@ if not _master_df.empty:
                     st.info(f"No players in {selected_campaign}.")
 
     # ==========================================
-    # 📈 TAB: CAMPAIGNS & SEGMENT ROI (Now correctly un-nested!)
+    # 📈 TAB: CAMPAIGNS & LIFECYCLE ROI (Now correctly un-nested!)
     # ==========================================
     if "📈 Campaigns" in tab_map:
         with tab_map["📈 Campaigns"]:
             _raw_df = df.copy()  # <-- ADDED DECLARATION
 
-            st.markdown("#### > 🎯 SEGMENT & CAMPAIGN ROI MATRIX_")
-            st.markdown("*Insight: Evaluates the true profitability and player quality of distinct marketing segments and acquisition channels.*")
+            st.markdown("#### > 🎯 LIFECYCLE & CAMPAIGN ROI MATRIX_")
+            st.markdown("*Insight: Evaluates the true profitability and player quality of distinct marketing lifecycles and acquisition channels.*")
 
             from src.analytics import generate_segment_roi_matrix
             segment_df = generate_segment_roi_matrix(_raw_df)
@@ -2518,7 +2569,7 @@ if not _master_df.empty:
                         y="Actual_Earning",
                         color="Actual_Earning",
                         color_continuous_scale="RdYlGn",
-                        title="True Net Profit by Segment"
+                        title="True Net Profit by Lifecycle"
                     )
                     fig_seg.update_layout(
                         paper_bgcolor="rgba(0,0,0,0)",
@@ -2537,7 +2588,7 @@ if not _master_df.empty:
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "segment": st.column_config.TextColumn("Marketing Segment"),
+                            "segment": st.column_config.TextColumn("Marketing Lifecycle"),
                             "Total_Players": st.column_config.NumberColumn("Acquired Players", format="%d"),
                             "Total_Turnover": st.column_config.NumberColumn("Turnover", format="$%.2f"),
                             "Total_NGR": st.column_config.NumberColumn("Net Income (NGR)", format="$%.2f"),
@@ -2549,7 +2600,7 @@ if not _master_df.empty:
                         }
                     )
             else:
-                st.info("No segment data available in the current slice.")
+                st.info("No lifecycle data available in the current slice.")
 
 else:
     # --- GRACEFUL DEGRADATION FOR EMPTY DATABASES ---
@@ -3047,39 +3098,31 @@ if "📞 Operations Command" in tab_map:
             if not ops_df.empty:
                 sla_ops_df = ops_df.copy()
                 
-                # 2. Segment Mapping Logic
-                def map_sla_segment(campaign_name):
-                    c_upper = str(campaign_name).upper()
-                    if "-WB" in c_upper or "_WB" in c_upper or " WB" in c_upper:
-                        return "WB"
-                    elif "-ACQ" in c_upper or "_ACQ" in c_upper or " ACQ" in c_upper:
-                        return "ACQ"
-                    elif "-RET" in c_upper or "_RET" in c_upper or " RET" in c_upper:
-                        return "RET"
-                    elif "-RND" in c_upper or "_RND" in c_upper or " RND" in c_upper:
-                        return "WB"  # Map RND to WB functionally
-                    return "UNKNOWN"
-
-                sla_ops_df["SLA_Segment"] = sla_ops_df["Campaign Name"].apply(map_sla_segment)
+                # 2. Lifecycle Mapping Logic
+                # Use the extracted_lifecycle directly from the database schema
+                if "extracted_lifecycle" in sla_ops_df.columns:
+                    sla_ops_df["SLA_Lifecycle"] = sla_ops_df["extracted_lifecycle"]
+                else:
+                    sla_ops_df["SLA_Lifecycle"] = "UNKNOWN"
                 
-                # Filter out UNKNOWN segments as they don't count towards these specific SLAs
-                sla_ops_df = sla_ops_df[sla_ops_df["SLA_Segment"] != "UNKNOWN"]
+                # Filter out UNKNOWN lifecycles as they don't count towards these specific SLAs
+                sla_ops_df = sla_ops_df[sla_ops_df["SLA_Lifecycle"] != "UNKNOWN"]
                 
                 if not sla_ops_df.empty:
                     # Calculate number of days in the current slice to scale the monthly SLA
                     num_days_sla = sla_ops_df['ops_date'].nunique() if 'ops_date' in sla_ops_df.columns else 1
                     local_sla_scale_factor = max(num_days_sla / 30.0, 1.0) if num_days_sla >= 28 else (num_days_sla / 30.0)
                     
-                    # 3. Group by Client and Segment
-                    sla_agg = sla_ops_df.groupby(["ops_client", "SLA_Segment"]).agg({"Records": "sum"}).reset_index()
+                    # 3. Group by Client and Lifecycle
+                    sla_agg = sla_ops_df.groupby(["ops_client", "SLA_Lifecycle"]).agg({"Records": "sum"}).reset_index()
                     
                     # 4. Math & Target Mapping
                     def get_sla_target(row):
                         client = row["ops_client"]
-                        segment = row["SLA_Segment"]
+                        lifecycle = row["SLA_Lifecycle"]
                         raw_target = default_sla_target
-                        if client in sla_targets and segment in sla_targets[client]:
-                            raw_target = sla_targets[client][segment]
+                        if client in sla_targets and lifecycle in sla_targets[client]:
+                            raw_target = sla_targets[client][lifecycle]
                         
                         # Scale the monthly target to represent the current timeframe slice
                         return max(1, int(raw_target * local_sla_scale_factor))
@@ -3090,7 +3133,7 @@ if "📞 Operations Command" in tab_map:
                     # Rename columns for final display dataframe
                     sla_agg.rename(columns={
                         "ops_client": "Client",
-                        "SLA_Segment": "Segment",
+                        "SLA_Lifecycle": "Lifecycle",
                         "Records": "Records Received"
                     }, inplace=True)
                     
@@ -3112,7 +3155,7 @@ if "📞 Operations Command" in tab_map:
                     # 6. Render
                     st.dataframe(styled_sla_df, use_container_width=True, hide_index=True)
                 else:
-                    st.info("No recognizable SLA segments (WB, ACQ, RET, RND) found in the current dataset.")
+                    st.info("No recognizable SLA lifecycles (WB, ACQ, RET, RND) found in the current dataset.")
 
 
             # --- Campaign Comparison Matrix ---

@@ -879,3 +879,9 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Initialized `ops_historical_benchmarks` table in `src/database.py` to store calculated averages.
 - Built `scripts/jobs/generate_benchmarks.py` to calculate two-step true daily averages across Brand/Country/Lifecycle/Segment/Engagement signatures.
 - Made the benchmark generation script idempotent to safely prevent data duplication.
+
+### [Feature - Benchmarking Phase 4] - Current
+- Overhauled the Streamlit sidebar to feature 8 comprehensive search-enabled filters (Client, Brand, Category, Country, Lifecycle, Segment, Engagement, Campaign).
+- Implemented Full Country Name mapping and searchable select boxes for improved UX.
+- Updated pandas DataFrame filtering logic (`filtered_ops_df`) to perfectly cascade with the new schema columns.
+- Performed a global UI text cleanup, correctly renaming legacy "Segment" references to "Lifecycle".
