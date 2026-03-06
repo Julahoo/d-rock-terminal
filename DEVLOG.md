@@ -860,3 +860,4 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Engineered safe timezone logic to fetch "yesterday's" data relative to UTC (`datetime.now(timezone.utc) - timedelta(days=1)`).
 - Configured exit codes (`sys.exit`) for cloud cron monitoring to ping success (`0`) or failure (`1`).
 - Target deployment schedule calculated: `30 3 * * *` (4:30 AM CET corresponds to 03:30 UTC for the Railway container).
+- Hard-locked the "Automated CallsU API Sync" manual triggers in the UI (`app.py`) to prevent users from accidentally selecting the current date (which contains incomplete intra-day metrics) or future dates. Forced both the default `value` and `max_value` to strictly default to "yesterday."

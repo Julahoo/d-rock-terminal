@@ -14,7 +14,7 @@ import threading
 import time
 import os
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.api_worker import run_historical_pull
 
 import pandas as pd
@@ -1126,11 +1126,12 @@ if "🗄️ Operations Ingestion" in tab_map:
         st.markdown("### 📡 Automated CallsU API Sync")
         st.write("Fetch daily operations data directly from the CallsU servers in the background.")
 
+        yesterday_date = datetime.now().date() - timedelta(days=1)
         col_date1, col_date2, col_btn = st.columns([2, 2, 2])
         with col_date1:
-            sync_start = st.date_input("Start Date")
+            sync_start = st.date_input("Start Date", value=yesterday_date, max_value=yesterday_date)
         with col_date2:
-            sync_end = st.date_input("End Date")
+            sync_end = st.date_input("End Date", value=yesterday_date, max_value=yesterday_date)
 
         with col_btn:
             st.markdown("<br>", unsafe_allow_html=True)
