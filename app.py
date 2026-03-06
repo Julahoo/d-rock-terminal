@@ -26,6 +26,7 @@ from src.ingestion import load_all_data_from_uploads, load_campaign_data_from_up
 from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves
 from src.exporter import export_to_excel
 from src.database import init_db, execute_query, engine
+from sqlalchemy.exc import ProgrammingError
 
 # ── Cached wrappers to prevent recomputation on Streamlit rerun ───────────
 @st.cache_data(show_spinner=False)
@@ -264,6 +265,11 @@ with st.sidebar:
         try: 
             st.session_state["raw_ops_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_data", _filter_engine)
             st.session_state["raw_ops_snapshots_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _filter_engine)
+        except ProgrammingError as e:
+            st.session_state["raw_ops_df"] = pd.DataFrame()
+            st.session_state["raw_ops_snapshots_df"] = pd.DataFrame()
+            st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
+            st.stop()
         except Exception as e:
             st.error(f"FATAL: Could not read operations data from DB: {e}")
             print(f"FATAL READ_SQL ERROR: {e}")
