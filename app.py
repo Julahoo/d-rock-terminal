@@ -241,9 +241,8 @@ if "data_loaded" not in st.session_state:
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("---")
+    st.markdown("### 🦅 CallsU Command")
 
-    st.markdown("---")
     st.markdown("### 🧭 NAVIGATION")
     nav_options = ["📊 Dashboard"]
     if st.session_state.get("user_role") in ["Superadmin", "Operations"]:
@@ -421,7 +420,7 @@ with st.sidebar:
         update_slider()
 
     options = ["Custom", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
-    st.sidebar.radio("Quick Select", options, horizontal=True, key="date_preset", on_change=update_slider)
+    st.sidebar.radio("Quick Select", options, horizontal=False, key="date_preset", on_change=update_slider)
 
     if "date_slider_val" not in st.session_state:
         st.session_state["date_slider_val"] = (min_db_date.date(), max_date.date())

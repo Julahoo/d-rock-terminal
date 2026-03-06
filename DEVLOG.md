@@ -861,3 +861,12 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Configured exit codes (`sys.exit`) for cloud cron monitoring to ping success (`0`) or failure (`1`).
 - Target deployment schedule calculated: `30 3 * * *` (4:30 AM CET corresponds to 03:30 UTC for the Railway container).
 - Hard-locked the "Automated CallsU API Sync" manual triggers in the UI (`app.py`) to prevent users from accidentally selecting the current date (which contains incomplete intra-day metrics) or future dates. Forced both the default `value` and `max_value` to strictly default to "yesterday."
+
+### [Infrastructure - Development Lifecycle] - Current
+- Created a separate git branch (`dev`) as the default staging environment for all future code modifications.
+- Protected the `master` branch to act as the pure production endpoint, requiring explicitly tested PRs/merges before triggering live Railway deployments.
+
+### [UI Enhancement - Sidebar Navigation] - Current
+- Cleaned up the app sidebar layout by removing two redundant horizontal divider lines.
+- Injected a clean text logo (`### 🦅 CallsU Command`) at the very top of the sidebar.
+- Re-oriented the date "Quick Select" preset radio buttons to stack vertically (`horizontal=False`) rather than a clumped horizontal list, drastically improving visual readability.
