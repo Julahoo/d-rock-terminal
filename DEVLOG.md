@@ -825,3 +825,7 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Implemented `try...except` block in `app.py` catching SQLAlchemy `ProgrammingError`.
 - Prevented fatal "UndefinedTable" crashes on fresh cloud database deployments.
 - Added graceful UI degradation prompting the user to use the Ingestion tab on first boot.
+
+### [Hotfix - Cold Start UI Unblock] - Current
+- Removed `st.stop()` from the initial database hydration `except` block.
+- Allowed the Streamlit script to continue executing and rendering the main UI tabs with empty DataFrames, unblocking access to the Ingestion dropzones on fresh deployments.

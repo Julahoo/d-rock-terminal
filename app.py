@@ -269,7 +269,6 @@ with st.sidebar:
             st.session_state["raw_ops_df"] = pd.DataFrame()
             st.session_state["raw_ops_snapshots_df"] = pd.DataFrame()
             st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
-            st.stop()
         except Exception as e:
             st.error(f"FATAL: Could not read operations data from DB: {e}")
             print(f"FATAL READ_SQL ERROR: {e}")
