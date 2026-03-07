@@ -913,3 +913,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Implemented the 7-tier Smart Profile heuristic array to automatically tag VIPs, Churn Risks, and Rising Stars based on a $500 Lifetime GGR threshold and recency signals.
 - Integrated the CRM Engine into `app.py`, rendering dynamic leaderboards in the CRM Intelligence tab.
 
+
+### [Refactor - SLA Trend Global Sync] - 2026-03-07
+- Stripped redundant 7/30/90 day local UI tabs from the "Daily SLA Trends & Performance" section in `app.py`.
+- Rewired the SLA charting logic to directly consume the global `filtered_ops_df`, ensuring perfectly synchronized date filtering across the entire dashboard.
+

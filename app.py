@@ -2837,28 +2837,6 @@ if "📞 Operations Command" in tab_map:
 
             st.markdown("---")
             
-            # Fetch snapshots for historical trendlines (bypass start_date filter for 90/365 lookback)
-            raw_snaps = st.session_state.get("raw_ops_snapshots_df", pd.DataFrame())
-            if not raw_snaps.empty:
-                try:
-                    # Re-apply dimension filters (Client, Brand, Category, Segment)
-                    if selected_client != "All" and 'ops_client' in raw_snaps.columns:
-                        raw_snaps = raw_snaps[raw_snaps['ops_client'] == selected_client]
-                    if selected_brand != "All" and 'ops_brand' in raw_snaps.columns:
-                        raw_snaps = raw_snaps[raw_snaps['ops_brand'] == selected_brand]
-                    if selected_category != "All" and 'campaign_name' in raw_snaps.columns:
-                        raw_snaps = raw_snaps[raw_snaps['campaign_name'].str.upper().str.contains(selected_category)]
-                    if selected_segment != "All" and 'campaign_name' in raw_snaps.columns:
-                        raw_snaps = raw_snaps[raw_snaps['campaign_name'].str.upper().str.contains(selected_segment)]
-                    # Apply upper-bound date filter only
-                    end_str = end_date_val.strftime("%Y-%m-%d")
-                    raw_snaps = raw_snaps[raw_snaps['ops_date'] <= end_str]
-                except Exception as e:
-                    pass
-                snap_df = raw_snaps.copy()
-            else:
-                snap_df = ops_df.copy() # Fallback
-            
             st.markdown("### 📈 Daily SLA Trends & Performance")
             
             # --- SLA BREACH WATCHDOG ---
@@ -2903,9 +2881,9 @@ if "📞 Operations Command" in tab_map:
                 except Exception as e:
                     pass # Fail silently if SLA table is empty or missing
 
-            if not snap_df.empty and 'ops_date' in snap_df.columns:
-                # Group by exact daily date using the latest Snapshot record per campaign/date
-                latest_snaps = snap_df.sort_values('snapshot_timestamp').drop_duplicates(subset=['campaign_name', 'ops_date'], keep='last') if 'snapshot_timestamp' in snap_df.columns else snap_df
+            if not ops_df.empty and 'ops_date' in ops_df.columns:
+                # Group by exact daily date directly from globally filtered ops_df
+                latest_snaps = ops_df.sort_values('snapshot_timestamp').drop_duplicates(subset=['Campaign Name', 'ops_date'], keep='last') if 'snapshot_timestamp' in ops_df.columns else ops_df
                 
                 # Identify granular campaign signature for benchmark targeting
                 def get_sig(c):
@@ -2916,8 +2894,7 @@ if "📞 Operations Command" in tab_map:
                         return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
                     return c
                 
-                camp_col = 'Campaign Name' if 'Campaign Name' in latest_snaps.columns else 'campaign_name'
-                latest_snaps['campaign_signature'] = latest_snaps[camp_col].apply(get_sig)
+                latest_snaps['campaign_signature'] = latest_snaps['Campaign Name'].apply(get_sig)
                 u_sigs = latest_snaps['campaign_signature'].unique()
                 active_sig = u_sigs[0] if len(u_sigs) == 1 else None
                 
@@ -2929,32 +2906,19 @@ if "📞 Operations Command" in tab_map:
                         target_cac = b_row.iloc[0]['target_cac_usd']
                         target_conv = b_row.iloc[0]['target_conv_pct'] * 100 if pd.notnull(b_row.iloc[0]['target_conv_pct']) else None
                         target_li = b_row.iloc[0]['target_li_pct'] * 100 if pd.notnull(b_row.iloc[0]['target_li_pct']) else None
-                # Determine if we are using the fallback ops_df (which has already been renamed)
-                is_fallback = 'Calls' in latest_snaps.columns
                 
-                c_calls = 'Calls' if is_fallback else 'calls'
-                c_conv = 'KPI1-Conv.' if is_fallback else 'conversions'
-                c_logins = 'KPI2-Login' if is_fallback else 'kpi2_logins'
-                c_li = 'LI%' if is_fallback else 'li_pct'
-                
-                # 1. Group by exact daily date
+                # 1. Group by exact daily date using standard UI names
                 daily_trends = latest_snaps.groupby('ops_date').agg({
-                    c_calls: 'sum',
-                    c_conv: 'sum',
-                    c_logins: 'sum' if c_logins in latest_snaps.columns else lambda x: 0,
-                    c_li: 'mean' if c_li in latest_snaps.columns else lambda x: 0
+                    'Calls': 'sum',
+                    'KPI1-Conv.': 'sum',
+                    'KPI2-Login': 'sum' if 'KPI2-Login' in latest_snaps.columns else lambda x: 0,
+                    'LI%': 'mean' if 'LI%' in latest_snaps.columns else lambda x: 0
                 }).reset_index().sort_values('ops_date')
                 
                 # 2. Rename back to UI standard for Plotly and downstream efficiency math
-                daily_trends.rename(columns={
-                    c_calls: 'Records', 
-                    c_conv: 'KPI1-Conv.',
-                    c_logins: 'KPI2-Login',
-                    c_li: 'LI%'
-                }, inplace=True)
+                daily_trends.rename(columns={'Calls': 'Records'}, inplace=True)
 
-                # Helper function to generate and display trend charts
-                def display_trend_charts(df_filtered, duration):
+                def display_trend_charts(df_filtered):
                     if len(df_filtered) > 0:
                         tc1, tc2 = st.columns(2)
                         with tc1:
@@ -2981,7 +2945,7 @@ if "📞 Operations Command" in tab_map:
                                 vol_y_cols.append('Average Volume')
                                     
                             fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
-                                                    labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title=f"{duration} Volume Trends")
+                                                    labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title="Global Volume Trends")
                             fig_trend_vol.update_layout(
                                 paper_bgcolor="rgba(0,0,0,0)", 
                                 plot_bgcolor="rgba(0,0,0,0)", 
@@ -3024,7 +2988,7 @@ if "📞 Operations Command" in tab_map:
                                 fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=[target_li]*len(df_filtered), name="Target LI%", mode='lines', line=dict(color='#eab308', dash='dash'), hovertemplate='Target LI: %{y:.2f}%<extra></extra>'), secondary_y=True)
                             
                             fig_trend_pct.update_layout(
-                                title=f"{duration} Efficiency Trends",
+                                title="Global Efficiency Trends",
                                 paper_bgcolor="rgba(0,0,0,0)", 
                                 plot_bgcolor="rgba(0,0,0,0)", 
                                 font_color="#00FF41",
@@ -3038,47 +3002,10 @@ if "📞 Operations Command" in tab_map:
                             
                             st.plotly_chart(fig_trend_pct, use_container_width=True)
                     else:
-                        st.info(f"Not enough data for {duration} trend.")
+                        st.info("Not enough data to display trend charts for the selected range.")
 
-                # Calculate max date to base 7, 30, and 365 day periods off of
-                max_date = pd.to_datetime(daily_trends['ops_date']).max()
-
-                t1, t2, t3, t4 = st.tabs(["7-Day", "30-Day", "90-Day", "12-Month"])
-                with t1:
-                    seven_days_ago = max_date - pd.Timedelta(days=7)
-                    df_7d = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= seven_days_ago].copy()
-                    display_trend_charts(df_7d, "7-Day")
-
-                with t2:
-                    thirty_days_ago = max_date - pd.Timedelta(days=30)
-                    df_30d = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= thirty_days_ago].copy()
-                    display_trend_charts(df_30d, "30-Day")
-                    
-                with t3:
-                    ninety_days_ago = max_date - pd.Timedelta(days=90)
-                    df_90d = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= ninety_days_ago].copy()
-                    display_trend_charts(df_90d, "90-Day")
-                    
-                with t4:
-                    twelve_months_ago = max_date - pd.Timedelta(days=365)
-                    df_12m = daily_trends[pd.to_datetime(daily_trends['ops_date']) >= twelve_months_ago].copy()
-                    
-                    # Roll up to monthly granularity for cleaner 12-month charts
-                    if len(df_12m) > 0:
-                        df_12m['Month'] = pd.to_datetime(df_12m['ops_date']).dt.to_period('M').astype(str)
-                        # --- SAFE MONTHLY ROLL-UP ---
-                        # Group by Month using the newly renamed UI-facing columns inherited from daily_trends
-                        monthly_trends = df_12m.groupby('Month').agg({
-                            'Records': 'sum', 
-                            'KPI1-Conv.': 'sum', 
-                            'KPI2-Login': 'sum', 
-                            'LI%': 'mean'
-                        }).reset_index()
-                        # Reuse renamed column axis
-                        monthly_trends.rename(columns={'Month': 'ops_date'}, inplace=True)
-                        display_trend_charts(monthly_trends, "12-Month")
-                    else:
-                        st.info("Not enough data for 12-Month trend.")
+                # Render directly without tabs
+                display_trend_charts(daily_trends.copy())
 
             # --- 🎯 Pitch vs. List Scorecard ---
             st.markdown("---")
