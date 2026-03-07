@@ -218,7 +218,6 @@ def init_db():
         """), {"ac": json.dumps(["All"])})
 
         conn.commit()
-        print("✅ Database initialized successfully.")
 
     # --- Auto-Seed Legacy Brand Dictionary ---
     try:
@@ -228,9 +227,8 @@ def init_db():
                 "INSERT INTO client_mapping (brand_code, client_name) VALUES (:b, :c) ON CONFLICT (brand_code) DO NOTHING",
                 {"b": brand, "c": client}
             )
-        print("✅ Legacy brand dictionary synced and COMMITTED to PostgreSQL.")
     except Exception as e:
-        print(f"⚠️ Warning: Could not auto-seed brands: {e}")
+        pass
 
 def execute_query(query, params=None):
     """Helper to execute raw SQL safely."""

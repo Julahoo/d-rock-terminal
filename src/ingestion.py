@@ -313,7 +313,6 @@ def load_all_data(
             f"data for {gap['brand'].title()}"
         )
         logger.warning(msg)
-        print(msg)
 
     if strict and gaps:
         raise RuntimeError(
@@ -721,9 +720,8 @@ def load_all_data_from_uploads(
             expected_cols = ["player_id", "client", "brand", "country", "wb_tag", "segment", "bet", "revenue", "ngr", "bet_casino", "revenue_casino", "ngr_casino", "bet_sports", "revenue_sports", "ngr_sports", "deposit_count", "deposits", "withdrawals", "bonus_total", "bonus_casino", "bonus_sports", "tax_total", "report_month", "reactivation_date", "campaign_start_date", "reactivation_days"]
             db_df = db_df[[c for c in expected_cols if c in db_df.columns]]
             db_df.to_sql("raw_financial_data", db_engine, if_exists="append", index=False)
-            print(f"✅ PERMANENTLY SAVED Raw Financial Data to Database!")
         except Exception as e:
-            print(f"⚠️ Could not save financial data to DB: {e}")
+            pass
 
     # Invalidate Fin Cache so UI fetches fresh DB data
     try:
@@ -811,7 +809,6 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
                     f.seek(0)
                     df = pd.read_csv(f, encoding="ISO-8859-1")
         except Exception as e:
-            print(f"❌ CRASH ON FILE {f.name}: {e}")
             continue
             
         df.columns = [str(c).replace('\ufeff', '').replace('"', '').strip() for c in df.columns]
@@ -839,7 +836,6 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             # Legacy fallback appends -01
             report_date = f"{monthly_match.group(1)}-{monthly_match.group(2)}-01"
         else:
-            print(f"⚠️ Warning: Could not parse date from {f.name}. Skipping.")
             continue
 
         # --- ASSIGN DAILY DATE TO ALL ROWS ---
@@ -944,16 +940,14 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             try:
                 # Save permanently to PostgreSQL
                 batch_df.to_sql("ops_telemarketing_data", db_engine, if_exists="append", index=False)
-                print(f"✅ PERMANENTLY SAVED {f.name} to PostgreSQL!")
             except Exception as e:
-                print(f"⚠️ Could not save {f.name} to Main DB (might be a duplicate): {e}")
+                pass
 
             try:
                 # Save Snapshot (No unique constraints, always appends a point-in-time record)
                 batch_df.to_sql("ops_telemarketing_snapshots", db_engine, if_exists="append", index=False)
-                print(f"📸 SNAPSHOT SAVED for {f.name}!")
             except Exception as e_snap:
-                print(f"⚠️ Could not save snapshot for {f.name}: {e_snap}")
+                pass
             
             frames.append(batch_df)
 
