@@ -885,3 +885,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Implemented Full Country Name mapping and searchable select boxes for improved UX.
 - Updated pandas DataFrame filtering logic (`filtered_ops_df`) to perfectly cascade with the new schema columns.
 - Performed a global UI text cleanup, correctly renaming legacy "Segment" references to "Lifecycle".
+
+### [Feature - Benchmarking Phase 5] - Current
+- Implemented `load_benchmarks()` to cache and pull 6-month historical averages into the frontend.
+- Built dynamic matching logic to align the current active sidebar filters with the historical benchmark signatures.
+- Upgraded the top-level `st.metric` cards in Operations Command to display dynamic green/red deltas comparing current performance against historical baselines.

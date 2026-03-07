@@ -77,6 +77,15 @@ def _get_ops_excel_bytes(ops_df):
     buf = export_ops_to_excel(ops_df)
     return buf.getvalue()
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_benchmarks():
+    from src.database import engine as _bench_engine
+    import pandas as pd
+    try:
+        return pd.read_sql("SELECT * FROM ops_historical_benchmarks", _bench_engine)
+    except Exception:
+        return pd.DataFrame()
+
 @st.cache_data(show_spinner=False)
 def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business, ops_df):
     from src.exporter import export_to_excel
@@ -148,6 +157,9 @@ try:
             st.session_state["ops_df"] = global_ops_df
     except Exception as e:
         pass # Handle gracefully if table is empty
+
+    # Hydrate Benchmarks
+    st.session_state["benchmarks_df"] = load_benchmarks()
 
     # Hydrate Financial Data
     try:
@@ -2727,12 +2739,39 @@ if "📞 Operations Command" in tab_map:
             # Safely extract new metrics
             total_d = ops_df["D"].sum() if "D" in ops_df.columns else 0
             contact_rate = (total_d / total_calls * 100) if total_calls > 0 else 0
+
+            # Phase 5: Dynamic Benchmark Deltas
+            b_calls_delta, b_conv_delta, b_cr_delta = None, None, None
+            if "benchmarks_df" in st.session_state and not st.session_state["benchmarks_df"].empty:
+                b_df = st.session_state["benchmarks_df"].copy()
+                
+                # Filter by active sidebar selections
+                if selected_brand != "All": b_df = b_df[b_df['brand'] == selected_brand]
+                if selected_country != "All": b_df = b_df[b_df['country'].str.upper() == selected_country]
+                if selected_lifecycle != "All": b_df = b_df[b_df['extracted_lifecycle'] == selected_lifecycle]
+                if selected_segment != "All": b_df = b_df[b_df['extracted_segment'] == selected_segment]
+                if selected_engagement != "All": b_df = b_df[b_df['extracted_engagement'] == selected_engagement]
+                
+                if not b_df.empty:
+                    num_days = ops_df['ops_date'].nunique() if 'ops_date' in ops_df.columns else 1
+                    
+                    exp_daily_calls = b_df['avg_daily_calls'].sum()
+                    exp_daily_convs = b_df['avg_daily_conversions'].sum()
+                    exp_daily_delivs = b_df['avg_daily_deliveries'].sum()
+                    
+                    exp_tot_calls = exp_daily_calls * num_days
+                    exp_tot_convs = exp_daily_convs * num_days
+                    exp_cr = (exp_daily_delivs / exp_daily_calls * 100) if exp_daily_calls > 0 else 0
+                    
+                    b_calls_delta = f"{int(total_calls - exp_tot_calls):,} vs 6mo Avg"
+                    b_conv_delta = f"{int(total_conv - exp_tot_convs):,} vs 6mo Avg"
+                    b_cr_delta = f"{contact_rate - exp_cr:.1f}% vs 6mo Avg"
             
             o1, o2, o3, o4, o5 = st.columns(5)
             o1.metric("Total Telecom Spend", f"${total_spend:,.2f}")
-            o2.metric("Total SIP Calls", f"{int(total_calls):,}")
-            o3.metric("Contact Rate (D Ratio)", f"{contact_rate:.1f}%")
-            o4.metric("Total Conversions", f"{int(total_conv):,}")
+            o2.metric("Total SIP Calls", f"{int(total_calls):,}", delta=b_calls_delta)
+            o3.metric("Contact Rate (D Ratio)", f"{contact_rate:.1f}%", delta=b_cr_delta)
+            o4.metric("Total Conversions", f"{int(total_conv):,}", delta=b_conv_delta)
             o5.metric("Global True CAC", f"${true_cac:,.2f}")
             
             st.markdown("---")
