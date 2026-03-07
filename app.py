@@ -23,7 +23,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 from src.ingestion import load_all_data_from_uploads, load_campaign_data_from_uploads
-from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves
+from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves, generate_tier_summary
 from src.exporter import export_to_excel
 from src.database import init_db, execute_query, engine
 from sqlalchemy.exc import ProgrammingError
@@ -34,8 +34,8 @@ def _cached_time_series(data):
     return generate_time_series(data)
 
 @st.cache_data(show_spinner=False)
-def _cached_rfm_summary(raw_df, target_month):
-    return generate_rfm_summary(raw_df, target_month)
+def _cached_tier_summary(raw_df, target_month):
+    return generate_tier_summary(raw_df, target_month)
 
 @st.cache_data(show_spinner=False)
 def _cached_player_master_list(raw_df):
@@ -2261,7 +2261,7 @@ if not _master_df.empty:
 
             def _vip_snap(raw_subset):
                 b_latest = raw_subset["month"].max() if "month" in raw_subset.columns and not raw_subset.empty else latest_month
-                rfm = _cached_rfm_summary(raw_subset, b_latest)
+                rfm = _cached_tier_summary(raw_subset, b_latest)
                 if rfm.empty: return [0] * len(tier_labels)
                 return [int(rfm.loc[rfm.iloc[:, 0].str.contains(s, na=False, case=False), rfm.columns[1]].sum()) if rfm.iloc[:, 0].str.contains(s, na=False, case=False).any() else 0 for s in tier_search]
 

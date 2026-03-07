@@ -615,7 +615,7 @@ def generate_time_series(summary_df: pd.DataFrame) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 #  RFM Summary (Phase 15 — VIP Tiering)
 # ═══════════════════════════════════════════════════════════════════════════
-def generate_rfm_summary(
+def generate_tier_summary(
     raw_df: pd.DataFrame, target_month: str,
 ) -> pd.DataFrame:
     """Segment players into VIP tiers using Recency/Frequency/Monetary.
