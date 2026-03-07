@@ -890,3 +890,14 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Implemented `load_benchmarks()` to cache and pull 6-month historical averages into the frontend.
 - Built dynamic matching logic to align the current active sidebar filters with the historical benchmark signatures.
 - Upgraded the top-level `st.metric` cards in Operations Command to display dynamic green/red deltas comparing current performance against historical baselines.
+# # #   [ F e a t u r e   -   T r u e   C A C   R e f i n e m e n t s ]   -    
+ -   E x p a n d e d   \ o p s _ h i s t o r i c a l _ b e n c h m a r k s \   s c h e m a   t o   s t o r e   a v e r a g e   d a i l y   t e l e c o m   c o s t s   a n d   T r u e   C A C   b a s e l i n e s .  
+ -   U p g r a d e d   t h e   b e n c h m a r k   g e n e r a t o r   s c r i p t   t o   c a l c u l a t e   h i s t o r i c a l   C A C   s i g n a t u r e s .  
+ -   R e f i n e d   t h e   T r u e   C o s t - P e r - O u t c o m e   L e a d e r b o a r d   i n   \  p p . p y \   t o   d i s p l a y   d y n a m i c   \ C A C   D e l t a \   c o l u m n s ,   i n s t a n t l y   h i g h l i g h t i n g   c a m p a i g n s   b l e e d i n g   t e l e c o m   m a r g i n s   v s .   6 - m o n t h   a v e r a g e s .  
+  
+ ### [Feature - True CAC Refinements] - 2026-03-07
+- Expanded `ops_historical_benchmarks` schema to store average daily telecom costs and True CAC baselines.
+- Upgraded the benchmark generator script to calculate historical CAC signatures.
+- Refined the True Cost-Per-Outcome Leaderboard in `app.py` to display dynamic `CAC Delta` columns, instantly highlighting campaigns bleeding telecom margins vs. 6-month averages.
+- Integrated newly registered brands (Wetigo, Hahibi, NitroCasino) into the DB mapping layer and updated category names to full names (Casino, Sportsbook, etc.).
+

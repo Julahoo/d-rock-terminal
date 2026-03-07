@@ -367,22 +367,26 @@ with st.sidebar:
                 inv_map = {v: k for k, v in country_map.items()}
                 selected_country = inv_map.get(selected_country_display, selected_country_display)
 
-        CATEGORY_LIST = ['SPO', 'CAS', 'LIVE', 'ALL']
+
+        CATEGORY_MAP = {'SPO': 'Sportsbook', 'CAS': 'Casino', 'LIVE': 'Live'}
         
         def parse_category(x):
             if pd.isna(x): return None
             import re
             tokens = re.split(r'[-_ ]+', str(x).upper())
             for t in tokens:
-                if t in CATEGORY_LIST: return t
+                if t in CATEGORY_MAP: return t
             return None
-        
+            
         if '__extracted_category' not in raw_ops.columns and 'campaign_name' in raw_ops.columns:
             raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(parse_category)
             
         avail_categories = sorted([str(c) for c in raw_ops['__extracted_category'].dropna().unique() if c])
+        display_categories = [CATEGORY_MAP.get(c, c) for c in avail_categories]
         if avail_categories:
-            selected_category = st.sidebar.selectbox("📦 Target Category", ["All"] + avail_categories)
+            selected_category_display = st.sidebar.selectbox("📦 Target Category", ["All"] + display_categories)
+            inv_map = {v: k for k, v in CATEGORY_MAP.items()}
+            selected_category = inv_map.get(selected_category_display, selected_category_display) if selected_category_display != "All" else "All"
 
         if 'extracted_lifecycle' in raw_ops.columns:
             avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"])
@@ -3261,6 +3265,13 @@ if "📞 Operations Command" in tab_map:
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
             display_cols = ["Campaign Name", "ops_client", "ops_brand", "Records", "Calls", "D Ratio", "Total_Campaign_Cost", "KPI1-Conv.", "True_CAC"]
+            
+            # Additional signature columns needed for joining benchmarks
+            sig_cols = ["country", "extracted_lifecycle", "extracted_segment", "extracted_engagement"]
+            for c in sig_cols:
+                if c in ops_df.columns:
+                    display_cols.append(c)
+                    
             # Only display columns that actually exist in the dataframe
             display_cols = [c for c in display_cols if c in ops_df.columns]
             
@@ -3268,14 +3279,53 @@ if "📞 Operations Command" in tab_map:
             if "D Ratio" in ledger_df.columns:
                 ledger_df["D Ratio"] = ledger_df["D Ratio"] * 100
                 
+            # Cross-reference with benchmarks
+            if "benchmarks_df" in st.session_state and not st.session_state["benchmarks_df"].empty:
+                b_df = st.session_state["benchmarks_df"].copy()
+                b_df.rename(columns={'brand': 'ops_brand'}, inplace=True)
+                
+                # We need to make sure the merge keys exist in ledger_df
+                merge_keys = ['ops_brand'] + [c for c in sig_cols if c in ledger_df.columns]
+                
+                ledger_df = pd.merge(ledger_df, b_df[merge_keys + ['avg_daily_true_cac']],
+                                     on=merge_keys, how='left')
+                ledger_df.rename(columns={'avg_daily_true_cac': 'Benchmark CAC'}, inplace=True)
+                ledger_df['Benchmark CAC'] = ledger_df['Benchmark CAC'].fillna(0)
+                ledger_df['CAC Delta'] = ledger_df['True_CAC'] - ledger_df['Benchmark CAC']
+            else:
+                ledger_df['Benchmark CAC'] = 0.0
+                ledger_df['CAC Delta'] = 0.0
+
+            # Drop signature columns for clean display
+            final_display_df = ledger_df.drop(columns=[c for c in sig_cols if c in ledger_df.columns]).sort_values("True_CAC", ascending=False)
+
+            def style_cac_delta(val):
+                if pd.isna(val) or val == 0:
+                    return ''
+                if val > 0:
+                    return 'color: #f87171; font-weight: bold;' # Red text (More expensive)
+                else:
+                    return 'color: #4ade80; font-weight: bold;' # Green text (Cheaper or equal)
+            
+            styled_ledger = final_display_df.style.format({
+                    "Records": "{:,.0f}",
+                    "Total_Campaign_Cost": "${:,.2f}",
+                    "True_CAC": "${:,.2f}",
+                    "Benchmark CAC": "${:,.2f}",
+                    "CAC Delta": "${:,.2f}",
+                    "D Ratio": "{:.2f}%"
+            }).map(style_cac_delta, subset=["CAC Delta"])
+                
             st.dataframe(
-                ledger_df.sort_values("True_CAC", ascending=False),
+                styled_ledger,
                 use_container_width=True, hide_index=True,
                 column_config={
-                    "Records": st.column_config.NumberColumn("Total Records", format="%d"),
-                    "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend", format="$%.2f"),
-                    "True_CAC": st.column_config.NumberColumn("True CAC", format="$%.2f"),
-                    "D Ratio": st.column_config.NumberColumn("Contact Rate", format="%.2f%%")
+                    "Records": st.column_config.NumberColumn("Total Records"),
+                    "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend"),
+                    "True_CAC": st.column_config.NumberColumn("True CAC"),
+                    "Benchmark CAC": st.column_config.NumberColumn("Benchmark CAC"),
+                    "CAC Delta": st.column_config.NumberColumn("CAC Delta"),
+                    "D Ratio": st.column_config.NumberColumn("Contact Rate")
                 }
             )
         else:

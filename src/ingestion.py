@@ -64,14 +64,19 @@ CLIENT_HIERARCHY = {
     'YU': 'Simplicity Malta Limited',
     'LTRB': 'Offside Gaming',
     'ROJA': 'Offside Gaming',
-    'CASINODAYS': 'Rhino'
+    'CASINODAYS': 'Rhino',
+    'WG': 'Reliato',
+    'BHB': 'Limitless'
 }
 
 BRAND_CODE_MAP = {
     'VERA JOHN': 'VJ', 'YUUGADO': 'YU', 'BOABET': 'BOA', 'YOUWIN': 'YW', 
     'BAHIBI': 'BHB', 'MR OYUN': 'MRO', 'BAHIGO': 'BAH', 'WETTIGO': 'WG', 
     'HAPPY LUKE': 'HL', 'LIVE CASINO HOUSE': 'LCH', 'ROYAL PANDA': 'RP',
-    'LEO VEGAS': 'LV', 'LATRIBET': 'LTRB', 'ROJABET': 'LTRB', 'POWERPLAY': 'PP'
+    'LEO VEGAS': 'LV', 'LATRIBET': 'LTRB', 'ROJABET': 'LTRB', 'POWERPLAY': 'PP',
+    'WETIGO': 'WG', 'WETTIGO': 'WG', 
+    'HAHIBI': 'BHB', 'BAHIBI': 'BHB',
+    'NITROCASINO': 'PE', 'NITRO': 'PE'
 }
 
 # ── LeoVegas Group column mapping (Smart Adapter) ────────────────────────
