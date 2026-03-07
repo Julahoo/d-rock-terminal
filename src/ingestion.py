@@ -59,7 +59,11 @@ CLIENT_HIERARCHY = {
     'INSP': 'Magico Games/Interspin',
     'PE': 'PressEnter',
     'LV': 'LeoVegas Group',
-    'ROJB': 'Reliato',
+    'EX': 'LeoVegas Group',
+    'RP': 'LeoVegas Group',
+    'GG': 'LeoVegas Group',
+    'BETMGM': 'LeoVegas Group',
+    'BETUK': 'LeoVegas Group',
     'MRO': 'Limitless',
     'YU': 'Simplicity Malta Limited',
     'LTRB': 'Offside Gaming',
@@ -72,11 +76,12 @@ CLIENT_HIERARCHY = {
 BRAND_CODE_MAP = {
     'VERA JOHN': 'VJ', 'YUUGADO': 'YU', 'BOABET': 'BOA', 'YOUWIN': 'YW', 
     'BAHIBI': 'BHB', 'MR OYUN': 'MRO', 'BAHIGO': 'BAH', 'WETTIGO': 'WG', 
-    'HAPPY LUKE': 'HL', 'LIVE CASINO HOUSE': 'LCH', 'ROYAL PANDA': 'RP',
-    'LEO VEGAS': 'LV', 'LATRIBET': 'LTRB', 'ROJABET': 'LTRB', 'POWERPLAY': 'PP',
+    'HAPPY LUKE': 'HL', 'LIVE CASINO HOUSE': 'LCH', 'ROYAL PANDA': 'RP', 'ROYALPANDA': 'RP',
+    'LEO VEGAS': 'LV', 'LATRIBET': 'LTRB', 'ROJABET': 'ROJA', 'POWERPLAY': 'PP',
     'WETIGO': 'WG', 'WETTIGO': 'WG', 
     'HAHIBI': 'BHB', 'BAHIBI': 'BHB',
-    'NITROCASINO': 'PE', 'NITRO': 'PE'
+    'NITROCASINO': 'PE', 'NITRO': 'PE',
+    'EXPEKT': 'EX', 'CASINODAYS': 'CASINODAYS'
 }
 
 # ── LeoVegas Group column mapping (Smart Adapter) ────────────────────────

@@ -901,3 +901,9 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Refined the True Cost-Per-Outcome Leaderboard in `app.py` to display dynamic `CAC Delta` columns, instantly highlighting campaigns bleeding telecom margins vs. 6-month averages.
 - Integrated newly registered brands (Wetigo, Hahibi, NitroCasino) into the DB mapping layer and updated category names to full names (Casino, Sportsbook, etc.).
 
+
+### [Hotfix - Data Hygiene] - 2026-03-07
+- Merged redundant tags for Royal Panda (`ROYALPANDA` -> `RP`), Expekt (`EXPEKT` -> `EX`), and Rojabet (`ROJB` -> `ROJA`) directly in PostgreSQL `client_mapping` and historical tables.
+- Corrected brand name typos: `Hahibi` -> `Bahibi` and `CASINODAYS` -> `CasinoDays`.
+- Cleaned `BRAND_CODE_MAP` and `CLIENT_HIERARCHY` inside `src/ingestion.py` to prevent future drift.
+
