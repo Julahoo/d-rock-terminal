@@ -2928,12 +2928,15 @@ if "📞 Operations Command" in tab_map:
                         target_li = b_row.iloc[0]['target_li_pct'] * 100 if pd.notnull(b_row.iloc[0]['target_li_pct']) else None
                 
                 # 1. Group by exact daily date using standard UI names
-                daily_trends = latest_snaps.groupby('ops_date').agg({
-                    'Calls': 'sum',
-                    'KPI1-Conv.': 'sum',
-                    'KPI2-Login': 'sum' if 'KPI2-Login' in latest_snaps.columns else lambda x: 0,
-                    'LI%': 'mean' if 'LI%' in latest_snaps.columns else lambda x: 0
-                }).reset_index().sort_values('ops_date')
+                agg_dict = {'Calls': 'sum'}
+                if 'KPI1-Conv.' in latest_snaps.columns:
+                    agg_dict['KPI1-Conv.'] = 'sum'
+                if 'KPI2-Login' in latest_snaps.columns:
+                    agg_dict['KPI2-Login'] = 'sum'
+                if 'LI%' in latest_snaps.columns:
+                    agg_dict['LI%'] = 'mean'
+                    
+                daily_trends = latest_snaps.groupby('ops_date').agg(agg_dict).reset_index().sort_values('ops_date')
                 
                 # 2. Rename back to UI standard for Plotly and downstream efficiency math
                 daily_trends.rename(columns={'Calls': 'Records'}, inplace=True)
@@ -2987,8 +2990,8 @@ if "📞 Operations Command" in tab_map:
                             from plotly.subplots import make_subplots
                             import plotly.graph_objects as go
                             
-                            df_filtered['Conv%'] = (df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100
-                            df_filtered['Logins%'] = (df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100
+                            df_filtered['Conv%'] = (df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI1-Conv.' in df_filtered.columns else 0
+                            df_filtered['Logins%'] = (df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI2-Login' in df_filtered.columns else 0
                             
                             fig_trend_pct = make_subplots(specs=[[{"secondary_y": True}]])
                             
@@ -2999,8 +3002,10 @@ if "📞 Operations Command" in tab_map:
                                 fig_trend_pct.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.4)', hovertemplate='Conversions: %{y} (%{customdata:.2f}%)<extra></extra>', customdata=df_filtered['Conv%']), secondary_y=False)
                                 
                             # Add lines for percentages (secondary y-axis)
-                            fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login %: %{y:.2f}%<extra></extra>'), secondary_y=True)
-                            fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conversion %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conversion %: %{y:.2f}%<extra></extra>'), secondary_y=True)
+                            if 'KPI2-Login' in df_filtered.columns:
+                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login %: %{y:.2f}%<extra></extra>'), secondary_y=True)
+                            if 'KPI1-Conv.' in df_filtered.columns:
+                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conversion %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conversion %: %{y:.2f}%<extra></extra>'), secondary_y=True)
                             
                             if target_conv is not None:
                                 fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=[target_conv]*len(df_filtered), name="Target Conv%", mode='lines', line=dict(color='#22c55e', dash='dash'), hovertemplate='Target Conv: %{y:.2f}%<extra></extra>'), secondary_y=True)
