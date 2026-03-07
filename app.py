@@ -348,23 +348,6 @@ with st.sidebar:
     selected_campaign = "All"
     
     if not raw_ops.empty:
-        CATEGORY_LIST = ['SPO', 'CAS', 'LIVE', 'ALL']
-        
-        def parse_category(x):
-            if pd.isna(x): return None
-            import re
-            tokens = re.split(r'[-_ ]+', str(x).upper())
-            for t in tokens:
-                if t in CATEGORY_LIST: return t
-            return None
-        
-        if '__extracted_category' not in raw_ops.columns and 'campaign_name' in raw_ops.columns:
-            raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(parse_category)
-            
-        avail_categories = sorted([str(c) for c in raw_ops['__extracted_category'].dropna().unique() if c])
-        if avail_categories:
-            selected_category = st.sidebar.selectbox("📦 Target Category", ["All"] + avail_categories)
-
         if 'country' in raw_ops.columns:
             # Full country name mapping
             country_map = {
@@ -383,6 +366,23 @@ with st.sidebar:
             if selected_country_display != "All":
                 inv_map = {v: k for k, v in country_map.items()}
                 selected_country = inv_map.get(selected_country_display, selected_country_display)
+
+        CATEGORY_LIST = ['SPO', 'CAS', 'LIVE', 'ALL']
+        
+        def parse_category(x):
+            if pd.isna(x): return None
+            import re
+            tokens = re.split(r'[-_ ]+', str(x).upper())
+            for t in tokens:
+                if t in CATEGORY_LIST: return t
+            return None
+        
+        if '__extracted_category' not in raw_ops.columns and 'campaign_name' in raw_ops.columns:
+            raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(parse_category)
+            
+        avail_categories = sorted([str(c) for c in raw_ops['__extracted_category'].dropna().unique() if c])
+        if avail_categories:
+            selected_category = st.sidebar.selectbox("📦 Target Category", ["All"] + avail_categories)
 
         if 'extracted_lifecycle' in raw_ops.columns:
             avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"])
