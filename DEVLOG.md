@@ -907,3 +907,9 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Corrected brand name typos: `Hahibi` -> `Bahibi` and `CASINODAYS` -> `CasinoDays`.
 - Cleaned `BRAND_CODE_MAP` and `CLIENT_HIERARCHY` inside `src/ingestion.py` to prevent future drift.
 
+
+### [Feature - Phase 7 Deliverable A: CRM Engine] - 2026-03-07
+- Created `src/analytics/crm_engine.py` to calculate player-level RFM (Recency, Frequency, Monetary) metrics.
+- Implemented the 7-tier Smart Profile heuristic array to automatically tag VIPs, Churn Risks, and Rising Stars based on a $500 Lifetime GGR threshold and recency signals.
+- Integrated the CRM Engine into `app.py`, rendering dynamic leaderboards in the CRM Intelligence tab.
+

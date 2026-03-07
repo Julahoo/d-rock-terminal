@@ -2272,8 +2272,19 @@ if not _master_df.empty:
             st.markdown("#### > VIP & RISK LEADERBOARDS_")
             st.caption(f"Currently viewing CRM targets for: {selected_client} | {selected_brand} | {selected_country}")
         
-            # Use the globally filtered raw data
-            master_df = _cached_player_master_list(_raw_df)
+            # Load data through the CRM Engine heuristics
+            from src.analytics import generate_rfm_summary, generate_smart_profiles
+            
+            @st.cache_data(ttl=900)
+            def _get_crm_intel(df_in):
+                rfm = generate_rfm_summary(df_in)
+                smart = generate_smart_profiles(rfm)
+                # Align to legacy column expectations internally
+                if 'Smart_Profile' in smart.columns:
+                    smart = smart.rename(columns={'Smart_Profile': 'Recommended_Campaign'})
+                return smart
+                
+            master_df = _get_crm_intel(_raw_df)
             filtered_master = master_df.copy()
         
             if filtered_master.empty:
