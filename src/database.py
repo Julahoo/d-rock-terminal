@@ -70,7 +70,9 @@ def init_db():
                 avg_daily_calls DECIMAL(10, 2),
                 avg_daily_logins DECIMAL(10, 2),
                 avg_daily_conversions DECIMAL(10, 2),
-                avg_daily_deliveries DECIMAL(10, 2)
+                avg_daily_deliveries DECIMAL(10, 2),
+                avg_daily_telecom_cost DECIMAL(10, 2) DEFAULT 0,
+                avg_daily_true_cac DECIMAL(10, 2) DEFAULT 0
             )
         """))
         
@@ -151,6 +153,15 @@ def init_db():
         for col_def in new_columns:
             conn.execute(text(f"ALTER TABLE ops_telemarketing_data ADD COLUMN IF NOT EXISTS {col_def}"))
             conn.execute(text(f"ALTER TABLE ops_telemarketing_snapshots ADD COLUMN IF NOT EXISTS {col_def}"))
+
+        # Safe Migration for historical benchmarks
+        benchmark_columns = [
+            "avg_daily_telecom_cost DECIMAL(10, 2) DEFAULT 0",
+            "avg_daily_true_cac DECIMAL(10, 2) DEFAULT 0"
+        ]
+        conn.execute(text("CREATE TABLE IF NOT EXISTS ops_historical_benchmarks (id SERIAL PRIMARY KEY)"))
+        for col_def in benchmark_columns:
+            conn.execute(text(f"ALTER TABLE ops_historical_benchmarks ADD COLUMN IF NOT EXISTS {col_def}"))
 
         # 4. Raw Financial Historical Data
         conn.execute(text("""

@@ -21,7 +21,8 @@ def generate_benchmarks(start_date: str, end_date: str, period_name: str):
             ops_date, ops_brand as brand, country, extracted_lifecycle, 
             extracted_segment, extracted_engagement, 
             records, calls, kpi2_logins, conversions, 
-            (d_plus + d_neutral + d_minus) as deliveries
+            (d_plus + d_neutral + d_minus) as deliveries,
+            (cost_sip + cost_sms + cost_email) as telecom_cost
         FROM ops_telemarketing_data
         WHERE ops_date >= '{start_date}' AND ops_date <= '{end_date}'
     """
@@ -50,7 +51,8 @@ def generate_benchmarks(start_date: str, end_date: str, period_name: str):
         'calls': 'sum',
         'kpi2_logins': 'sum',
         'conversions': 'sum',
-        'deliveries': 'sum'
+        'deliveries': 'sum',
+        'telecom_cost': 'sum'
     }).reset_index()
     
     # Second Grouping: Group by signature and calculate mean (Daily Averages)
@@ -59,7 +61,8 @@ def generate_benchmarks(start_date: str, end_date: str, period_name: str):
         'calls': 'mean',
         'kpi2_logins': 'mean',
         'conversions': 'mean',
-        'deliveries': 'mean'
+        'deliveries': 'mean',
+        'telecom_cost': 'mean'
     }).reset_index()
     
     # Step C: Rename metric columns mapped to schema
@@ -68,8 +71,16 @@ def generate_benchmarks(start_date: str, end_date: str, period_name: str):
         'calls': 'avg_daily_calls',
         'kpi2_logins': 'avg_daily_logins',
         'conversions': 'avg_daily_conversions',
-        'deliveries': 'avg_daily_deliveries'
+        'deliveries': 'avg_daily_deliveries',
+        'telecom_cost': 'avg_daily_telecom_cost'
     })
+    
+    import numpy as np
+    benchmarks['avg_daily_true_cac'] = np.where(
+        benchmarks['avg_daily_conversions'] > 0,
+        benchmarks['avg_daily_telecom_cost'] / benchmarks['avg_daily_conversions'],
+        0.0
+    )
     
     # Step D: Add the period_name column
     benchmarks['benchmark_period'] = period_name
