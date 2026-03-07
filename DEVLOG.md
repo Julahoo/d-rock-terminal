@@ -929,3 +929,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Locked down `requirements.txt` to the exact virtual environment dependencies (Streamlit, Pandas, Plotly, SQLAlchemy, Psycopg2, Openpyxl, Python-Dotenv) to ensure long-term cloud stability.
 - Formatted README.md for the Director level with a clear 4-Tier structural overview and handoff guidelines.
 - Cleaned filesystem of dummy data in `data/raw` and `data/campaigns/` to prevent false testing loads.
+
+ [ R e f a c t o r   -   C a m p a i g n   S t a n d a r d i z a t i o n ]   -   C u r r e n t 
+ E n g i n e e r e d   a   C o r e _ S i g n a t u r e   c o m p o s i t e   k e y   ( [ b r a n d ] - [ c o u n t r y ] - [ l i f e c y c l e ] - [ e n g a g e m e n t ] )   i n   a p p . p y   t o   s t r i p   d a t e d   a p p e n d a g e s   f r o m   r a w   c a m p a i g n   n a m e s . 
+ U p g r a d e d   t h e   O p e r a t i o n s   S c o r e c a r d   t o   d y n a m i c a l l y   a g g r e g a t e   p e r f o r m a n c e   m e t r i c s   p u r e l y   b y   C o r e   S t r a t e g y ,   e l i m i n a t i n g   U I   n o i s e   a n d   a l l o w i n g   c l e a n   d a t e - r a n g e   r o l l u p s .  
+ 

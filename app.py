@@ -3058,10 +3058,16 @@ if "📞 Operations Command" in tab_map:
                     if c not in ops_df.columns:
                         ops_df[c] = 0
 
-                agg_dict = {c: 'sum' for c in req_cols}
-                scorecard_df = ops_df.groupby("Campaign Name").agg(agg_dict).reset_index()
+                # Compile Core Strategy Signature
+                ops_df['Core_Signature'] = (
+                    ops_df['ops_brand'].fillna('UNKNOWN') + "-" +
+                    ops_df['country'].fillna('UNKNOWN') + "-" +
+                    ops_df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+                    ops_df['extracted_engagement'].fillna('UNKNOWN')
+                )
 
-                # Calculate Engine Metrics
+                agg_dict = {c: 'sum' for c in req_cols}
+                scorecard_df = ops_df.groupby("Core_Signature").agg(agg_dict).reset_index()
                 # Net Records excludes HLRV & 2XRV
                 scorecard_df["Net_Records"] = scorecard_df["Records"] - scorecard_df["hlrv"] - scorecard_df["twoxrv"]
                 scorecard_df["Net_Records"] = scorecard_df["Net_Records"].apply(lambda x: max(x, 1)) # Prevent Div by Zero
@@ -3091,7 +3097,7 @@ if "📞 Operations Command" in tab_map:
                     use_container_width=True, 
                     hide_index=True,
                     column_config={
-                        "Campaign Name": st.column_config.TextColumn("Campaign"),
+                        "Core_Signature": st.column_config.TextColumn("Campaign"),
                         "Calls": st.column_config.NumberColumn("Calls", format="%d"),
                         "Gross_Completion_%": st.column_config.ProgressColumn("Gross Completion", format="%.1f%%", min_value=0, max_value=100),
                         "Net_Completion_%": st.column_config.ProgressColumn("Net Completion", format="%.1f%%", min_value=0, max_value=100),
