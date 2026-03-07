@@ -17,7 +17,8 @@ def generate_rfm_summary(fin_df):
         'deposits': 'sum',
         'report_month': ['min', 'max', 'nunique'],
         'brand': 'first',
-        'country': 'first'
+        'country': 'first',
+        'client': 'first'
     }
     
     if 'ngr' in fin_df.columns: agg_dict['ngr'] = 'sum'
@@ -31,7 +32,7 @@ def generate_rfm_summary(fin_df):
     rfm_columns = [
         'id', 'Lifetime_GGR', 'Lifetime_Turnover', 'Lifetime_Deposits',
         'First_Month', 'Last_Month', 'Months_Active',
-        'brand', 'country'
+        'brand', 'country', 'client'
     ]
     if 'ngr' in fin_df.columns: rfm_columns.append('Lifetime_NGR')
     if 'bonus_total' in fin_df.columns: rfm_columns.append('Lifetime_Bonus')
