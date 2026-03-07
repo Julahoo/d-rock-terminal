@@ -2109,16 +2109,6 @@ if not _master_df.empty:
                 else:
                     st.info("Not enough data to generate a retention heatmap.")
 
-                # ── Cumulative LTV Curves ────────────────────────────────
-                st.markdown("---")
-                st.markdown("#### > CUMULATIVE LTV TRAJECTORY_")
-                st.markdown("*Insight: Tracks the cumulative revenue generation of player cohorts over time to determine break-even points and long-term value.*")
-                ltv_fig = _cached_ltv_curves(_raw_df)
-                if ltv_fig is not None:
-                    st.plotly_chart(ltv_fig, use_container_width=True, config={"scrollZoom": False})
-                else:
-                    st.info("Not enough data to generate LTV curves.")
-
                 # ── Segmentation by Program ─────────────────────────────
                 if program_summary is not None and not program_summary.empty:
                     st.markdown("---")
@@ -2139,58 +2129,66 @@ if not _master_df.empty:
                         },
                     )
 
-                # --- 3.7 WHALE CONCENTRATION MATRIX (PARETO RISK) ---
+                # ── Advanced Structural Analytics (Phase 7B) ────────────────
                 st.markdown("---")
-                st.markdown("#### > 🐋 WHALE CONCENTRATION MATRIX (PARETO RISK)_")
-                st.markdown("*Insight: Analyzes the revenue dependency on your top percentile VIPs to expose structural churn risk.*")
-
-                from src.analytics import generate_pareto_distribution
-                pareto_df = generate_pareto_distribution(_raw_df)
-
-                if not pareto_df.empty:
-                    p1, p2 = st.columns([1, 1])
-
-                    with p1:
-                        fig_pareto = px.bar(
+                st.subheader("📈 Advanced Structural Analytics")
+                
+                from src.analytics import generate_pareto_curve, generate_ltv_curves
+                
+                ltv_df = generate_ltv_curves(_raw_df)
+                pareto_df = generate_pareto_curve(_raw_df)
+                
+                asa1, asa2 = st.columns(2)
+                
+                with asa1:
+                    st.markdown("##### 🐋 80/20 Pareto Distribution")
+                    st.markdown("*Insight: Plots the cumulative % of revenue driven by the cumulative % of players to visually identify whale concentration.*")
+                    if not pareto_df.empty:
+                        fig_par = px.area(
                             pareto_df, 
-                            y="Tier", 
-                            x="Revenue_Share", 
-                            orientation='h',
-                            color="Tier",
-                            color_discrete_map={
-                                "Top 1% (Super Whales)": "#FF4444", 
-                                "Next 4% (Core VIPs)": "#FFD700", 
-                                "Next 15% (Mid-Tier)": "#1E90FF", 
-                                "Bottom 80% (Casuals)": "#00FF41"
-                            },
-                            text_auto='.1f'
+                            x="cumulative_players_pct", 
+                            y="cumulative_ggr_pct",
+                            title="Cumulative GGR vs Player Base"
                         )
-                        fig_pareto.update_traces(textposition='outside', texttemplate='%{x:.1f}%')
-                        fig_pareto.update_layout(
+                        # Add the 80/20 anchor lines
+                        fig_par.add_vline(x=20, line_dash="dash", line_color="#FF4444")
+                        fig_par.add_hline(y=80, line_dash="dash", line_color="#FF4444")
+                        
+                        fig_par.update_layout(
                             paper_bgcolor="rgba(0,0,0,0)",
                             plot_bgcolor="rgba(0,0,0,0)",
                             font_color="#00FF41",
-                            xaxis_title="Share of Total NGR (%)",
-                            yaxis_title="",
-                            showlegend=False,
-                            margin=dict(l=0, r=0, t=10, b=0)
+                            xaxis_title="% of Total Players",
+                            yaxis_title="% of Total GGR",
+                            margin=dict(l=0, r=0, t=40, b=0)
                         )
-                        st.plotly_chart(fig_pareto, use_container_width=True)
-
-                    with p2:
-                        st.dataframe(
-                            pareto_df,
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "Tier": st.column_config.TextColumn("Player Tier"),
-                                "Player_Count": st.column_config.NumberColumn("Player Count", format="%d"),
-                                "NGR_Generated": st.column_config.NumberColumn("NGR Generated", format="$%.2f"),
-                                "Revenue_Share": st.column_config.NumberColumn("Revenue Share", format="%.2f%%")
-                            }
+                        st.plotly_chart(fig_par, use_container_width=True)
+                    else:
+                        st.info("Not enough profitable players to calculate a distribution.")
+                        
+                with asa2:
+                    st.markdown("##### 📈 Cumulative Cohort LTV")
+                    st.markdown("*Insight: Tracks the cumulative revenue progression of monthly cohorts.*")
+                    if not ltv_df.empty:
+                        fig_ltv = px.line(
+                            ltv_df, 
+                            x="month_index", 
+                            y="Cumulative_GGR", 
+                            color="cohort_month",
+                            title="LTV Progression by Cohort"
                         )
-                else:
-                    st.info("Not enough profitable players to calculate a distribution.")
+                        fig_ltv.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="#00FF41",
+                            xaxis_title="Months Since Acquisition",
+                            yaxis_title="Cumulative GGR ($)",
+                            margin=dict(l=0, r=0, t=40, b=0),
+                            legend_title="Acquisition Cohort"
+                        )
+                        st.plotly_chart(fig_ltv, use_container_width=True)
+                    else:
+                        st.info("Not enough data to generate LTV curves.")
 
             else:
                 st.warning("No Both Business data available.")

@@ -918,3 +918,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Stripped redundant 7/30/90 day local UI tabs from the "Daily SLA Trends & Performance" section in `app.py`.
 - Rewired the SLA charting logic to directly consume the global `filtered_ops_df`, ensuring perfectly synchronized date filtering across the entire dashboard.
 
+
+### [Feature - Phase 7 Deliverable B: Financial Curves] - 2026-03-07
+- Engineered `src/analytics/financial_curves.py` to calculate complex 80/20 Pareto distributions and Cumulative LTV cohort progressions.
+- Integrated Plotly visualizations into the `🏦 Financial Deep-Dive` tab in `app.py`, providing Directors with high-level structural revenue analytics.
+
