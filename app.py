@@ -2860,7 +2860,7 @@ if "📞 Operations Command" in tab_map:
             st.markdown("### 📈 Daily SLA Trends & Performance")
             
             # --- SLA BREACH WATCHDOG ---
-            if not filtered_ops.empty:
+            if not ops_df.empty:
                 try:
                     timeframe_days = (end_date_val - start_date_val).days + 1
                     
@@ -2869,13 +2869,13 @@ if "📞 Operations Command" in tab_map:
                     
                     breaches = []
                     # 2. Check active clients in the current filtered view
-                    active_clients = filtered_ops['ops_client'].unique()
+                    active_clients = ops_df['ops_client'].unique()
                     
                     for client_target in active_clients:
                         client_slas = slas_df[slas_df['client_name'] == client_target]
                         if client_slas.empty: continue
                         
-                        client_data = filtered_ops[filtered_ops['ops_client'] == client_target]
+                        client_data = ops_df[ops_df['ops_client'] == client_target]
                         
                         for _, sla_row in client_slas.iterrows():
                             c_type = sla_row['lifecycle']  # e.g., 'RND' or 'WB'
@@ -2946,7 +2946,7 @@ if "📞 Operations Command" in tab_map:
                         tc1, tc2 = st.columns(2)
                         with tc1:
                             # Volume Trends
-                            active_b = filtered_ops['ops_brand'].unique() if not filtered_ops.empty else []
+                            active_b = ops_df['ops_brand'].unique() if not ops_df.empty else []
                             vol_y_cols = ['Records']
                             
                             # Setup target overlays if exactly 1 brand
@@ -3292,5 +3292,5 @@ if "📞 Operations Command" in tab_map:
                 }
             )
         else:
-            st.info("No CallsU operations data loaded. Upload an Internal Campaigns file in the Control Room.")
-
+            st.warning("⚠️ **No Operations Data Loaded**.")
+            st.info("Please navigate to the **🗄️ Operations Ingestion** tab and upload your daily `CSV/XLSX` reports or trigger a CallsU API sync.")
