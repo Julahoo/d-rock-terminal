@@ -158,6 +158,13 @@ try:
     except Exception as e:
         pass # Handle gracefully if table is empty
 
+    # Hydrate Brand Mapping
+    try:
+        mapping_df = pd.read_sql("SELECT brand_code, brand_name FROM client_mapping", _hydrate_engine)
+        st.session_state["brand_mapping_dict"] = dict(zip(mapping_df["brand_code"], mapping_df["brand_name"]))
+    except Exception:
+        st.session_state["brand_mapping_dict"] = {}
+
     # Hydrate Benchmarks
     st.session_state["benchmarks_df"] = load_benchmarks()
 
@@ -337,7 +344,14 @@ with st.sidebar:
     
     # UX Trick: Auto-select the brand if there is only 1 available for this client
     default_brand_index = 1 if len(sorted_brands) == 1 else 0
-    selected_brand = st.sidebar.selectbox("🏷️ Target Brand", brand_options, index=default_brand_index)
+    
+    b_map = st.session_state.get("brand_mapping_dict", {})
+    selected_brand = st.sidebar.selectbox(
+        "🏷️ Target Brand", 
+        brand_options, 
+        index=default_brand_index,
+        format_func=lambda x: b_map.get(x, x) if x != "All" else "All"
+    )
 
     # 4. Extract Category and Sidebar Dropdowns
     selected_category = "All"
