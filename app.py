@@ -350,7 +350,7 @@ with st.sidebar:
         "🏷️ Target Brand", 
         brand_options, 
         index=default_brand_index,
-        format_func=lambda x: b_map.get(x, x) if x != "All" else "All"
+        format_func=lambda x: str(b_map.get(x) or x) if x != "All" else "All"
     )
 
     # 4. Extract Category and Sidebar Dropdowns
