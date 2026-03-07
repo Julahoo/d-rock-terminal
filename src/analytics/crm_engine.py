@@ -60,6 +60,12 @@ def generate_rfm_summary(fin_df):
     # Compute average monthly turnover
     rfm_df['Avg_Monthly_Turnover'] = np.where(rfm_df['Months_Active'] > 0, rfm_df['Lifetime_Turnover'] / rfm_df['Months_Active'], 0)
     
+    # Compute average deposit value (ADV)
+    if 'Lifetime_Deposit_Count' in rfm_df.columns:
+        rfm_df['Avg_Deposit_Value'] = np.where(rfm_df['Lifetime_Deposit_Count'] > 0, rfm_df['Lifetime_Deposits'] / rfm_df['Lifetime_Deposit_Count'], 0)
+    else:
+        rfm_df['Avg_Deposit_Value'] = 0
+    
     # To determine Last_Month_Turnover, we can map it back from the original df based on ID and Last_Month 
     last_month_records = fin_df.sort_values('report_month').drop_duplicates('id', keep='last')
     last_month_map = dict(zip(last_month_records['id'], last_month_records['bet']))
