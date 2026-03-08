@@ -387,7 +387,7 @@ with st.sidebar:
                 'CA': 'Canada', 'IE': 'Ireland', 'DK': 'Denmark', 'SE': 'Sweden', 'NO': 'Norway',
                 'FI': 'Finland', 'DE': 'Germany', 'AT': 'Austria', 'CH': 'Switzerland', 
                 'UK': 'United Kingdom', 'GB': 'United Kingdom', 'IT': 'Italy', 'FR': 'France',
-                'GLOBAL': 'Global'
+                'GLOBAL': 'Global', 'JP': 'Japan', 'TR': 'Turkey', 'ONT': 'Canada-Ontario'
             }
             avail_countries = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
             display_countries = [country_map.get(c, c) for c in avail_countries]
@@ -429,10 +429,17 @@ with st.sidebar:
             if avail_segments:
                 selected_segment = st.sidebar.selectbox("🎯 Target Segment", ["All"] + avail_segments)
                 
+        ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
+
         if 'extracted_engagement' in raw_ops.columns:
             avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"])
             if avail_engagements:
-                selected_engagement = st.sidebar.selectbox("🔥 Target Engagement", ["All"] + avail_engagements)
+                display_engagements = [ENGAGEMENT_MAP.get(e, e) for e in avail_engagements]
+                selected_engagement_display = st.sidebar.selectbox("🔥 Target Engagement", ["All"] + display_engagements)
+                
+                if selected_engagement_display != "All":
+                    inv_eng_map = {v: k for k, v in ENGAGEMENT_MAP.items()}
+                    selected_engagement = inv_eng_map.get(selected_engagement_display, selected_engagement_display)
                 
         if 'Core_Signature' in raw_ops.columns:
             avail_campaigns = sorted([str(c) for c in raw_ops['Core_Signature'].dropna().unique() if c])

@@ -227,6 +227,21 @@ def init_db():
                 "INSERT INTO client_mapping (brand_code, client_name) VALUES (:b, :c) ON CONFLICT (brand_code) DO NOTHING",
                 {"b": brand, "c": client}
             )
+            
+        # Ensure full corporate names are injected directly to Railway DB
+        BRAND_MAPPING = {
+            "BAH": "Reliato", "YW": "Limitless", "VJ": "Simplicity Malta Limited",
+            "PP": "PowerPlay", "RHN": "Rhino", "INSP": "Magico", "PE": "Magico",
+            "LV": "LeoVegas Group", "EX": "LeoVegas Group", "RP": "LeoVegas Group",
+            "GG": "LeoVegas Group", "BETMGM": "LeoVegas Group", "BETUK": "LeoVegas Group",
+            "MRO": "Offside Gaming", "YU": "Offside Gaming", "LTRB": "Offside Gaming",
+            "ROJA": "Offside Gaming", "CASINODAYS": "Rhino", "WG": "Reliato", "BHB": "Limitless"
+        }
+        for code, name in BRAND_MAPPING.items():
+            execute_query(
+                "UPDATE client_mapping SET brand_name = :n WHERE brand_code = :c",
+                {"n": name, "c": code}
+            )
     except Exception as e:
         pass
 

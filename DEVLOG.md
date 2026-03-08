@@ -939,3 +939,8 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
  -   F i x e d   t h e   m i s s i n g   S t r e a m l i t   c o l u m n _ o r d e r   b u g   i n   t h e   O p e r a t i o n s   S c o r e c a r d . 
  -   E x e c u t e d   u p d a t e _ b r a n d s . p y   t o   s e e d   t h e   d a t a b a s e   w i t h   f u l l   b r a n d   n a m e s ,   f i x i n g   t h e   r a w   t a g   d i s p l a y   i s s u e   i n   t h e   U I   d r o p d o w n s .  
  
+ # # #   [ B u g f i x   -   T a g   M a p p i n g   &   U I   T e x t   F o r m a t t i n g ]   -   C u r r e n t 
+ -   U p g r a d e d   t h e   T a r g e t   C o u n t r y   s i d e b a r   d r o p d o w n   t o   e x p l i c i t l y   m a p   ' J P ' ,   ' T R ' ,   a n d   ' O N T '   t o   ' J a p a n ' ,   ' T u r k e y ' ,   a n d   ' C a n a d a - O n t a r i o ' . 
+ -   U p g r a d e d   t h e   T a r g e t   E n g a g e m e n t   d r o p d o w n   t o   b e a u t i f u l l y   s w a p   r a w   ' L I ' / ' N L I '   c o d e s   f o r   ' L o g   I n '   a n d   ' N o t   L o g g e d   I n ' . 
+ -   E m b e d d e d   t h e   o f f i c i a l   c o r p o r a t e   \ B R A N D _ M A P P I N G \   c o m p l e t e l y   i n t o   \ s r c / d a t a b a s e . p y \   i n s i d e   t h e   \ i n i t _ d b ( ) \   f u n c t i o n .   T h i s   p e r m a n e n t l y   r e s o l v e s   t h e   i s s u e   o f   t h e   T a r g e t   B r a n d   d r o p d o w n   s h o w i n g   t a g s   o n   f r e s h   R a i l w a y   d e p l o y m e n t s   b y   a u t o m a t i c a l l y   s e e d i n g   t h e   P o s t g r e S Q L   d a t a b a s e   w h e n   t h e   c o n t a i n e r   b o o t s .  
+ 
