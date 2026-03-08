@@ -305,6 +305,23 @@ with st.sidebar:
     raw_ops = st.session_state["raw_ops_df"]
     raw_fin = st.session_state["raw_fin_df"]
 
+    # --- Pre-calculate Core Strategy Signatures globally ---
+    if not raw_ops.empty:
+        raw_ops['Core_Signature'] = (
+            raw_ops['ops_brand'].fillna('UNKNOWN') + "-" +
+            raw_ops['country'].fillna('UNKNOWN') + "-" +
+            raw_ops['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+            raw_ops['extracted_engagement'].fillna('UNKNOWN')
+        )
+        
+    if "raw_ops_snapshots_df" in st.session_state and not st.session_state["raw_ops_snapshots_df"].empty:
+        st.session_state["raw_ops_snapshots_df"]['Core_Signature'] = (
+            st.session_state["raw_ops_snapshots_df"]['ops_brand'].fillna('UNKNOWN') + "-" +
+            st.session_state["raw_ops_snapshots_df"]['country'].fillna('UNKNOWN') + "-" +
+            st.session_state["raw_ops_snapshots_df"]['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+            st.session_state["raw_ops_snapshots_df"]['extracted_engagement'].fillna('UNKNOWN')
+        )
+
     # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🌍 GLOBAL FILTERS")
@@ -417,8 +434,8 @@ with st.sidebar:
             if avail_engagements:
                 selected_engagement = st.sidebar.selectbox("🔥 Target Engagement", ["All"] + avail_engagements)
                 
-        if 'campaign_name' in raw_ops.columns:
-            avail_campaigns = sorted([str(c) for c in raw_ops['campaign_name'].dropna().unique() if c])
+        if 'Core_Signature' in raw_ops.columns:
+            avail_campaigns = sorted([str(c) for c in raw_ops['Core_Signature'].dropna().unique() if c])
             if avail_campaigns:
                 selected_campaign = st.sidebar.selectbox("🏷️ Target Campaign", ["All"] + avail_campaigns)
 
@@ -550,8 +567,8 @@ with st.sidebar:
             filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
             
     if selected_campaign != "All":
-        if not filtered_ops.empty and 'campaign_name' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['campaign_name'] == selected_campaign]
+        if not filtered_ops.empty and 'Core_Signature' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['Core_Signature'] == selected_campaign]
 
     # Apply Time Frame Filter
     if start_date_val and end_date_val:
@@ -3058,13 +3075,7 @@ if "📞 Operations Command" in tab_map:
                     if c not in ops_df.columns:
                         ops_df[c] = 0
 
-                # Compile Core Strategy Signature
-                ops_df['Core_Signature'] = (
-                    ops_df['ops_brand'].fillna('UNKNOWN') + "-" +
-                    ops_df['country'].fillna('UNKNOWN') + "-" +
-                    ops_df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-                    ops_df['extracted_engagement'].fillna('UNKNOWN')
-                )
+                # Core_Signature is now compiled globally on hydration
 
                 agg_dict = {c: 'sum' for c in req_cols}
                 scorecard_df = ops_df.groupby("Core_Signature").agg(agg_dict).reset_index()
@@ -3107,7 +3118,7 @@ if "📞 Operations Command" in tab_map:
                         "sa": st.column_config.NumberColumn("SMS", format="%d"),
                         "es": st.column_config.NumberColumn("Email", format="%d")
                     },
-                    column_order=["Campaign Name", "Gross_Completion_%", "Net_Completion_%", "Deliveries_%", "NA_%", "Issues_%", "sa", "es"]
+                    column_order=["Core_Signature", "Gross_Completion_%", "Net_Completion_%", "Deliveries_%", "NA_%", "Issues_%", "sa", "es"]
                 )
 
 
