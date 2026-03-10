@@ -2986,89 +2986,108 @@ if "📞 Operations Command" in tab_map:
 
                 def display_trend_charts(df_filtered):
                     if len(df_filtered) > 0:
-                        tc1, tc2 = st.columns(2)
+                        # ---- FULL-WIDTH: Global Volume Trends ----
+                        active_b = ops_df['ops_brand'].unique() if not ops_df.empty else []
+                        vol_y_cols = ['Records']
+                        
+                        # Setup target overlays if exactly 1 brand
+                        if len(active_b) == 1:
+                            sla_min = 0
+                            try:
+                                slas_df = pd.read_sql(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE brand_code = '{active_b[0]}'", _db_engine)
+                                if not slas_df.empty: 
+                                    sla_min = slas_df['monthly_minimum_records'].sum()
+                            except: pass
+                            
+                            if sla_min > 0:
+                                df_filtered['SLA Minimum'] = sla_min / 30.0
+                                vol_y_cols.append('SLA Minimum')
+                                    
+                        # Add Average Line
+                        if 'Records' in df_filtered.columns and len(df_filtered) > 0:
+                            df_filtered['Average Volume'] = df_filtered['Records'].mean()
+                            vol_y_cols.append('Average Volume')
+                                
+                        fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
+                                                labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title="Global Volume Trends")
+                        fig_trend_vol.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)", 
+                            plot_bgcolor="rgba(0,0,0,0)", 
+                            font_color="#00FF41",
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5, title_text=""),
+                            margin=dict(t=40, b=60, l=40, r=40)
+                        )
+                        
+                        for trace in fig_trend_vol.data:
+                            if 'SLA' in trace.name or 'Benchmark' in trace.name or 'Average' in trace.name:
+                                trace.line.dash = 'dash'
+                                
+                            if 'Average Volume' in trace.name:
+                                trace.line.color = 'rgba(255, 255, 255, 0.9)'
+                                
+                        st.plotly_chart(fig_trend_vol, use_container_width=True)
+                        
+                        # ---- Calculate efficiency percentages ----
+                        df_filtered['Conv%'] = (df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI1-Conv.' in df_filtered.columns else 0
+                        df_filtered['Logins%'] = (df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI2-Login' in df_filtered.columns else 0
+                        
+                        # ---- 3-COLUMN ROW: Conv%, LI%, Raw Volume ----
+                        tc1, tc2, tc3 = st.columns(3)
+                        
+                        # Chart 1: Conversion % Trend
                         with tc1:
-                            # Volume Trends
-                            active_b = ops_df['ops_brand'].unique() if not ops_df.empty else []
-                            vol_y_cols = ['Records']
-                            
-                            # Setup target overlays if exactly 1 brand
-                            if len(active_b) == 1:
-                                sla_min = 0
-                                try:
-                                    slas_df = pd.read_sql(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE brand_code = '{active_b[0]}'", _db_engine)
-                                    if not slas_df.empty: 
-                                        sla_min = slas_df['monthly_minimum_records'].sum()
-                                except: pass
-                                
-                                if sla_min > 0:
-                                    df_filtered['SLA Minimum'] = sla_min / 30.0
-                                    vol_y_cols.append('SLA Minimum')
-                                    
-                            # Add Average Line
-                            if 'Records' in df_filtered.columns and len(df_filtered) > 0:
-                                df_filtered['Average Volume'] = df_filtered['Records'].mean()
-                                vol_y_cols.append('Average Volume')
-                                    
-                            fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
-                                                    labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title="Global Volume Trends")
-                            fig_trend_vol.update_layout(
-                                paper_bgcolor="rgba(0,0,0,0)", 
-                                plot_bgcolor="rgba(0,0,0,0)", 
-                                font_color="#00FF41",
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5, title_text=""),
-                                margin=dict(t=40, b=80, l=40, r=40)
-                            )
-                            
-                            for trace in fig_trend_vol.data:
-                                if 'SLA' in trace.name or 'Benchmark' in trace.name or 'Average' in trace.name:
-                                    trace.line.dash = 'dash'
-                                    
-                                if 'Average Volume' in trace.name:
-                                    trace.line.color = 'rgba(255, 255, 255, 0.9)' # Brighter white line
-                                    
-                            st.plotly_chart(fig_trend_vol, use_container_width=True)
-                        with tc2:
-                            # Efficiency Trends (Dual-Axis)
-                            from plotly.subplots import make_subplots
                             import plotly.graph_objects as go
-                            
-                            df_filtered['Conv%'] = (df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI1-Conv.' in df_filtered.columns else 0
-                            df_filtered['Logins%'] = (df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI2-Login' in df_filtered.columns else 0
-                            
-                            fig_trend_pct = make_subplots(specs=[[{"secondary_y": True}]])
-                            
-                            # Add bars for raw numbers (primary y-axis)
-                            if 'KPI2-Login' in df_filtered.columns:
-                                fig_trend_pct.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.4)', hovertemplate='Logins: %{y} (%{customdata:.2f}%)<extra></extra>', customdata=df_filtered['Logins%']), secondary_y=False)
-                            if 'KPI1-Conv.' in df_filtered.columns:
-                                fig_trend_pct.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.4)', hovertemplate='Conversions: %{y} (%{customdata:.2f}%)<extra></extra>', customdata=df_filtered['Conv%']), secondary_y=False)
-                                
-                            # Add lines for percentages (secondary y-axis)
-                            if 'KPI2-Login' in df_filtered.columns:
-                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login %: %{y:.2f}%<extra></extra>'), secondary_y=True)
-                            if 'KPI1-Conv.' in df_filtered.columns:
-                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conversion %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conversion %: %{y:.2f}%<extra></extra>'), secondary_y=True)
-                            
+                            fig_conv = go.Figure()
+                            fig_conv.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conv %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conv: %{y:.2f}%<extra></extra>'))
                             if target_conv is not None:
-                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=[target_conv]*len(df_filtered), name="Target Conv%", mode='lines', line=dict(color='#22c55e', dash='dash'), hovertemplate='Target Conv: %{y:.2f}%<extra></extra>'), secondary_y=True)
-                            if target_li is not None and 'LI%' in df_filtered.columns:
-                                fig_trend_pct.add_trace(go.Scatter(x=df_filtered['ops_date'], y=[target_li]*len(df_filtered), name="Target LI%", mode='lines', line=dict(color='#eab308', dash='dash'), hovertemplate='Target LI: %{y:.2f}%<extra></extra>'), secondary_y=True)
-                            
-                            fig_trend_pct.update_layout(
-                                title="Global Efficiency Trends",
-                                paper_bgcolor="rgba(0,0,0,0)", 
-                                plot_bgcolor="rgba(0,0,0,0)", 
-                                font_color="#00FF41",
-                                barmode='group',
-                                hovermode='x unified',
-                                margin=dict(t=40, b=80, l=40, r=40),
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5, title_text="")
+                                fig_conv.add_hline(y=target_conv, line_dash="dash", line_color="#22c55e", opacity=0.6, annotation_text=f"Benchmark: {target_conv:.1f}%", annotation_position="top left", annotation_font_color="#22c55e")
+                            fig_conv.update_layout(
+                                title="Conversion % Trend",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
+                                yaxis_title="Conv %", xaxis_title="",
+                                margin=dict(t=40, b=60, l=40, r=20),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
+                                showlegend=True
                             )
-                            fig_trend_pct.update_yaxes(title_text="Volume (Raw)", secondary_y=False, showgrid=False)
-                            fig_trend_pct.update_yaxes(title_text="Efficiency (%)", secondary_y=True, showgrid=False)
-                            
-                            st.plotly_chart(fig_trend_pct, use_container_width=True)
+                            fig_conv.update_yaxes(showgrid=False)
+                            st.plotly_chart(fig_conv, use_container_width=True)
+                        
+                        # Chart 2: Login % Trend
+                        with tc2:
+                            fig_li = go.Figure()
+                            if 'KPI2-Login' in df_filtered.columns:
+                                fig_li.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login: %{y:.2f}%<extra></extra>'))
+                            if target_li is not None:
+                                fig_li.add_hline(y=target_li, line_dash="dash", line_color="#eab308", opacity=0.6, annotation_text=f"Benchmark: {target_li:.1f}%", annotation_position="top left", annotation_font_color="#eab308")
+                            fig_li.update_layout(
+                                title="Login % Trend",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
+                                yaxis_title="Login %", xaxis_title="",
+                                margin=dict(t=40, b=60, l=40, r=20),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
+                                showlegend=True
+                            )
+                            fig_li.update_yaxes(showgrid=False)
+                            st.plotly_chart(fig_li, use_container_width=True)
+                        
+                        # Chart 3: Raw KPI Volume (Bars)
+                        with tc3:
+                            fig_raw = go.Figure()
+                            if 'KPI1-Conv.' in df_filtered.columns:
+                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.6)'))
+                            if 'KPI2-Login' in df_filtered.columns:
+                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.6)'))
+                            fig_raw.update_layout(
+                                title="Raw KPI Volume",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
+                                barmode='group',
+                                yaxis_title="Count", xaxis_title="",
+                                margin=dict(t=40, b=60, l=40, r=20),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
+                                showlegend=True
+                            )
+                            fig_raw.update_yaxes(showgrid=False)
+                            st.plotly_chart(fig_raw, use_container_width=True)
                     else:
                         st.info("Not enough data to display trend charts for the selected range.")
 

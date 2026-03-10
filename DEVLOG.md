@@ -4,6 +4,14 @@
 
 ## LOG ENTRIES
 
+### [Feature - Efficiency Trends Restructure] - 2026-03-10 - COMPLETED
+- Updated `SPEC.md` with new section `§4.7 Operations Efficiency Trends` to maintain strict SDD compliance before any code was written.
+- Refactored `display_trend_charts` in `app.py`: replaced the cluttered single dual-axis chart with a cleaner 1-top, 3-bottom layout.
+  - **Full-width top:** Global Volume Trends (Records + SLA Minimum + Average).
+  - **Column 1:** Conversion % line + dashed benchmark target.
+  - **Column 2:** Login % line + dashed benchmark target.
+  - **Column 3:** Raw KPI Volume grouped bars (Conversions + Logins).
+
 ### [Bugfix - UI Styler Limit & Trends Sync] - Current
 - Increased Pandas `styler.render.max_elements` to 1,500,000 in `app.py` to prevent Streamlit from crashing when rendering large operational ledgers.
 - Added missing DB-to-UI column mappings for `kpi2_logins` -> `KPI2-Login` and `li_pct` -> `LI%`, restoring the missing Logins traces in the Global Efficiency Trends dual-axis chart.

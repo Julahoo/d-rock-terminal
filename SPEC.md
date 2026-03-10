@@ -128,6 +128,22 @@ Evaluated row-by-row in this strict priority order:
 - **Campaigns:** Funnel visualizations and tracking per brand.
 - **CRM Intelligence:** Global selectbox, 👑 Crown Jewels vs ⚠️ Bonus Abusers leaderboards, Churn Targeting generator. Note: Smart Campaign Profiling expands to a responsive 2-row grid to accommodate the 6 distinct active VIP heuristics.
 
+### 4.7 📈 Operations Efficiency Trends
+- **Layout:** Full-width "Global Volume Trends" chart on top, followed by a 3-column row of dedicated KPI charts below.
+- **Chart 1 — Global Volume Trends (Full Width):**
+  - Line chart: Daily `Records` count.
+  - Dashed overlay: `SLA Minimum` (daily = monthly / 30) when a single brand is active.
+  - Dashed overlay: `Average Volume` (mean of Records over the filtered range).
+- **Chart 2 — Conversion % Trend (Column 1/3):**
+  - Green line: Daily `Conv%` (`KPI1-Conv. / Records * 100`).
+  - Dashed green line: `target_conv` benchmark from `granular_benchmarks`.
+- **Chart 3 — Login % Trend (Column 2/3):**
+  - Yellow line: Daily `Logins%` (`KPI2-Login / Records * 100`).
+  - Dashed yellow line: `target_li` benchmark from `granular_benchmarks`.
+- **Chart 4 — Raw KPI Volume (Column 3/3):**
+  - Grouped bar chart: Green bars for `#KPI1-Conv.`, Yellow bars for `#KPI2-Login`.
+- **Theme:** All charts use Matrix dark theme (`paper_bgcolor/plot_bgcolor = transparent`, `font_color = #00FF41`), horizontal legends at bottom.
+
 ### 4.6 Report Generation Engine
 - **Financial Report:** Exported from the Financial Deep-Dive tab.
 - **Operations Report:** Exported from the Operations Command tab.
