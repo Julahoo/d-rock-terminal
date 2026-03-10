@@ -263,7 +263,7 @@ if "data_loaded" not in st.session_state:
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### 🦅 CallsU Command")
+    st.markdown("### 🦅 CallsU Command **(v2.0.1)**")
 
     st.markdown("### 🧭 NAVIGATION")
     nav_options = ["📊 Dashboard"]
