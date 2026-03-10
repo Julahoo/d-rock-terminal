@@ -1177,7 +1177,123 @@ if view_mode == "📊 Dashboard":
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
     with tab_map["📊 Dashboard"]:
-        st.info("Dashboard centralized view is currently under construction. Please navigate to your dedicated workspace.")
+        st.markdown("#### > 📡 OPERATIONS PULSE_")
+        st.markdown("*Rolling KPI windows — at a glance.*")
+        
+        if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
+            _pulse_ops = st.session_state["ops_df"].copy()
+            # Ensure ops_date is datetime
+            _pulse_ops['ops_date'] = pd.to_datetime(_pulse_ops['ops_date'], errors='coerce')
+            
+            # Normalize column names for pulse calculations
+            _pulse_rename = {
+                "campaign_name": "Campaign Name", "records": "Records",
+                "conversions": "KPI1-Conv.", "kpi2_logins": "KPI2-Login",
+                "li_pct": "LI%", "extracted_engagement": "extracted_engagement"
+            }
+            for old_col, new_col in _pulse_rename.items():
+                if old_col in _pulse_ops.columns and new_col not in _pulse_ops.columns:
+                    _pulse_ops.rename(columns={old_col: new_col}, inplace=True)
+            
+            def _render_pulse_matrix(df, title, engagement_type):
+                """Render a 3-row x 4-col sparkline performance matrix for a given engagement type."""
+                # Filter by engagement
+                if 'extracted_engagement' in df.columns:
+                    edf = df[df['extracted_engagement'].str.upper() == engagement_type.upper()].copy()
+                else:
+                    edf = df.copy()
+                
+                if edf.empty or 'ops_date' not in edf.columns:
+                    st.caption(f"No {engagement_type} data available.")
+                    return
+                
+                max_date = edf['ops_date'].max()
+                windows = [7, 14, 30, 90]
+                window_labels = ["7 Days", "14 Days", "30 Days", "90 Days"]
+                
+                # Aggregate daily totals
+                daily = edf.groupby('ops_date').agg({
+                    'Records': 'sum',
+                    'KPI1-Conv.': 'sum',
+                    'KPI2-Login': 'sum'
+                }).reset_index().sort_values('ops_date') if 'Records' in edf.columns and 'KPI1-Conv.' in edf.columns else pd.DataFrame()
+                
+                if daily.empty:
+                    st.caption(f"No {engagement_type} data available.")
+                    return
+                
+                # Calculate daily rates
+                daily['Conv%'] = (daily['KPI1-Conv.'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100
+                daily['Login%'] = (daily['KPI2-Login'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI2-Login' in daily.columns else 0
+                
+                st.markdown(f"**> {title}_**")
+                
+                # Define metrics to render (Volume hidden for now)
+                metrics = [
+                    # ("Volume", "Records", "sum", "", "#AAAAAA"),
+                    ("Login %", "Login%", "mean", "%", "#eab308"),
+                    ("Conv %", "Conv%", "mean", "%", "#22c55e"),
+                ]
+                
+                for metric_label, col_name, agg_fn, suffix, color in metrics:
+                    cols = st.columns(4)
+                    for i, (window, wlabel) in enumerate(zip(windows, window_labels)):
+                        with cols[i]:
+                            # Current period
+                            current_mask = (daily['ops_date'] > (max_date - pd.Timedelta(days=window))) & (daily['ops_date'] <= max_date)
+                            current_data = daily.loc[current_mask, col_name]
+                            
+                            # Prior period
+                            prior_mask = (daily['ops_date'] > (max_date - pd.Timedelta(days=window*2))) & (daily['ops_date'] <= (max_date - pd.Timedelta(days=window)))
+                            prior_data = daily.loc[prior_mask, col_name]
+                            
+                            if agg_fn == "mean":
+                                current_val = current_data.mean() if len(current_data) > 0 else 0
+                                prior_val = prior_data.mean() if len(prior_data) > 0 else 0
+                            else:
+                                current_val = current_data.sum() if len(current_data) > 0 else 0
+                                prior_val = prior_data.sum() if len(prior_data) > 0 else 0
+                            
+                            delta_val = current_val - prior_val
+                            
+                            # Format display
+                            if suffix == "%":
+                                display_val = f"{current_val:.1f}%"
+                                display_delta = f"{delta_val:+.1f}%"
+                            else:
+                                display_val = f"{current_val:,.0f}"
+                                display_delta = f"{delta_val:+,.0f}"
+                            
+                            st.metric(
+                                label=f"{metric_label} ({wlabel})",
+                                value=display_val,
+                                delta=display_delta
+                            )
+                            
+                            # Sparkline
+                            spark_data = daily.loc[current_mask].copy()
+                            if len(spark_data) > 1:
+                                fig_spark = px.line(spark_data, x='ops_date', y=col_name)
+                                fig_spark.update_traces(line_color=color, line_width=2)
+                                fig_spark.update_layout(
+                                    height=60,
+                                    margin=dict(l=0, r=0, t=0, b=0),
+                                    paper_bgcolor="rgba(0,0,0,0)",
+                                    plot_bgcolor="rgba(0,0,0,0)",
+                                    showlegend=False,
+                                    xaxis=dict(visible=False),
+                                    yaxis=dict(visible=False)
+                                )
+                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
+            
+            # Render side-by-side LI / NLI matrices
+            col_li, col_nli = st.columns(2)
+            with col_li:
+                _render_pulse_matrix(_pulse_ops, "LI OPERATIONS PULSE", "LI")
+            with col_nli:
+                _render_pulse_matrix(_pulse_ops, "NLI OPERATIONS PULSE", "NLI")
+        else:
+            st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")

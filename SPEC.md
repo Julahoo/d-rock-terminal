@@ -124,6 +124,16 @@ Evaluated row-by-row in this strict priority order:
 - **Brand vs Brand Trajectory:** Plotly grouped bar chart.
 - **Cross-Brand Cannibalization & Pareto Curve:** Sections generating visualization matrices based on combined entity calculations.
 
+### 4.4.1 📡 Operations Pulse Matrices
+- **Location:** `📊 Dashboard` tab, below executive headers.
+- **Layout:** Two side-by-side matrices via `st.columns(2)`: **LI** (Log In) and **NLI** (Not Logged In).
+- **Data Split:** `ops_telemarketing_snapshots` filtered by sidebar globals, split by `extracted_engagement`.
+- **Rows (per matrix):** Volume → Login % → Conv % (Volume hidden until data feed is available).
+- **Columns:** 7 Days | 14 Days | 30 Days | 90 Days.
+- **Cell Content:** `st.metric(avg_value, delta)` + ~60px Plotly sparkline.
+  - Delta = current window avg - prior equivalent period avg (e.g., last 7d vs 7d before that).
+  - Color: Green ↑ improving, Red ↓ declining, Grey — flat (< 1% change).
+
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence
 - **Campaigns:** Funnel visualizations and tracking per brand.
 - **CRM Intelligence:** Global selectbox, 👑 Crown Jewels vs ⚠️ Bonus Abusers leaderboards, Churn Targeting generator. Note: Smart Campaign Profiling expands to a responsive 2-row grid to accommodate the 6 distinct active VIP heuristics.

@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Feature - Sparkline Performance Matrix] - 2026-03-10 - COMPLETED
+- Updated `SPEC.md` with §4.4.1 to document the new Operations Pulse UI.
+- Engineered `_render_pulse_matrix()` in `app.py` to calculate rolling 7/14/30/90-day KPI windows and prior-period deltas.
+- Injected Plotly-powered, minimalist 60px sparklines directly into the Dashboard tab for instant executive trend recognition across LI and NLI cohorts.
+
 ### [Feature - Efficiency Trends Restructure] - 2026-03-10 - COMPLETED
 - Updated `SPEC.md` with new section `§4.7 Operations Efficiency Trends` to maintain strict SDD compliance before any code was written.
 - Refactored `display_trend_charts` in `app.py`: replaced the cluttered single dual-axis chart with a cleaner 1-top, 3-bottom layout.
