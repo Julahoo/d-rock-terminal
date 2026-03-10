@@ -4,6 +4,10 @@
 
 ## LOG ENTRIES
 
+### [Bugfix - UI Styler Limit & Trends Sync] - Current
+- Increased Pandas `styler.render.max_elements` to 1,500,000 in `app.py` to prevent Streamlit from crashing when rendering large operational ledgers.
+- Added missing DB-to-UI column mappings for `kpi2_logins` -> `KPI2-Login` and `li_pct` -> `LI%`, restoring the missing Logins traces in the Global Efficiency Trends dual-axis chart.
+
 ### [Phase 0 - Setup] - 2026-03-01 - COMPLETED
 - Initialized project structure and methodology.
 - Created `SPEC.md` to define raw data schemas, monthly summary schemas, and core business logic (winners, losers, new vs. returning).
@@ -890,11 +894,16 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - Implemented `load_benchmarks()` to cache and pull 6-month historical averages into the frontend.
 - Built dynamic matching logic to align the current active sidebar filters with the historical benchmark signatures.
 - Upgraded the top-level `st.metric` cards in Operations Command to display dynamic green/red deltas comparing current performance against historical baselines.
-# # #   [ F e a t u r e   -   T r u e   C A C   R e f i n e m e n t s ]   -    
- -   E x p a n d e d   \ o p s _ h i s t o r i c a l _ b e n c h m a r k s \   s c h e m a   t o   s t o r e   a v e r a g e   d a i l y   t e l e c o m   c o s t s   a n d   T r u e   C A C   b a s e l i n e s .  
- -   U p g r a d e d   t h e   b e n c h m a r k   g e n e r a t o r   s c r i p t   t o   c a l c u l a t e   h i s t o r i c a l   C A C   s i g n a t u r e s .  
- -   R e f i n e d   t h e   T r u e   C o s t - P e r - O u t c o m e   L e a d e r b o a r d   i n   \  p p . p y \   t o   d i s p l a y   d y n a m i c   \ C A C   D e l t a \   c o l u m n s ,   i n s t a n t l y   h i g h l i g h t i n g   c a m p a i g n s   b l e e d i n g   t e l e c o m   m a r g i n s   v s .   6 - m o n t h   a v e r a g e s .  
-  
+# # #   [ F e a t u r e   -   T r u e   C A C   R e f i n e m e n t s ]   -   
+ 
+ -   E x p a n d e d   \ o p s _ h i s t o r i c a l _ b e n c h m a r k s \   s c h e m a   t o   s t o r e   a v e r a g e   d a i l y   t e l e c o m   c o s t s   a n d   T r u e   C A C   b a s e l i n e s . 
+ 
+ -   U p g r a d e d   t h e   b e n c h m a r k   g e n e r a t o r   s c r i p t   t o   c a l c u l a t e   h i s t o r i c a l   C A C   s i g n a t u r e s . 
+ 
+ -   R e f i n e d   t h e   T r u e   C o s t - P e r - O u t c o m e   L e a d e r b o a r d   i n   \  p p . p y \   t o   d i s p l a y   d y n a m i c   \ C A C   D e l t a \   c o l u m n s ,   i n s t a n t l y   h i g h l i g h t i n g   c a m p a i g n s   b l e e d i n g   t e l e c o m   m a r g i n s   v s .   6 - m o n t h   a v e r a g e s . 
+ 
+ 
+ 
  ### [Feature - True CAC Refinements] - 2026-03-07
 - Expanded `ops_historical_benchmarks` schema to store average daily telecom costs and True CAC baselines.
 - Upgraded the benchmark generator script to calculate historical CAC signatures.
@@ -932,15 +941,18 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 
  [ R e f a c t o r   -   C a m p a i g n   S t a n d a r d i z a t i o n ]   -   C u r r e n t 
  E n g i n e e r e d   a   C o r e _ S i g n a t u r e   c o m p o s i t e   k e y   ( [ b r a n d ] - [ c o u n t r y ] - [ l i f e c y c l e ] - [ e n g a g e m e n t ] )   i n   a p p . p y   t o   s t r i p   d a t e d   a p p e n d a g e s   f r o m   r a w   c a m p a i g n   n a m e s . 
- U p g r a d e d   t h e   O p e r a t i o n s   S c o r e c a r d   t o   d y n a m i c a l l y   a g g r e g a t e   p e r f o r m a n c e   m e t r i c s   p u r e l y   b y   C o r e   S t r a t e g y ,   e l i m i n a t i n g   U I   n o i s e   a n d   a l l o w i n g   c l e a n   d a t e - r a n g e   r o l l u p s .  
+ U p g r a d e d   t h e   O p e r a t i o n s   S c o r e c a r d   t o   d y n a m i c a l l y   a g g r e g a t e   p e r f o r m a n c e   m e t r i c s   p u r e l y   b y   C o r e   S t r a t e g y ,   e l i m i n a t i n g   U I   n o i s e   a n d   a l l o w i n g   c l e a n   d a t e - r a n g e   r o l l u p s . 
+ 
  
  # # #   [ B u g f i x   -   U I   S y n c   &   D B   S e e d i n g ]   -   C u r r e n t 
  -   E l e v a t e d   C o r e _ S i g n a t u r e   g e n e r a t i o n   t o   t h e   g l o b a l   h y d r a t i o n   p h a s e   i n   a p p . p y ,   p e r f e c t l y   s y n c h r o n i z i n g   t h e   s i d e b a r   f i l t e r s   w i t h   t h e   s c o r e c a r d   r o l l u p s . 
  -   F i x e d   t h e   m i s s i n g   S t r e a m l i t   c o l u m n _ o r d e r   b u g   i n   t h e   O p e r a t i o n s   S c o r e c a r d . 
- -   E x e c u t e d   u p d a t e _ b r a n d s . p y   t o   s e e d   t h e   d a t a b a s e   w i t h   f u l l   b r a n d   n a m e s ,   f i x i n g   t h e   r a w   t a g   d i s p l a y   i s s u e   i n   t h e   U I   d r o p d o w n s .  
+ -   E x e c u t e d   u p d a t e _ b r a n d s . p y   t o   s e e d   t h e   d a t a b a s e   w i t h   f u l l   b r a n d   n a m e s ,   f i x i n g   t h e   r a w   t a g   d i s p l a y   i s s u e   i n   t h e   U I   d r o p d o w n s . 
+ 
  
  # # #   [ B u g f i x   -   T a g   M a p p i n g   &   U I   T e x t   F o r m a t t i n g ]   -   C u r r e n t 
  -   U p g r a d e d   t h e   T a r g e t   C o u n t r y   s i d e b a r   d r o p d o w n   t o   e x p l i c i t l y   m a p   ' J P ' ,   ' T R ' ,   a n d   ' O N T '   t o   ' J a p a n ' ,   ' T u r k e y ' ,   a n d   ' C a n a d a - O n t a r i o ' . 
  -   U p g r a d e d   t h e   T a r g e t   E n g a g e m e n t   d r o p d o w n   t o   b e a u t i f u l l y   s w a p   r a w   ' L I ' / ' N L I '   c o d e s   f o r   ' L o g   I n '   a n d   ' N o t   L o g g e d   I n ' . 
- -   E m b e d d e d   t h e   o f f i c i a l   c o r p o r a t e   \ B R A N D _ M A P P I N G \   c o m p l e t e l y   i n t o   \ s r c / d a t a b a s e . p y \   i n s i d e   t h e   \ i n i t _ d b ( ) \   f u n c t i o n .   T h i s   p e r m a n e n t l y   r e s o l v e s   t h e   i s s u e   o f   t h e   T a r g e t   B r a n d   d r o p d o w n   s h o w i n g   t a g s   o n   f r e s h   R a i l w a y   d e p l o y m e n t s   b y   a u t o m a t i c a l l y   s e e d i n g   t h e   P o s t g r e S Q L   d a t a b a s e   w h e n   t h e   c o n t a i n e r   b o o t s .  
+ -   E m b e d d e d   t h e   o f f i c i a l   c o r p o r a t e   \ B R A N D _ M A P P I N G \   c o m p l e t e l y   i n t o   \ s r c / d a t a b a s e . p y \   i n s i d e   t h e   \ i n i t _ d b ( ) \   f u n c t i o n .   T h i s   p e r m a n e n t l y   r e s o l v e s   t h e   i s s u e   o f   t h e   T a r g e t   B r a n d   d r o p d o w n   s h o w i n g   t a g s   o n   f r e s h   R a i l w a y   d e p l o y m e n t s   b y   a u t o m a t i c a l l y   s e e d i n g   t h e   P o s t g r e S Q L   d a t a b a s e   w h e n   t h e   c o n t a i n e r   b o o t s . 
+ 
  

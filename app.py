@@ -22,6 +22,9 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 
+# Increase Pandas Styler limits to prevent crashes on large ledgers
+pd.set_option("styler.render.max_elements", 1_500_000)
+
 from src.ingestion import load_all_data_from_uploads, load_campaign_data_from_uploads
 from src.analytics import generate_monthly_summaries, generate_campaign_summaries, generate_cohort_matrix, generate_segmentation_summary, generate_both_business_summary, generate_time_series, generate_program_summary, generate_rfm_summary, generate_smart_narrative, generate_player_master_list, generate_retention_heatmap, generate_overlap_stats, generate_ltv_curves, generate_tier_summary
 from src.exporter import export_to_excel
@@ -2718,6 +2721,8 @@ if "📞 Operations Command" in tab_map:
                 "records": "Records",
                 "total_cost": "Total_Campaign_Cost",
                 "conversions": "KPI1-Conv.",
+                "kpi2_logins": "KPI2-Login",
+                "li_pct": "LI%",
                 "true_cac": "True_CAC",
                 "calls": "Calls",
                 "d_total": "D",
