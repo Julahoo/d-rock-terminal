@@ -1312,22 +1312,18 @@ if view_mode == "📊 Dashboard":
                 current_year = now.year
                 current_month = now.month
                 
-                # Show the most recently COMPLETED half-year vs same half prior year
+                # Show current half-year vs same half of prior year
                 if current_month <= 6:
-                    # We're in H1 → last completed half is H2 of prev year
-                    half_label = "H2"
-                    completed_year = current_year - 1
-                    curr_start, curr_end = f"{completed_year}-07-01", f"{completed_year}-12-31"
-                    prior_start, prior_end = f"{completed_year - 1}-07-01", f"{completed_year - 1}-12-31"
-                else:
-                    # We're in H2 → last completed half is H1 of current year
                     half_label = "H1"
-                    completed_year = current_year
-                    curr_start, curr_end = f"{completed_year}-01-01", f"{completed_year}-06-30"
-                    prior_start, prior_end = f"{completed_year - 1}-01-01", f"{completed_year - 1}-06-30"
+                    curr_start, curr_end = f"{current_year}-01-01", f"{current_year}-06-30"
+                    prior_start, prior_end = f"{current_year - 1}-01-01", f"{current_year - 1}-06-30"
+                else:
+                    half_label = "H2"
+                    curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
+                    prior_start, prior_end = f"{current_year - 1}-07-01", f"{current_year - 1}-12-31"
                 
-                curr_label = f"{half_label} {completed_year}"
-                prior_label = f"{half_label} {completed_year - 1}"
+                curr_label = f"{half_label} {current_year}"
+                prior_label = f"{half_label} {current_year - 1}"
                 
                 curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
                 prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
