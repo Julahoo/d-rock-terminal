@@ -347,63 +347,30 @@ with st.sidebar:
     if "All" not in allowed:
         db_clients = [c for c in db_clients if c in allowed]
 
-    client_options = ["All"] + db_clients if db_clients else ["All"]
-    selected_client = st.sidebar.selectbox("🎯 Target Client", client_options)
-
-    # 3. Extract Brands safely based on exact Client match
+    # 3. Extract all brand options (unfiltered — form doesn't allow cascading)
     db_brands = set()
-    if selected_client == "All":
-        if not raw_ops.empty: db_brands.update(raw_ops['ops_brand'].unique())
-        if not raw_fin.empty and 'brand' in raw_fin.columns: db_brands.update(raw_fin['brand'].unique())
-    else:
-        if not raw_ops.empty: db_brands.update(raw_ops[raw_ops['ops_client'] == selected_client]['ops_brand'].unique())
-        if not raw_fin.empty and 'brand' in raw_fin.columns: db_brands.update(raw_fin[raw_fin['client'] == selected_client]['brand'].unique())
-        
+    if not raw_ops.empty: db_brands.update(raw_ops['ops_brand'].unique())
+    if not raw_fin.empty and 'brand' in raw_fin.columns: db_brands.update(raw_fin['brand'].unique())
     sorted_brands = sorted(list(db_brands))
-    brand_options = ["All"] + sorted_brands if sorted_brands else ["All"]
-    
-    # UX Trick: Auto-select the brand if there is only 1 available for this client
-    default_brand_index = 1 if len(sorted_brands) == 1 else 0
-    
+
+    # Pre-compute all dropdown options BEFORE the form
     b_map = st.session_state.get("brand_mapping_dict", {})
-    selected_brand = st.sidebar.selectbox(
-        "🏷️ Target Brand", 
-        brand_options, 
-        index=default_brand_index,
-        format_func=lambda x: f"{x} — {b_map[x]}" if x != "All" and x in b_map else x
-    )
-
-    # 4. Extract Category and Sidebar Dropdowns
-    selected_category = "All"
-    selected_country = "All"
-    selected_lifecycle = "All"
-    selected_segment = "All"
-    selected_engagement = "All"
-    selected_campaign = "All"
     
+    avail_countries_raw = []
+    country_map = {
+        'PE': 'Peru', 'CL': 'Chile', 'EC': 'Ecuador', 'MX': 'Mexico', 'BR': 'Brazil',
+        'AR': 'Argentina', 'CO': 'Colombia', 'ES': 'Spain', 'NZ': 'New Zealand', 
+        'CA': 'Canada', 'IE': 'Ireland', 'DK': 'Denmark', 'SE': 'Sweden', 'NO': 'Norway',
+        'FI': 'Finland', 'DE': 'Germany', 'AT': 'Austria', 'CH': 'Switzerland', 
+        'UK': 'United Kingdom', 'GB': 'United Kingdom', 'IT': 'Italy', 'FR': 'France',
+        'GLOBAL': 'Global', 'JP': 'Japan', 'TR': 'Turkey', 'ONT': 'Canada-Ontario'
+    }
+    if not raw_ops.empty and 'country' in raw_ops.columns:
+        avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
+    
+    CATEGORY_MAP = {'SPO': 'Sportsbook', 'CAS': 'Casino', 'LIVE': 'Live'}
+    avail_categories = []
     if not raw_ops.empty:
-        if 'country' in raw_ops.columns:
-            # Full country name mapping
-            country_map = {
-                'PE': 'Peru', 'CL': 'Chile', 'EC': 'Ecuador', 'MX': 'Mexico', 'BR': 'Brazil',
-                'AR': 'Argentina', 'CO': 'Colombia', 'ES': 'Spain', 'NZ': 'New Zealand', 
-                'CA': 'Canada', 'IE': 'Ireland', 'DK': 'Denmark', 'SE': 'Sweden', 'NO': 'Norway',
-                'FI': 'Finland', 'DE': 'Germany', 'AT': 'Austria', 'CH': 'Switzerland', 
-                'UK': 'United Kingdom', 'GB': 'United Kingdom', 'IT': 'Italy', 'FR': 'France',
-                'GLOBAL': 'Global', 'JP': 'Japan', 'TR': 'Turkey', 'ONT': 'Canada-Ontario'
-            }
-            avail_countries = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
-            display_countries = [country_map.get(c, c) for c in avail_countries]
-            country_options = ["All"] + display_countries
-            selected_country_display = st.sidebar.selectbox("🌍 Target Country", country_options)
-            
-            if selected_country_display != "All":
-                inv_map = {v: k for k, v in country_map.items()}
-                selected_country = inv_map.get(selected_country_display, selected_country_display)
-
-
-        CATEGORY_MAP = {'SPO': 'Sportsbook', 'CAS': 'Casino', 'LIVE': 'Live'}
-        
         def parse_category(x):
             if pd.isna(x): return None
             import re
@@ -411,43 +378,60 @@ with st.sidebar:
             for t in tokens:
                 if t in CATEGORY_MAP: return t
             return None
-            
         if '__extracted_category' not in raw_ops.columns and 'campaign_name' in raw_ops.columns:
             raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(parse_category)
-            
         avail_categories = sorted([str(c) for c in raw_ops['__extracted_category'].dropna().unique() if c])
-        display_categories = [CATEGORY_MAP.get(c, c) for c in avail_categories]
+    
+    avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
+    avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
+    
+    ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
+    avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
+    
+    avail_campaigns = sorted([str(c) for c in raw_ops['Core_Signature'].dropna().unique() if c]) if not raw_ops.empty and 'Core_Signature' in raw_ops.columns else []
+
+    # ── FORM: Prevents reloads until Submit is clicked ──
+    with st.sidebar.form("global_filters"):
+        client_options = ["All"] + db_clients if db_clients else ["All"]
+        selected_client = st.selectbox("🎯 Target Client", client_options)
+
+        brand_options = ["All"] + sorted_brands if sorted_brands else ["All"]
+        selected_brand = st.selectbox(
+            "🏷️ Target Brand", 
+            brand_options, 
+            format_func=lambda x: f"{x} — {b_map[x]}" if x != "All" and x in b_map else x
+        )
+
+        if avail_countries_raw:
+            display_countries = [country_map.get(c, c) for c in avail_countries_raw]
+            selected_country_display = st.selectbox("🌍 Target Country", ["All"] + display_countries)
+            if selected_country_display != "All":
+                inv_map = {v: k for k, v in country_map.items()}
+                selected_country = inv_map.get(selected_country_display, selected_country_display)
+
         if avail_categories:
-            selected_category_display = st.sidebar.selectbox("📦 Target Category", ["All"] + display_categories)
+            display_categories = [CATEGORY_MAP.get(c, c) for c in avail_categories]
+            selected_category_display = st.selectbox("📦 Target Category", ["All"] + display_categories)
             inv_map = {v: k for k, v in CATEGORY_MAP.items()}
             selected_category = inv_map.get(selected_category_display, selected_category_display) if selected_category_display != "All" else "All"
 
-        if 'extracted_lifecycle' in raw_ops.columns:
-            avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"])
-            if avail_lifecycles:
-                selected_lifecycle = st.sidebar.selectbox("🔁 Target Lifecycle", ["All"] + avail_lifecycles)
-                
-        if 'extracted_segment' in raw_ops.columns:
-            avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"])
-            if avail_segments:
-                selected_segment = st.sidebar.selectbox("🎯 Target Segment", ["All"] + avail_segments)
-                
-        ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
+        if avail_lifecycles:
+            selected_lifecycle = st.selectbox("🔁 Target Lifecycle", ["All"] + avail_lifecycles)
 
-        if 'extracted_engagement' in raw_ops.columns:
-            avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"])
-            if avail_engagements:
-                display_engagements = [ENGAGEMENT_MAP.get(e, e) for e in avail_engagements]
-                selected_engagement_display = st.sidebar.selectbox("🔥 Target Engagement", ["All"] + display_engagements)
-                
-                if selected_engagement_display != "All":
-                    inv_eng_map = {v: k for k, v in ENGAGEMENT_MAP.items()}
-                    selected_engagement = inv_eng_map.get(selected_engagement_display, selected_engagement_display)
-                
-        if 'Core_Signature' in raw_ops.columns:
-            avail_campaigns = sorted([str(c) for c in raw_ops['Core_Signature'].dropna().unique() if c])
-            if avail_campaigns:
-                selected_campaign = st.sidebar.selectbox("🏷️ Target Campaign", ["All"] + avail_campaigns)
+        if avail_segments:
+            selected_segment = st.selectbox("🎯 Target Segment", ["All"] + avail_segments)
+
+        if avail_engagements:
+            display_engagements = [ENGAGEMENT_MAP.get(e, e) for e in avail_engagements]
+            selected_engagement_display = st.selectbox("🔥 Target Engagement", ["All"] + display_engagements)
+            if selected_engagement_display != "All":
+                inv_eng_map = {v: k for k, v in ENGAGEMENT_MAP.items()}
+                selected_engagement = inv_eng_map.get(selected_engagement_display, selected_engagement_display)
+
+        if avail_campaigns:
+            selected_campaign = st.selectbox("🏷️ Target Campaign", ["All"] + avail_campaigns)
+
+        _filters_submitted = st.form_submit_button("🔍 Apply Filters", use_container_width=True, type="primary")
 
     # 5. Elite Date Range Quick-Select Helper
     import re
@@ -533,96 +517,62 @@ with st.sidebar:
     start_month = start_date_val.strftime("%Y-%m")
     end_month = end_date_val.strftime("%Y-%m")
 
-    # --- SUBMIT BUTTON ---
-    st.sidebar.markdown("---")
-    _filters_submitted = st.sidebar.button("🔍 Apply Filters", use_container_width=True, type="primary")
-    
-    # On first run (no cached filters yet), auto-apply so dashboard isn't empty
-    if _filters_submitted or "filters_applied" not in st.session_state:
-        st.session_state["filters_applied"] = True
-        st.session_state["_f_client"] = selected_client
-        st.session_state["_f_brand"] = selected_brand
-        st.session_state["_f_category"] = selected_category
-        st.session_state["_f_country"] = selected_country
-        st.session_state["_f_lifecycle"] = selected_lifecycle
-        st.session_state["_f_segment"] = selected_segment
-        st.session_state["_f_engagement"] = selected_engagement
-        st.session_state["_f_campaign"] = selected_campaign
-        st.session_state["_f_start_date"] = start_date_str
-        st.session_state["_f_end_date"] = end_date_str
-        st.session_state["_f_start_month"] = start_month
-        st.session_state["_f_end_month"] = end_month
-    
-    # Read committed filter values from session state
-    _fc = st.session_state.get("_f_client", "All")
-    _fb = st.session_state.get("_f_brand", "All")
-    _fcat = st.session_state.get("_f_category", "All")
-    _fcountry = st.session_state.get("_f_country", "All")
-    _flc = st.session_state.get("_f_lifecycle", "All")
-    _fseg = st.session_state.get("_f_segment", "All")
-    _feng = st.session_state.get("_f_engagement", "All")
-    _fcmp = st.session_state.get("_f_campaign", "All")
-    _fsd = st.session_state.get("_f_start_date", start_date_str)
-    _fed = st.session_state.get("_f_end_date", end_date_str)
-    _fsm = st.session_state.get("_f_start_month", start_month)
-    _fem = st.session_state.get("_f_end_month", end_month)
-
     # --- 3. APPLY FILTERS TO TABS ---
     filtered_ops = raw_ops.copy() if not raw_ops.empty else pd.DataFrame()
     filtered_ops_snapshots = raw_ops_snapshots.copy() if not raw_ops_snapshots.empty else pd.DataFrame()
     filtered_fin = raw_fin.copy() if not raw_fin.empty else pd.DataFrame()
 
-    if _fc != "All":
+    if selected_client != "All":
         if not filtered_ops.empty and 'ops_client' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_client'] == _fc]
+            filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
         if not filtered_ops_snapshots.empty and 'ops_client' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == _fc]
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == selected_client]
         if not filtered_fin.empty and 'client' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['client'] == _fc]
+            filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
 
-    if _fb != "All":
+    if selected_brand != "All":
         if not filtered_ops.empty and 'ops_brand' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == _fb]
+            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
         if not filtered_ops_snapshots.empty and 'ops_brand' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == _fb]
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == selected_brand]
         if not filtered_fin.empty and 'brand' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['brand'] == _fb]
+            filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
             
-    if _fcat != "All":
+    if selected_category != "All":
         if not filtered_ops.empty and '__extracted_category' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['__extracted_category'] == _fcat]
+            filtered_ops = filtered_ops[filtered_ops['__extracted_category'] == selected_category]
         if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(_fcat)]
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_category)]
             
-    if _fcountry != "All":
+    if selected_country != "All":
         if not filtered_ops.empty and 'country' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == _fcountry]
+            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
             
-    if _flc != "All":
+    if selected_lifecycle != "All":
         if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == _flc]
+            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == selected_lifecycle]
             
-    if _fseg != "All":
+    if selected_segment != "All":
         if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == _fseg]
+            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
             
-    if _feng != "All":
+    if selected_engagement != "All":
         if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == _feng]
+            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
             
-    if _fcmp != "All":
+    if selected_campaign != "All":
         if not filtered_ops.empty and 'Core_Signature' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['Core_Signature'] == _fcmp]
+            filtered_ops = filtered_ops[filtered_ops['Core_Signature'] == selected_campaign]
 
     # Apply Time Frame Filter
-    if _fsd and _fed:
+    if start_date_val and end_date_val:
         if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
-            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= _fsd) & (filtered_ops['ops_date'] <= _fed)]
+            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
         if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= _fsd) & (filtered_ops_snapshots['ops_date'] <= _fed)]
+            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
             
         if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
-            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= _fsm) & (filtered_fin['report_month'] <= _fem)]
+            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= start_month) & (filtered_fin['report_month'] <= end_month)]
 
     st.session_state["ops_df"] = filtered_ops
     st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
