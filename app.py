@@ -1371,6 +1371,41 @@ if view_mode == "📊 Dashboard":
                 c['ss'] = c['sd'] + c['sf'] + c['sp']
                 p['ss'] = p['sd'] + p['sf'] + p['sp']
                 
+                # Pre-compute rates for reuse in cards and charts
+                c_d = safe_pct(c['d_plus'] + c['d_minus'] + c['d_neutral'], c['records'])
+                p_d = safe_pct(p['d_plus'] + p['d_minus'] + p['d_neutral'], p['records'])
+                c_na = safe_pct(c['na'], c['records'])
+                p_na = safe_pct(p['na'], p['records'])
+                c_i = safe_pct(c['t'] + c['dnc'] + c['dx'] + c['wn'] + c['am'], c['records'])
+                p_i = safe_pct(p['t'] + p['dnc'] + p['dx'] + p['wn'] + p['am'], p['records'])
+                c_ed = safe_pct(c['ed'], c['es']); p_ed = safe_pct(p['ed'], p['es'])
+                c_eo = safe_pct(c['eo'], c['es']); p_eo = safe_pct(p['eo'], p['es'])
+                c_ec = safe_pct(c['ec'], c['es']); p_ec = safe_pct(p['ec'], p['es'])
+                c_ef = safe_pct(c['ef'], c['es']); p_ef = safe_pct(p['ef'], p['es'])
+                c_sd = safe_pct(c['sd'], c['ss']); p_sd = safe_pct(p['sd'], p['ss'])
+                c_sf = safe_pct(c['sf'], c['ss']); p_sf = safe_pct(p['sf'], p['ss'])
+                
+                # ── LAYER 1: KPI SUMMARY CARDS ──
+                kc1, kc2, kc3 = st.columns(3)
+                with kc1:
+                    st.markdown("##### 📞 Volume")
+                    st.metric("Records", fmt_num(c['records']), calc_delta(c['records'], p['records']))
+                    st.caption(f"Logins: {fmt_num(c['kpi2_logins'])} ({calc_delta(c['kpi2_logins'], p['kpi2_logins'])})")
+                    st.caption(f"Conv: {fmt_num(c['conversions'])} ({calc_delta(c['conversions'], p['conversions'])})")
+                with kc2:
+                    st.markdown("##### ☎️ Call Efficiency")
+                    st.metric("D %", fmt_pct(c_d), calc_delta(c_d, p_d, True))
+                    st.caption(f"NA%: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
+                    st.caption(f"I%: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
+                with kc3:
+                    st.markdown("##### 📧📱 Channel Health")
+                    st.metric("Email ED %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
+                    st.caption(f"EO%: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
+                    st.metric("SMS SD %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
+                
+                st.markdown("---")
+                
+                # ── LAYER 2: BENCHMARK TABLE ──
                 rows = []
                 # Volume
                 rows.append(("📞 **Volume**", "", "", ""))
@@ -1380,34 +1415,93 @@ if view_mode == "📊 Dashboard":
                 
                 # Dispositions
                 rows.append(("☎️ **Dispositions**", "", "", ""))
-                c_d = safe_pct(c['d_plus'] + c['d_minus'] + c['d_neutral'], c['records'])
-                p_d = safe_pct(p['d_plus'] + p['d_minus'] + p['d_neutral'], p['records'])
                 rows.append(("D %", fmt_pct(p_d), fmt_pct(c_d), calc_delta(c_d, p_d, True)))
-                
-                c_na = safe_pct(c['na'], c['records'])
-                p_na = safe_pct(p['na'], p['records'])
                 rows.append(("NA %", fmt_pct(p_na), fmt_pct(c_na), calc_delta(c_na, p_na, True)))
-                
-                c_i = safe_pct(c['t'] + c['dnc'] + c['dx'] + c['wn'] + c['am'], c['records'])
-                p_i = safe_pct(p['t'] + p['dnc'] + p['dx'] + p['wn'] + p['am'], p['records'])
                 rows.append(("I %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
                 
                 # Email (% of es)
                 rows.append(("📧 **Email**", "", "", ""))
-                for label, col in [("ED %", "ed"), ("EO %", "eo"), ("EC %", "ec"), ("EF %", "ef")]:
-                    c_val = safe_pct(c[col], c['es'])
-                    p_val = safe_pct(p[col], p['es'])
+                for label, c_val, p_val in [("ED %", c_ed, p_ed), ("EO %", c_eo, p_eo), ("EC %", c_ec, p_ec), ("EF %", c_ef, p_ef)]:
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
                 # SMS (% of SS = sd + sf + sp)
                 rows.append(("📱 **SMS**", "", "", ""))
-                for label, col in [("SD %", "sd"), ("SF %", "sf"), ("SP %", "sp")]:
-                    c_val = safe_pct(c[col], c['ss'])
-                    p_val = safe_pct(p[col], p['ss'])
+                for label, c_val, p_val in [("SD %", c_sd, p_sd), ("SF %", c_sf, p_sf), ("SP %", safe_pct(c['sp'], c['ss']), safe_pct(p['sp'], p['ss']))]:
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
                 bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
                 st.dataframe(bench_df, hide_index=True, use_container_width=True, height=(len(rows) + 1) * 35 + 3)
+                
+                # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
+                import plotly.graph_objects as go
+                
+                with st.expander("📊 Detailed Benchmark Charts"):
+                    col_bar, col_radar = st.columns(2)
+                    
+                    # Grouped Bar Chart — Volume
+                    with col_bar:
+                        fig_bar = go.Figure()
+                        vol_metrics = ['Records', 'Logins', 'Conversions']
+                        prior_vals = [p['records'], p['kpi2_logins'], p['conversions']]
+                        curr_vals = [c['records'], c['kpi2_logins'], c['conversions']]
+                        
+                        fig_bar.add_trace(go.Bar(
+                            name=prior_label, x=vol_metrics, y=prior_vals,
+                            marker_color='rgba(100, 160, 180, 0.6)',
+                            text=[fmt_num(v) for v in prior_vals], textposition='outside'
+                        ))
+                        fig_bar.add_trace(go.Bar(
+                            name=curr_label, x=vol_metrics, y=curr_vals,
+                            marker_color='rgba(0, 200, 220, 0.8)',
+                            text=[fmt_num(v) for v in curr_vals], textposition='outside'
+                        ))
+                        fig_bar.update_layout(
+                            title="Volume Comparison",
+                            barmode='group',
+                            template='plotly_dark',
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            height=350,
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            font=dict(size=11),
+                            legend=dict(orientation='h', y=-0.15)
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                    
+                    # Radar Chart — All % Rates
+                    with col_radar:
+                        radar_labels = ['D%', 'NA%', 'I%', 'ED%', 'EO%', 'EC%', 'SD%', 'SF%']
+                        prior_rates = [p_d, p_na, p_i, p_ed, p_eo, p_ec, p_sd, p_sf]
+                        curr_rates = [c_d, c_na, c_i, c_ed, c_eo, c_ec, c_sd, c_sf]
+                        
+                        fig_radar = go.Figure()
+                        fig_radar.add_trace(go.Scatterpolar(
+                            r=prior_rates + [prior_rates[0]], theta=radar_labels + [radar_labels[0]],
+                            fill='toself', name=prior_label,
+                            fillcolor='rgba(100, 160, 180, 0.2)',
+                            line=dict(color='rgba(100, 160, 180, 0.8)', width=2)
+                        ))
+                        fig_radar.add_trace(go.Scatterpolar(
+                            r=curr_rates + [curr_rates[0]], theta=radar_labels + [radar_labels[0]],
+                            fill='toself', name=curr_label,
+                            fillcolor='rgba(0, 200, 220, 0.2)',
+                            line=dict(color='rgba(0, 200, 220, 0.8)', width=2)
+                        ))
+                        fig_radar.update_layout(
+                            title="Performance Rates",
+                            template='plotly_dark',
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            height=400,
+                            margin=dict(l=40, r=40, t=50, b=20),
+                            font=dict(size=11),
+                            polar=dict(
+                                bgcolor='rgba(0,0,0,0)',
+                                radialaxis=dict(visible=True, range=[0, 100])
+                            ),
+                            legend=dict(orientation='h', y=-0.1)
+                        )
+                        st.plotly_chart(fig_radar, use_container_width=True)
             
             # Load benchmark data directly from snapshots (full history, sidebar-filtered)
             try:

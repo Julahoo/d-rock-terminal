@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Feature - 3-Layer Benchmark Visuals] - 2026-03-11 - COMPLETED
+- Engineered the complete 3-layer visual architecture for the H1-over-H1 Benchmark in `app.py`.
+- Layer 1: Added 3 top-level KPI summary cards (Volume, Call Efficiency, Channel Health) using `st.metric`.
+- Layer 3: Engineered an expandable drill-down section featuring a Plotly grouped bar chart for raw volume and a `Scatterpolar` radar chart for cross-channel rate comparisons.
+
 ### [Feature - H1-over-H1 Benchmark Table] - 2026-03-11 - COMPLETED
 - Updated `SPEC.md` with §4.4.2 to document the new Half-Year Benchmark Table.
 - Engineered `_render_h1_benchmark()` in `app.py` to auto-detect the current half-year and compare it against the prior year's equivalent period.
