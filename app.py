@@ -1531,6 +1531,10 @@ if view_mode == "📊 Dashboard":
                         _bench_df = _bench_df[_bench_df['extracted_segment'] == selected_segment]
                     if selected_country != "All" and 'country' in _bench_df.columns:
                         _bench_df = _bench_df[_bench_df['country'].str.upper() == selected_country]
+                    if selected_category != "All" and 'campaign_name' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['campaign_name'].str.upper().str.contains(selected_category, na=False)]
+                    if selected_campaign != "All" and 'Core_Signature' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['Core_Signature'] == selected_campaign]
                     _render_fixed_benchmark(_bench_df)
                 else:
                     st.caption("No snapshot data available.")
