@@ -134,17 +134,31 @@ Evaluated row-by-row in this strict priority order:
   - Delta = current window avg - prior equivalent period avg (e.g., last 7d vs 7d before that).
   - Color: Green ↑ improving, Red ↓ declining, Grey — flat (< 1% change).
 
-### 4.4.2 📊 Half-Year Benchmark Table
+### 4.4.2 📊 Half-Year Benchmark Section
 - **Location:** `📊 Dashboard` tab, below the Operations Pulse Matrices.
-- **Auto-detection:** Shows the most recently completed half-year compared against the same half from the prior year. E.g., during H1 2026, the table shows H2 2024 vs H2 2025. On 2026-07-01, it flips to H1 2025 vs H1 2026.
-- **Columns:** Metric | Prior Year Half | Completed Half | Δ (% change).
-- **Metric Group 1 — Volume (raw totals):** Records, Logins, Conversions.
-- **Metric Group 2 — Call Dispositions (% of Records):**
-  - D% = `(d_plus + d_minus + d_neutral) / records`, NA% = `na / records`, I% = `(t + dnc + dx + wn + am) / records`.
-- **Metric Group 3 — Email Channel (% of `es`):**
-  - ED% = `ed / es`, EO% = `eo / es`, EC% = `ec / es`, EF% = `ef / es`.
-- **Metric Group 4 — SMS Channel (% of SS where SS = `sd + sf + sp`):**
-  - SD% = `sd / SS`, SF% = `sf / SS`, SP% = `sp / SS`.
+- **Data Source:** `ops_telemarketing_snapshots` queried directly from DB. Sidebar filters (client, brand, engagement, lifecycle, segment, country) apply; date range filter is ignored — the function handles H1/H2 slicing internally.
+- **Auto-detection:** Determines current half (H1=Jan-Jun, H2=Jul-Dec) from `datetime.now()`. Compares current half (YTD) vs same half of previous year.
+- **Metric Groups:**
+  - **Volume (raw totals):** Records, Logins, Conversions.
+  - **Call Dispositions (% of Records):** D% = `(d_plus + d_minus + d_neutral) / records`, NA% = `na / records`, I% = `(t + dnc + dx + wn + am) / records`.
+  - **Email Channel (% of `es`):** ED% = `ed / es`, EO% = `eo / es`, EC% = `ec / es`, EF% = `ef / es`.
+  - **SMS Channel (% of SS where SS = `sd + sf + sp`):** SD% = `sd / SS`, SF% = `sf / SS`, SP% = `sp / SS`.
+
+#### Layer 1 — KPI Summary Cards (always visible)
+- Layout: `st.columns(3)`, rendered above the benchmark table.
+- **Card 1 — 📞 Volume:** Two horizontal Plotly mini-bars (H1 prior vs H1 current for Records). Big delta arrow (↑/↓) + % change. Sub-text: Logins and Conversions deltas.
+- **Card 2 — ☎️ Call Efficiency:** Headline D% with prior → current values and delta arrow. Sub-text: NA% and I% deltas.
+- **Card 3 — 📧📱 Channel Health:** Two rows — Email (ED% headline + delta) and SMS (SD% headline + delta).
+- Each card uses `st.container()` with dark border matching dashboard theme.
+
+#### Layer 2 — Benchmark Table (always visible)
+- Full comparison table with columns: Metric | Prior Half | Current Half | Δ (arrow + value).
+- Already implemented. Height auto-expands to show all rows.
+
+#### Layer 3 — Detailed Charts (expandable)
+- Wrapped in `st.expander("📊 Detailed Benchmark Charts")`.
+- **Left (col 1/2):** Grouped bar chart (Plotly) — 3 metric clusters (Records, Logins, Conversions), each with two bars (prior half = muted teal, current half = cyan). Dark theme, matching existing chart styling.
+- **Right (col 2/2):** Radar/spider chart (Plotly `Scatterpolar`) — axes: D%, NA%, I%, ED%, EO%, EC%, SD%, SF%. Two overlapping semi-transparent polygons (prior half = teal, current half = cyan). Shows overall performance shape shift.
 - **Filters:** Sidebar globals apply to all calculations.
 
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence
