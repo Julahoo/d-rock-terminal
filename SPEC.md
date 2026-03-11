@@ -136,15 +136,15 @@ Evaluated row-by-row in this strict priority order:
 
 ### 4.4.2 📊 Half-Year Benchmark Table
 - **Location:** `📊 Dashboard` tab, below the Operations Pulse Matrices.
-- **Auto-detection:** Determines current half (H1=Jan-Jun, H2=Jul-Dec) from `datetime.now()`. Compares current half vs same half of previous year.
-- **Columns:** Metric | Prior Half (e.g., H1 2025) | Current Half (e.g., H1 2026 YTD) | Δ (% change).
+- **Auto-detection:** Shows the most recently completed half-year compared against the same half from the prior year. E.g., during H1 2026, the table shows H2 2024 vs H2 2025. On 2026-07-01, it flips to H1 2025 vs H1 2026.
+- **Columns:** Metric | Prior Year Half | Completed Half | Δ (% change).
 - **Metric Group 1 — Volume (raw totals):** Records, Logins, Conversions.
 - **Metric Group 2 — Call Dispositions (% of Records):**
   - D% = `(d_plus + d_minus + d_neutral) / records`, NA% = `na / records`, I% = `(t + dnc + dx + wn + am) / records`.
 - **Metric Group 3 — Email Channel (% of `es`):**
   - ED% = `ed / es`, EO% = `eo / es`, EC% = `ec / es`, EF% = `ef / es`.
-- **Metric Group 4 — SMS Channel (% of `sa`):**
-  - SD% = `sd / sa`, SF% = `sf / sa`, SP% = `sp / sa`.
+- **Metric Group 4 — SMS Channel (% of SS where SS = `sd + sf + sp`):**
+  - SD% = `sd / SS`, SF% = `sf / SS`, SP% = `sp / SS`.
 - **Filters:** Sidebar globals apply to all calculations.
 
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence

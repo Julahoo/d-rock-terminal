@@ -1299,7 +1299,7 @@ if view_mode == "📊 Dashboard":
             st.markdown("*Current half vs same half last year.*")
             
             def _render_h1_benchmark(df):
-                """Render H1-over-H1 (or H2-over-H2) benchmark comparison table."""
+                """Render completed half-year benchmark comparison table."""
                 from datetime import datetime
                 
                 if df.empty or 'ops_date' not in df.columns:
@@ -1312,17 +1312,22 @@ if view_mode == "📊 Dashboard":
                 current_year = now.year
                 current_month = now.month
                 
+                # Show the most recently COMPLETED half-year vs same half prior year
                 if current_month <= 6:
-                    half_label = "H1"
-                    curr_start, curr_end = f"{current_year}-01-01", f"{current_year}-06-30"
-                    prior_start, prior_end = f"{current_year - 1}-01-01", f"{current_year - 1}-06-30"
-                else:
+                    # We're in H1 → last completed half is H2 of prev year
                     half_label = "H2"
-                    curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
-                    prior_start, prior_end = f"{current_year - 1}-07-01", f"{current_year - 1}-12-31"
+                    completed_year = current_year - 1
+                    curr_start, curr_end = f"{completed_year}-07-01", f"{completed_year}-12-31"
+                    prior_start, prior_end = f"{completed_year - 1}-07-01", f"{completed_year - 1}-12-31"
+                else:
+                    # We're in H2 → last completed half is H1 of current year
+                    half_label = "H1"
+                    completed_year = current_year
+                    curr_start, curr_end = f"{completed_year}-01-01", f"{completed_year}-06-30"
+                    prior_start, prior_end = f"{completed_year - 1}-01-01", f"{completed_year - 1}-06-30"
                 
-                curr_label = f"{half_label} {current_year}"
-                prior_label = f"{half_label} {current_year - 1}"
+                curr_label = f"{half_label} {completed_year}"
+                prior_label = f"{half_label} {completed_year - 1}"
                 
                 curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
                 prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
@@ -1358,10 +1363,15 @@ if view_mode == "📊 Dashboard":
                         return f"{change:+.1f}%"
                 
                 # Aggregate sums
-                c = {col: safe_sum(curr_df, col) for col in ['records', 'kpi2_logins', 'conversions',
+                agg_cols = ['records', 'kpi2_logins', 'conversions',
                      'd_plus', 'd_minus', 'd_neutral', 'na', 't', 'dnc', 'dx', 'wn', 'am',
-                     'es', 'ed', 'eo', 'ec', 'ef', 'sa', 'sd', 'sf', 'sp']}
-                p = {col: safe_sum(prior_df, col) for col in c.keys()}
+                     'es', 'ed', 'eo', 'ec', 'ef', 'sd', 'sf', 'sp']
+                c = {col: safe_sum(curr_df, col) for col in agg_cols}
+                p = {col: safe_sum(prior_df, col) for col in agg_cols}
+                
+                # Derive SS (SMS Sent) = sd + sf + sp
+                c['ss'] = c['sd'] + c['sf'] + c['sp']
+                p['ss'] = p['sd'] + p['sf'] + p['sp']
                 
                 rows = []
                 # Volume
@@ -1384,18 +1394,18 @@ if view_mode == "📊 Dashboard":
                 p_i = safe_pct(p['t'] + p['dnc'] + p['dx'] + p['wn'] + p['am'], p['records'])
                 rows.append(("I %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
                 
-                # Email
+                # Email (% of es)
                 rows.append(("📧 **Email**", "", "", ""))
                 for label, col in [("ED %", "ed"), ("EO %", "eo"), ("EC %", "ec"), ("EF %", "ef")]:
                     c_val = safe_pct(c[col], c['es'])
                     p_val = safe_pct(p[col], p['es'])
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
-                # SMS
+                # SMS (% of SS = sd + sf + sp)
                 rows.append(("📱 **SMS**", "", "", ""))
                 for label, col in [("SD %", "sd"), ("SF %", "sf"), ("SP %", "sp")]:
-                    c_val = safe_pct(c[col], c['sa'])
-                    p_val = safe_pct(p[col], p['sa'])
+                    c_val = safe_pct(c[col], c['ss'])
+                    p_val = safe_pct(p[col], p['ss'])
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
                 bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
