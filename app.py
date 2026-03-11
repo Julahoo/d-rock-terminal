@@ -1440,73 +1440,78 @@ if view_mode == "📊 Dashboard":
                 # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
                 import plotly.graph_objects as go
                 
+                def _make_radar(title, labels, prior_vals, curr_vals, max_range=None):
+                    """Build a Scatterpolar radar figure with two traces."""
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatterpolar(
+                        r=prior_vals + [prior_vals[0]], theta=labels + [labels[0]],
+                        fill='toself', name=prior_label,
+                        fillcolor='rgba(100, 160, 180, 0.2)',
+                        line=dict(color='rgba(100, 160, 180, 0.8)', width=2)
+                    ))
+                    fig.add_trace(go.Scatterpolar(
+                        r=curr_vals + [curr_vals[0]], theta=labels + [labels[0]],
+                        fill='toself', name=curr_label,
+                        fillcolor='rgba(0, 200, 220, 0.2)',
+                        line=dict(color='rgba(0, 200, 220, 0.8)', width=2)
+                    ))
+                    radial_cfg = dict(visible=True)
+                    if max_range is not None:
+                        radial_cfg['range'] = [0, max_range]
+                    fig.update_layout(
+                        title=title,
+                        template='plotly_dark',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        height=380,
+                        margin=dict(l=40, r=40, t=50, b=30),
+                        font=dict(size=11),
+                        polar=dict(bgcolor='rgba(0,0,0,0)', radialaxis=radial_cfg),
+                        legend=dict(orientation='h', y=-0.12)
+                    )
+                    return fig
+                
                 with st.expander("📊 H2 2025 Baseline vs Current Charts"):
-                    col_bar, col_radar = st.columns(2)
-                    
-                    # Grouped Bar Chart — Volume
-                    with col_bar:
-                        fig_bar = go.Figure()
-                        vol_metrics = ['Records', 'Logins', 'Conversions']
-                        prior_vals = [p['records'], p['kpi2_logins'], p['conversions']]
-                        curr_vals = [c['records'], c['kpi2_logins'], c['conversions']]
-                        
-                        fig_bar.add_trace(go.Bar(
-                            name=prior_label, x=vol_metrics, y=prior_vals,
-                            marker_color='rgba(100, 160, 180, 0.6)',
-                            text=[fmt_num(v) for v in prior_vals], textposition='outside'
-                        ))
-                        fig_bar.add_trace(go.Bar(
-                            name=curr_label, x=vol_metrics, y=curr_vals,
-                            marker_color='rgba(0, 200, 220, 0.8)',
-                            text=[fmt_num(v) for v in curr_vals], textposition='outside'
-                        ))
-                        fig_bar.update_layout(
-                            title="Volume Comparison",
-                            barmode='group',
-                            template='plotly_dark',
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            height=350,
-                            margin=dict(l=20, r=20, t=40, b=20),
-                            font=dict(size=11),
-                            legend=dict(orientation='h', y=-0.15)
+                    # Row 1: Volume + Dispositions
+                    rc1, rc2 = st.columns(2)
+                    with rc1:
+                        fig_vol = _make_radar(
+                            "📞 Volume",
+                            ['Records', 'Logins', 'Conversions'],
+                            [p['records'], p['kpi2_logins'], p['conversions']],
+                            [c['records'], c['kpi2_logins'], c['conversions']]
                         )
-                        st.plotly_chart(fig_bar, use_container_width=True)
-                    
-                    # Radar Chart — All % Rates
-                    with col_radar:
-                        radar_labels = ['D%', 'NA%', 'I%', 'ED%', 'EO%', 'EC%', 'SD%', 'SF%']
-                        prior_rates = [p_d, p_na, p_i, p_ed, p_eo, p_ec, p_sd, p_sf]
-                        curr_rates = [c_d, c_na, c_i, c_ed, c_eo, c_ec, c_sd, c_sf]
-                        
-                        fig_radar = go.Figure()
-                        fig_radar.add_trace(go.Scatterpolar(
-                            r=prior_rates + [prior_rates[0]], theta=radar_labels + [radar_labels[0]],
-                            fill='toself', name=prior_label,
-                            fillcolor='rgba(100, 160, 180, 0.2)',
-                            line=dict(color='rgba(100, 160, 180, 0.8)', width=2)
-                        ))
-                        fig_radar.add_trace(go.Scatterpolar(
-                            r=curr_rates + [curr_rates[0]], theta=radar_labels + [radar_labels[0]],
-                            fill='toself', name=curr_label,
-                            fillcolor='rgba(0, 200, 220, 0.2)',
-                            line=dict(color='rgba(0, 200, 220, 0.8)', width=2)
-                        ))
-                        fig_radar.update_layout(
-                            title="Performance Rates",
-                            template='plotly_dark',
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            height=400,
-                            margin=dict(l=40, r=40, t=50, b=20),
-                            font=dict(size=11),
-                            polar=dict(
-                                bgcolor='rgba(0,0,0,0)',
-                                radialaxis=dict(visible=True, range=[0, 100])
-                            ),
-                            legend=dict(orientation='h', y=-0.1)
+                        st.plotly_chart(fig_vol, use_container_width=True)
+                    with rc2:
+                        fig_disp = _make_radar(
+                            "☎️ Call Dispositions",
+                            ['D%', 'NA%', 'I%'],
+                            [p_d, p_na, p_i],
+                            [c_d, c_na, c_i],
+                            max_range=100
                         )
-                        st.plotly_chart(fig_radar, use_container_width=True)
+                        st.plotly_chart(fig_disp, use_container_width=True)
+                    
+                    # Row 2: Email + SMS
+                    rc3, rc4 = st.columns(2)
+                    with rc3:
+                        fig_email = _make_radar(
+                            "📧 Email Performance",
+                            ['ED%', 'EO%', 'EC%', 'EF%'],
+                            [p_ed, p_eo, p_ec, p_ef],
+                            [c_ed, c_eo, c_ec, c_ef],
+                            max_range=100
+                        )
+                        st.plotly_chart(fig_email, use_container_width=True)
+                    with rc4:
+                        fig_sms = _make_radar(
+                            "📱 SMS Performance",
+                            ['SD%', 'SP%', 'SF%'],
+                            [p_sd, safe_pct(p['sp'], p['ss']), p_sf],
+                            [c_sd, safe_pct(c['sp'], c['ss']), c_sf],
+                            max_range=100
+                        )
+                        st.plotly_chart(fig_sms, use_container_width=True)
             
             # Load benchmark data directly from snapshots (full history, sidebar-filtered)
             try:
