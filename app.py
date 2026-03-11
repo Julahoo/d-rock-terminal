@@ -1387,7 +1387,7 @@ if view_mode == "📊 Dashboard":
                 c_sf = safe_pct(c['sf'], c['ss']); p_sf = safe_pct(p['sf'], p['ss'])
                 
                 # ── LAYER 1: KPI SUMMARY CARDS ──
-                kc1, kc2, kc3 = st.columns(3)
+                kc1, kc2, kc3, kc4 = st.columns(4)
                 with kc1:
                     st.markdown("##### 📞 Volume")
                     st.metric("Records", fmt_num(c['records']), calc_delta(c['records'], p['records']))
@@ -1399,10 +1399,14 @@ if view_mode == "📊 Dashboard":
                     st.caption(f"NA%: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
                     st.caption(f"I%: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
                 with kc3:
-                    st.markdown("##### 📧📱 Channel Health")
-                    st.metric("Email ED %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
+                    st.markdown("##### 📧 Email Health")
+                    st.metric("ED %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
                     st.caption(f"EO%: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
-                    st.metric("SMS SD %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
+                    st.caption(f"EC%: {fmt_pct(c_ec)} ({calc_delta(c_ec, p_ec, True)})")
+                with kc4:
+                    st.markdown("##### 📱 SMS Health")
+                    st.metric("SD %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
+                    st.caption(f"SF%: {fmt_pct(c_sf)} ({calc_delta(c_sf, p_sf, True)})")
                 
                 st.markdown("---")
                 
