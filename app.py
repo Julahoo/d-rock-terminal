@@ -1401,7 +1401,9 @@ if view_mode == "📊 Dashboard":
                 bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
                 st.dataframe(bench_df, hide_index=True, use_container_width=True)
             
-            _render_h1_benchmark(_pulse_ops)
+            _raw_ops = st.session_state["ops_df"].copy()
+            _raw_ops['ops_date'] = pd.to_datetime(_raw_ops['ops_date'], errors='coerce')
+            _render_h1_benchmark(_raw_ops)
             
         else:
             st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")
