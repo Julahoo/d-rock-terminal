@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Feature - H1-over-H1 Benchmark Table] - 2026-03-11 - COMPLETED
+- Updated `SPEC.md` with §4.4.2 to document the new Half-Year Benchmark Table.
+- Engineered `_render_h1_benchmark()` in `app.py` to auto-detect the current half-year and compare it against the prior year's equivalent period.
+- Grouped metrics into Volume, Dispositions (D%/NA%/I% of Records), Email (ED%/EO%/EC%/EF% of `es`), and SMS (SD%/SF%/SP% of `sa`).
+
 ### [Refactor - Metric Order Standardization] - 2026-03-11 - COMPLETED
 - Standardized metric display order to **Volume → Login % → Conv %** across both Dashboard Pulse and Operations Efficiency Trends.
 - Updated `SPEC.md` §4.7: charts now render as Raw KPI Volume (1/3), Login % Trend (2/3), Conversion % Trend (3/3).

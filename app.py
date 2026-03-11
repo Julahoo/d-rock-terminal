@@ -1292,6 +1292,117 @@ if view_mode == "📊 Dashboard":
                 _render_pulse_matrix(_pulse_ops, "LI OPERATIONS PULSE", "LI")
             with col_nli:
                 _render_pulse_matrix(_pulse_ops, "NLI OPERATIONS PULSE", "NLI")
+            
+            # ── HALF-YEAR BENCHMARK TABLE ──
+            st.markdown("---")
+            st.markdown("#### > 📊 HALF-YEAR BENCHMARK_")
+            st.markdown("*Current half vs same half last year.*")
+            
+            def _render_h1_benchmark(df):
+                """Render H1-over-H1 (or H2-over-H2) benchmark comparison table."""
+                from datetime import datetime
+                
+                if df.empty or 'ops_date' not in df.columns:
+                    st.caption("No data available for benchmark.")
+                    return
+                
+                df['ops_date'] = pd.to_datetime(df['ops_date'], errors='coerce')
+                
+                now = datetime.now()
+                current_year = now.year
+                current_month = now.month
+                
+                if current_month <= 6:
+                    half_label = "H1"
+                    curr_start, curr_end = f"{current_year}-01-01", f"{current_year}-06-30"
+                    prior_start, prior_end = f"{current_year - 1}-01-01", f"{current_year - 1}-06-30"
+                else:
+                    half_label = "H2"
+                    curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
+                    prior_start, prior_end = f"{current_year - 1}-07-01", f"{current_year - 1}-12-31"
+                
+                curr_label = f"{half_label} {current_year}"
+                prior_label = f"{half_label} {current_year - 1}"
+                
+                curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
+                prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
+                
+                if curr_df.empty and prior_df.empty:
+                    st.caption("No data available for either half-year period.")
+                    return
+                
+                def safe_sum(frame, col):
+                    return frame[col].sum() if col in frame.columns else 0
+                
+                def safe_pct(num, denom):
+                    return (num / denom * 100) if denom > 0 else 0
+                
+                def fmt_num(val):
+                    if val >= 1_000_000:
+                        return f"{val/1_000_000:.2f}M"
+                    elif val >= 1_000:
+                        return f"{val/1_000:.1f}K"
+                    return f"{val:,.0f}"
+                
+                def fmt_pct(val):
+                    return f"{val:.1f}%"
+                
+                def calc_delta(curr_val, prior_val, is_pct=False):
+                    if is_pct:
+                        diff = curr_val - prior_val
+                        return f"{diff:+.1f}pp"
+                    else:
+                        if prior_val == 0:
+                            return "N/A"
+                        change = ((curr_val - prior_val) / prior_val) * 100
+                        return f"{change:+.1f}%"
+                
+                # Aggregate sums
+                c = {col: safe_sum(curr_df, col) for col in ['records', 'kpi2_logins', 'conversions',
+                     'd_plus', 'd_minus', 'd_neutral', 'na', 't', 'dnc', 'dx', 'wn', 'am',
+                     'es', 'ed', 'eo', 'ec', 'ef', 'sa', 'sd', 'sf', 'sp']}
+                p = {col: safe_sum(prior_df, col) for col in c.keys()}
+                
+                rows = []
+                # Volume
+                rows.append(("📞 **Volume**", "", "", ""))
+                rows.append(("Records", fmt_num(p['records']), fmt_num(c['records']), calc_delta(c['records'], p['records'])))
+                rows.append(("Logins", fmt_num(p['kpi2_logins']), fmt_num(c['kpi2_logins']), calc_delta(c['kpi2_logins'], p['kpi2_logins'])))
+                rows.append(("Conversions", fmt_num(p['conversions']), fmt_num(c['conversions']), calc_delta(c['conversions'], p['conversions'])))
+                
+                # Dispositions
+                rows.append(("☎️ **Dispositions**", "", "", ""))
+                c_d = safe_pct(c['d_plus'] + c['d_minus'] + c['d_neutral'], c['records'])
+                p_d = safe_pct(p['d_plus'] + p['d_minus'] + p['d_neutral'], p['records'])
+                rows.append(("D %", fmt_pct(p_d), fmt_pct(c_d), calc_delta(c_d, p_d, True)))
+                
+                c_na = safe_pct(c['na'], c['records'])
+                p_na = safe_pct(p['na'], p['records'])
+                rows.append(("NA %", fmt_pct(p_na), fmt_pct(c_na), calc_delta(c_na, p_na, True)))
+                
+                c_i = safe_pct(c['t'] + c['dnc'] + c['dx'] + c['wn'] + c['am'], c['records'])
+                p_i = safe_pct(p['t'] + p['dnc'] + p['dx'] + p['wn'] + p['am'], p['records'])
+                rows.append(("I %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
+                
+                # Email
+                rows.append(("📧 **Email**", "", "", ""))
+                for label, col in [("ED %", "ed"), ("EO %", "eo"), ("EC %", "ec"), ("EF %", "ef")]:
+                    c_val = safe_pct(c[col], c['es'])
+                    p_val = safe_pct(p[col], p['es'])
+                    rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
+                
+                # SMS
+                rows.append(("📱 **SMS**", "", "", ""))
+                for label, col in [("SD %", "sd"), ("SF %", "sf"), ("SP %", "sp")]:
+                    c_val = safe_pct(c[col], c['sa'])
+                    p_val = safe_pct(p[col], p['sa'])
+                    rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
+                
+                bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
+                st.dataframe(bench_df, hide_index=True, use_container_width=True)
+            
+            _render_h1_benchmark(_pulse_ops)
+            
         else:
             st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")
     

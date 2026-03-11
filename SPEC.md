@@ -134,6 +134,19 @@ Evaluated row-by-row in this strict priority order:
   - Delta = current window avg - prior equivalent period avg (e.g., last 7d vs 7d before that).
   - Color: Green ↑ improving, Red ↓ declining, Grey — flat (< 1% change).
 
+### 4.4.2 📊 Half-Year Benchmark Table
+- **Location:** `📊 Dashboard` tab, below the Operations Pulse Matrices.
+- **Auto-detection:** Determines current half (H1=Jan-Jun, H2=Jul-Dec) from `datetime.now()`. Compares current half vs same half of previous year.
+- **Columns:** Metric | Prior Half (e.g., H1 2025) | Current Half (e.g., H1 2026 YTD) | Δ (% change).
+- **Metric Group 1 — Volume (raw totals):** Records, Logins, Conversions.
+- **Metric Group 2 — Call Dispositions (% of Records):**
+  - D% = `(d_plus + d_minus + d_neutral) / records`, NA% = `na / records`, I% = `(t + dnc + dx + wn + am) / records`.
+- **Metric Group 3 — Email Channel (% of `es`):**
+  - ED% = `ed / es`, EO% = `eo / es`, EC% = `ec / es`, EF% = `ef / es`.
+- **Metric Group 4 — SMS Channel (% of `sa`):**
+  - SD% = `sd / sa`, SF% = `sf / sa`, SP% = `sp / sa`.
+- **Filters:** Sidebar globals apply to all calculations.
+
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence
 - **Campaigns:** Funnel visualizations and tracking per brand.
 - **CRM Intelligence:** Global selectbox, 👑 Crown Jewels vs ⚠️ Bonus Abusers leaderboards, Churn Targeting generator. Note: Smart Campaign Profiling expands to a responsive 2-row grid to accommodate the 6 distinct active VIP heuristics.
