@@ -388,6 +388,12 @@ with st.sidebar:
     ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
     avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
     
+    # Default values — overridden inside the form if the dropdown renders
+    selected_country = "All"
+    selected_category = "All"
+    selected_lifecycle = "All"
+    selected_segment = "All"
+    selected_engagement = "All"
 
     # ── FORM: Prevents reloads until Submit is clicked ──
     # Order matches campaign naming convention: Client-Brand-Country-Product-Segment-Lifecycle-Engagement
