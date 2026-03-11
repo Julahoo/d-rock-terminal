@@ -230,12 +230,12 @@ def init_db():
             
         # Ensure full corporate names are injected directly to Railway DB
         BRAND_MAPPING = {
-            "BAH": "Reliato", "YW": "Limitless", "VJ": "Simplicity Malta Limited",
-            "PP": "PowerPlay", "RHN": "Rhino", "INSP": "Magico", "PE": "Magico",
-            "LV": "LeoVegas Group", "EX": "LeoVegas Group", "RP": "LeoVegas Group",
-            "GG": "LeoVegas Group", "BETMGM": "LeoVegas Group", "BETUK": "LeoVegas Group",
-            "MRO": "Offside Gaming", "YU": "Offside Gaming", "LTRB": "Offside Gaming",
-            "ROJA": "Offside Gaming", "CASINODAYS": "Rhino", "WG": "Reliato", "BHB": "Limitless"
+            "BAH": "Bahigo", "YW": "YouWin", "VJ": "Vera John",
+            "PP": "PowerPlay", "RHN": "Rhino", "INSP": "Interspin", "PE": "Nitro Casino",
+            "LV": "LeoVegas", "EX": "Expekt", "RP": "Royal Panda",
+            "GG": "GoGo Casino", "BETMGM": "BetMGM", "BETUK": "BetUK",
+            "MRO": "Mr Oyun", "YU": "Yuugado", "LTRB": "LaTriBet",
+            "ROJA": "RojaBet", "CASINODAYS": "Casino Days", "WG": "Wettigo", "BHB": "Bahibi"
         }
         for code, name in BRAND_MAPPING.items():
             execute_query(
