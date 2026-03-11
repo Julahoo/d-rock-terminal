@@ -1351,12 +1351,14 @@ if view_mode == "📊 Dashboard":
                 def calc_delta(curr_val, prior_val, is_pct=False):
                     if is_pct:
                         diff = curr_val - prior_val
-                        return f"{diff:+.1f}pp"
+                        arrow = "↑" if diff > 0 else "↓" if diff < 0 else "→"
+                        return f"{arrow} {abs(diff):.1f}pp"
                     else:
                         if prior_val == 0:
                             return "N/A"
                         change = ((curr_val - prior_val) / prior_val) * 100
-                        return f"{change:+.1f}%"
+                        arrow = "↑" if change > 0 else "↓" if change < 0 else "→"
+                        return f"{arrow} {abs(change):.1f}%"
                 
                 # Aggregate sums
                 agg_cols = ['records', 'kpi2_logins', 'conversions',
