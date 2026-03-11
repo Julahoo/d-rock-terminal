@@ -388,9 +388,9 @@ with st.sidebar:
     ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
     avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
     
-    avail_campaigns = sorted([str(c) for c in raw_ops['Core_Signature'].dropna().unique() if c]) if not raw_ops.empty and 'Core_Signature' in raw_ops.columns else []
 
     # ── FORM: Prevents reloads until Submit is clicked ──
+    # Order matches campaign naming convention: Client-Brand-Country-Product-Segment-Lifecycle-Engagement
     with st.sidebar.form("global_filters"):
         client_options = ["All"] + db_clients if db_clients else ["All"]
         selected_client = st.selectbox("🎯 Target Client", client_options)
@@ -404,32 +404,29 @@ with st.sidebar:
 
         if avail_countries_raw:
             display_countries = [country_map.get(c, c) for c in avail_countries_raw]
-            selected_country_display = st.selectbox("🌍 Target Country", ["All"] + display_countries)
+            selected_country_display = st.selectbox("🌍 Country", ["All"] + display_countries)
             if selected_country_display != "All":
                 inv_map = {v: k for k, v in country_map.items()}
                 selected_country = inv_map.get(selected_country_display, selected_country_display)
 
         if avail_categories:
             display_categories = [CATEGORY_MAP.get(c, c) for c in avail_categories]
-            selected_category_display = st.selectbox("📦 Target Category", ["All"] + display_categories)
+            selected_category_display = st.selectbox("📦 Product", ["All"] + display_categories)
             inv_map = {v: k for k, v in CATEGORY_MAP.items()}
             selected_category = inv_map.get(selected_category_display, selected_category_display) if selected_category_display != "All" else "All"
 
-        if avail_lifecycles:
-            selected_lifecycle = st.selectbox("🔁 Target Lifecycle", ["All"] + avail_lifecycles)
-
         if avail_segments:
-            selected_segment = st.selectbox("🎯 Target Segment", ["All"] + avail_segments)
+            selected_segment = st.selectbox("🎯 Segment", ["All"] + avail_segments)
+
+        if avail_lifecycles:
+            selected_lifecycle = st.selectbox("🔁 Lifecycle", ["All"] + avail_lifecycles)
 
         if avail_engagements:
             display_engagements = [ENGAGEMENT_MAP.get(e, e) for e in avail_engagements]
-            selected_engagement_display = st.selectbox("🔥 Target Engagement", ["All"] + display_engagements)
+            selected_engagement_display = st.selectbox("🔥 Engagement", ["All"] + display_engagements)
             if selected_engagement_display != "All":
                 inv_eng_map = {v: k for k, v in ENGAGEMENT_MAP.items()}
                 selected_engagement = inv_eng_map.get(selected_engagement_display, selected_engagement_display)
-
-        if avail_campaigns:
-            selected_campaign = st.selectbox("🏷️ Target Campaign", ["All"] + avail_campaigns)
 
         _filters_submitted = st.form_submit_button("🔍 Apply Filters", use_container_width=True, type="primary")
 
@@ -560,9 +557,6 @@ with st.sidebar:
         if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
             filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
             
-    if selected_campaign != "All":
-        if not filtered_ops.empty and 'Core_Signature' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['Core_Signature'] == selected_campaign]
 
     # Apply Time Frame Filter
     if start_date_val and end_date_val:
