@@ -1223,8 +1223,8 @@ if view_mode == "📊 Dashboard":
                     return
                 
                 # Calculate daily rates
-                daily['Conv%'] = (daily['KPI1-Conv.'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100
-                daily['Login%'] = (daily['KPI2-Login'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI2-Login' in daily.columns else 0
+                daily['Conv%'] = ((daily['KPI1-Conv.'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100)
+                daily['Login%'] = ((daily['KPI2-Login'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI2-Login' in daily.columns else 0
                 
                 st.markdown(f"**> {title}_**")
                 
@@ -3144,8 +3144,8 @@ if "📞 Operations Command" in tab_map:
                         st.plotly_chart(fig_trend_vol, use_container_width=True)
                         
                         # ---- Calculate efficiency percentages ----
-                        df_filtered['Conv%'] = (df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI1-Conv.' in df_filtered.columns else 0
-                        df_filtered['Logins%'] = (df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100 if 'KPI2-Login' in df_filtered.columns else 0
+                        df_filtered['Conv%'] = ((df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI1-Conv.' in df_filtered.columns else 0
+                        df_filtered['Logins%'] = ((df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI2-Login' in df_filtered.columns else 0
                         
                         # ---- 3-COLUMN ROW: Conv%, LI%, Raw Volume ----
                         tc1, tc2, tc3 = st.columns(3)
@@ -3163,7 +3163,8 @@ if "📞 Operations Command" in tab_map:
                                 yaxis_title="Conv %", xaxis_title="",
                                 margin=dict(t=40, b=60, l=40, r=20),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
-                                showlegend=True
+                                showlegend=True,
+                                hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
                             fig_conv.update_yaxes(showgrid=False)
                             st.plotly_chart(fig_conv, use_container_width=True)
@@ -3181,7 +3182,8 @@ if "📞 Operations Command" in tab_map:
                                 yaxis_title="Login %", xaxis_title="",
                                 margin=dict(t=40, b=60, l=40, r=20),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
-                                showlegend=True
+                                showlegend=True,
+                                hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
                             fig_li.update_yaxes(showgrid=False)
                             st.plotly_chart(fig_li, use_container_width=True)
@@ -3200,7 +3202,8 @@ if "📞 Operations Command" in tab_map:
                                 yaxis_title="Count", xaxis_title="",
                                 margin=dict(t=40, b=60, l=40, r=20),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
-                                showlegend=True
+                                showlegend=True,
+                                hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
                             fig_raw.update_yaxes(showgrid=False)
                             st.plotly_chart(fig_raw, use_container_width=True)

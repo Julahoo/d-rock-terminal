@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Bugfix - Data Anomalies & Chart Guards] - 2026-03-10 - COMPLETED
+- SQL patched 54 snapshot + 51 data rows where `conversions > records` (root cause: NTR Finland campaigns with corrupted source CSVs).
+- Added `.clip(upper=100)` guards to Conv% and Login% calculations in both `display_trend_charts` and `_render_pulse_matrix`.
+- Added dark `hoverlabel` backgrounds to all 3 trend charts (Conv%, Login%, Raw KPI Volume) for readable tooltips on light-colored traces.
+
 ### [Feature - Sparkline Performance Matrix] - 2026-03-10 - COMPLETED
 - Updated `SPEC.md` with §4.4.1 to document the new Operations Pulse UI.
 - Engineered `_render_pulse_matrix()` in `app.py` to calculate rolling 7/14/30/90-day KPI windows and prior-period deltas.
