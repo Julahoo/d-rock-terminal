@@ -1317,7 +1317,7 @@ if view_mode == "📊 Dashboard":
                                     xaxis=dict(visible=False),
                                     yaxis=dict(visible=False)
                                 )
-                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False}, key=f'spark_{matrix_title}_{metric_label}_{wlabel}')
+                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False}, key=f'spark_{title}_{metric_label}_{wlabel}')
             
             # Render side-by-side LI / NLI matrices
             col_li, col_nli = st.columns(2)
