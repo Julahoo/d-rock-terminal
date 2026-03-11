@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Refactor - H2 2025 Baseline Benchmark] - 2026-03-11 - COMPLETED
+- Updated `SPEC.md` §4.4.2 to reflect the new static benchmark strategy requested by stakeholders.
+- Refactored `app.py` benchmark builder: renamed `_render_h1_benchmark` → `_render_fixed_benchmark`, permanently locked the prior comparison period to H2 2025 (July - Dec 2025).
+- Updated UI headers and dataframe columns to clearly denote "H2 2025 Baseline" vs "Current YTD".
+
 ### [Feature - 3-Layer Benchmark Visuals] - 2026-03-11 - COMPLETED
 - Engineered the complete 3-layer visual architecture for the H1-over-H1 Benchmark in `app.py`.
 - Layer 1: Added 3 top-level KPI summary cards (Volume, Call Efficiency, Channel Health) using `st.metric`.

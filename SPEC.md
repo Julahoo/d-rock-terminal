@@ -134,10 +134,10 @@ Evaluated row-by-row in this strict priority order:
   - Delta = current window avg - prior equivalent period avg (e.g., last 7d vs 7d before that).
   - Color: Green ↑ improving, Red ↓ declining, Grey — flat (< 1% change).
 
-### 4.4.2 📊 Half-Year Benchmark Section
+### 4.4.2 📊 Fixed Baseline Benchmark (H2 2025)
 - **Location:** `📊 Dashboard` tab, below the Operations Pulse Matrices.
-- **Data Source:** `ops_telemarketing_snapshots` queried directly from DB. Sidebar filters (client, brand, engagement, lifecycle, segment, country) apply; date range filter is ignored — the function handles H1/H2 slicing internally.
-- **Auto-detection:** Determines current half (H1=Jan-Jun, H2=Jul-Dec) from `datetime.now()`. Compares current half (YTD) vs same half of previous year.
+- **Data Source:** `ops_telemarketing_snapshots` queried directly from DB. Sidebar filters (client, brand, engagement, lifecycle, segment, country) apply; date range filter is ignored.
+- **Baseline Logic:** The prior period is permanently hardcoded to **H2 2025** (2025-07-01 to 2025-12-31). Operational structures changed during that summer, making it the fixed reference. The current period is auto-detected from `datetime.now()` (H1=Jan-Jun, H2=Jul-Dec of current year).
 - **Metric Groups:**
   - **Volume (raw totals):** Records, Logins, Conversions.
   - **Call Dispositions (% of Records):** D% = `(d_plus + d_minus + d_neutral) / records`, NA% = `na / records`, I% = `(t + dnc + dx + wn + am) / records`.
@@ -146,19 +146,18 @@ Evaluated row-by-row in this strict priority order:
 
 #### Layer 1 — KPI Summary Cards (always visible)
 - Layout: `st.columns(3)`, rendered above the benchmark table.
-- **Card 1 — 📞 Volume:** Two horizontal Plotly mini-bars (H1 prior vs H1 current for Records). Big delta arrow (↑/↓) + % change. Sub-text: Logins and Conversions deltas.
-- **Card 2 — ☎️ Call Efficiency:** Headline D% with prior → current values and delta arrow. Sub-text: NA% and I% deltas.
-- **Card 3 — 📧📱 Channel Health:** Two rows — Email (ED% headline + delta) and SMS (SD% headline + delta).
-- Each card uses `st.container()` with dark border matching dashboard theme.
+- **Card 1 — 📞 Volume:** Records headline with `st.metric` + delta. Sub-text: Logins and Conversions deltas.
+- **Card 2 — ☎️ Call Efficiency:** Headline D% with delta. Sub-text: NA% and I% deltas.
+- **Card 3 — 📧📱 Channel Health:** Email ED% + SMS SD% headlines with deltas.
 
 #### Layer 2 — Benchmark Table (always visible)
-- Full comparison table with columns: Metric | Prior Half | Current Half | Δ (arrow + value).
-- Already implemented. Height auto-expands to show all rows.
+- Columns: Metric | H2 2025 Baseline | Current YTD | Δ (arrow + value).
+- Height auto-expands to show all rows.
 
 #### Layer 3 — Detailed Charts (expandable)
-- Wrapped in `st.expander("📊 Detailed Benchmark Charts")`.
-- **Left (col 1/2):** Grouped bar chart (Plotly) — 3 metric clusters (Records, Logins, Conversions), each with two bars (prior half = muted teal, current half = cyan). Dark theme, matching existing chart styling.
-- **Right (col 2/2):** Radar/spider chart (Plotly `Scatterpolar`) — axes: D%, NA%, I%, ED%, EO%, EC%, SD%, SF%. Two overlapping semi-transparent polygons (prior half = teal, current half = cyan). Shows overall performance shape shift.
+- Wrapped in `st.expander("📊 H2 2025 Baseline vs Current Charts")`.
+- **Left:** Grouped bar chart (Plotly) — Volume metrics, H2 2025 (muted teal) vs Current (cyan).
+- **Right:** Radar chart (Plotly `Scatterpolar`) — all % rates, two overlapping polygons.
 - **Filters:** Sidebar globals apply to all calculations.
 
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence

@@ -1293,13 +1293,13 @@ if view_mode == "📊 Dashboard":
             with col_nli:
                 _render_pulse_matrix(_pulse_ops, "NLI OPERATIONS PULSE", "NLI")
             
-            # ── HALF-YEAR BENCHMARK TABLE ──
+            # ── H2 2025 OPERATIONAL BASELINE ──
             st.markdown("---")
-            st.markdown("#### > 📊 HALF-YEAR BENCHMARK_")
-            st.markdown("*Current half vs same half last year.*")
+            st.markdown("#### > 📊 H2 2025 OPERATIONAL BASELINE_")
+            st.markdown("*Fixed baseline: H2 2025 vs current half-year YTD.*")
             
-            def _render_h1_benchmark(df):
-                """Render completed half-year benchmark comparison table."""
+            def _render_fixed_benchmark(df):
+                """Render fixed H2 2025 baseline vs current half-year benchmark."""
                 from datetime import datetime
                 
                 if df.empty or 'ops_date' not in df.columns:
@@ -1312,18 +1312,19 @@ if view_mode == "📊 Dashboard":
                 current_year = now.year
                 current_month = now.month
                 
-                # Show current half-year vs same half of prior year
+                # Current half-year (auto-detected)
                 if current_month <= 6:
                     half_label = "H1"
                     curr_start, curr_end = f"{current_year}-01-01", f"{current_year}-06-30"
-                    prior_start, prior_end = f"{current_year - 1}-01-01", f"{current_year - 1}-06-30"
                 else:
                     half_label = "H2"
                     curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
-                    prior_start, prior_end = f"{current_year - 1}-07-01", f"{current_year - 1}-12-31"
+                
+                # Fixed baseline: H2 2025 (hardcoded)
+                prior_start, prior_end = "2025-07-01", "2025-12-31"
                 
                 curr_label = f"{half_label} {current_year}"
-                prior_label = f"{half_label} {current_year - 1}"
+                prior_label = "H2 2025 Baseline"
                 
                 curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
                 prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
@@ -1435,7 +1436,7 @@ if view_mode == "📊 Dashboard":
                 # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
                 import plotly.graph_objects as go
                 
-                with st.expander("📊 Detailed Benchmark Charts"):
+                with st.expander("📊 H2 2025 Baseline vs Current Charts"):
                     col_bar, col_radar = st.columns(2)
                     
                     # Grouped Bar Chart — Volume
@@ -1521,7 +1522,7 @@ if view_mode == "📊 Dashboard":
                         _bench_df = _bench_df[_bench_df['extracted_segment'] == selected_segment]
                     if selected_country != "All" and 'country' in _bench_df.columns:
                         _bench_df = _bench_df[_bench_df['country'].str.upper() == selected_country]
-                    _render_h1_benchmark(_bench_df)
+                    _render_fixed_benchmark(_bench_df)
                 else:
                     st.caption("No snapshot data available.")
             except Exception as e:
