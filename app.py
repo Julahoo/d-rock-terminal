@@ -1401,9 +1401,29 @@ if view_mode == "📊 Dashboard":
                 bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
                 st.dataframe(bench_df, hide_index=True, use_container_width=True)
             
-            _raw_ops = st.session_state["ops_df"].copy()
-            _raw_ops['ops_date'] = pd.to_datetime(_raw_ops['ops_date'], errors='coerce')
-            _render_h1_benchmark(_raw_ops)
+            # Load benchmark data directly from snapshots (full history, sidebar-filtered)
+            try:
+                from src.database import engine as _bench_engine
+                _bench_df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _bench_engine)
+                if not _bench_df.empty:
+                    # Apply sidebar filters (same as global filter logic, minus date range)
+                    if selected_client != "All" and 'ops_client' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['ops_client'] == selected_client]
+                    if selected_brand != "All" and 'ops_brand' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['ops_brand'] == selected_brand]
+                    if selected_engagement != "All" and 'extracted_engagement' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['extracted_engagement'] == selected_engagement]
+                    if selected_lifecycle != "All" and 'extracted_lifecycle' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['extracted_lifecycle'] == selected_lifecycle]
+                    if selected_segment != "All" and 'extracted_segment' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['extracted_segment'] == selected_segment]
+                    if selected_country != "All" and 'country' in _bench_df.columns:
+                        _bench_df = _bench_df[_bench_df['country'].str.upper() == selected_country]
+                    _render_h1_benchmark(_bench_df)
+                else:
+                    st.caption("No snapshot data available.")
+            except Exception as e:
+                st.caption(f"Could not load benchmark data: {e}")
             
         else:
             st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")
