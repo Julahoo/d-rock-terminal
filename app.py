@@ -1440,34 +1440,58 @@ if view_mode == "📊 Dashboard":
                 # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
                 import plotly.graph_objects as go
                 
-                def _make_radar(title, labels, prior_vals, curr_vals, max_range=None):
-                    """Build a Scatterpolar radar figure with two traces."""
+                def _make_dumbbell(title, labels, prior_vals, curr_vals, fmt_fn=fmt_pct, is_pct=True):
+                    """Build a horizontal dumbbell chart comparing baseline vs current."""
                     fig = go.Figure()
-                    fig.add_trace(go.Scatterpolar(
-                        r=prior_vals + [prior_vals[0]], theta=labels + [labels[0]],
-                        fill='toself', name=prior_label,
-                        fillcolor='rgba(100, 160, 180, 0.2)',
-                        line=dict(color='rgba(100, 160, 180, 0.8)', width=2)
-                    ))
-                    fig.add_trace(go.Scatterpolar(
-                        r=curr_vals + [curr_vals[0]], theta=labels + [labels[0]],
-                        fill='toself', name=curr_label,
-                        fillcolor='rgba(0, 200, 220, 0.2)',
-                        line=dict(color='rgba(0, 200, 220, 0.8)', width=2)
-                    ))
-                    radial_cfg = dict(visible=True)
-                    if max_range is not None:
-                        radial_cfg['range'] = [0, max_range]
+                    n = len(labels)
+                    
+                    for i, (lbl, pv, cv) in enumerate(zip(labels, prior_vals, curr_vals)):
+                        color = 'rgba(0, 200, 100, 0.7)' if (cv >= pv if lbl not in ['NA%', 'I%', 'EF%', 'SF%', 'SP%'] else cv <= pv) else 'rgba(255, 80, 80, 0.7)'
+                        # Connector line
+                        fig.add_trace(go.Scatter(
+                            x=[pv, cv], y=[lbl, lbl], mode='lines',
+                            line=dict(color=color, width=3),
+                            showlegend=False, hoverinfo='skip'
+                        ))
+                        # Baseline dot (teal)
+                        fig.add_trace(go.Scatter(
+                            x=[pv], y=[lbl], mode='markers+text',
+                            marker=dict(color='rgba(100, 160, 180, 0.9)', size=12, line=dict(width=1, color='white')),
+                            text=[fmt_fn(pv)], textposition='top center',
+                            name=prior_label if i == 0 else None,
+                            showlegend=(i == 0), legendgroup='baseline',
+                            hovertemplate=f'{lbl}: {fmt_fn(pv)}<extra>{prior_label}</extra>'
+                        ))
+                        # Current dot (cyan)
+                        fig.add_trace(go.Scatter(
+                            x=[cv], y=[lbl], mode='markers+text',
+                            marker=dict(color='rgba(0, 200, 220, 0.9)', size=12, line=dict(width=1, color='white')),
+                            text=[fmt_fn(cv)], textposition='bottom center',
+                            name=curr_label if i == 0 else None,
+                            showlegend=(i == 0), legendgroup='current',
+                            hovertemplate=f'{lbl}: {fmt_fn(cv)}<extra>{curr_label}</extra>'
+                        ))
+                        # Delta annotation
+                        delta_text = calc_delta(cv, pv, is_pct)
+                        max_val = max(pv, cv)
+                        fig.add_annotation(
+                            x=max_val, y=lbl,
+                            text=f"<b>{delta_text}</b>",
+                            showarrow=False, xanchor='left', xshift=15,
+                            font=dict(size=12, color=color)
+                        )
+                    
                     fig.update_layout(
                         title=title,
                         template='plotly_dark',
                         paper_bgcolor='rgba(0,0,0,0)',
                         plot_bgcolor='rgba(0,0,0,0)',
-                        height=380,
-                        margin=dict(l=40, r=40, t=50, b=30),
+                        height=55 * n + 100,
+                        margin=dict(l=10, r=80, t=45, b=25),
                         font=dict(size=11),
-                        polar=dict(bgcolor='rgba(0,0,0,0)', radialaxis=radial_cfg),
-                        legend=dict(orientation='h', y=-0.12)
+                        yaxis=dict(autorange='reversed'),
+                        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+                        legend=dict(orientation='h', y=-0.2)
                     )
                     return fig
                 
@@ -1475,43 +1499,37 @@ if view_mode == "📊 Dashboard":
                     # Row 1: Volume + Dispositions
                     rc1, rc2 = st.columns(2)
                     with rc1:
-                        fig_vol = _make_radar(
+                        st.plotly_chart(_make_dumbbell(
                             "📞 Volume",
                             ['Records', 'Logins', 'Conversions'],
                             [p['records'], p['kpi2_logins'], p['conversions']],
-                            [c['records'], c['kpi2_logins'], c['conversions']]
-                        )
-                        st.plotly_chart(fig_vol, use_container_width=True)
+                            [c['records'], c['kpi2_logins'], c['conversions']],
+                            fmt_fn=fmt_num, is_pct=False
+                        ), use_container_width=True)
                     with rc2:
-                        fig_disp = _make_radar(
+                        st.plotly_chart(_make_dumbbell(
                             "☎️ Call Dispositions",
                             ['D%', 'NA%', 'I%'],
                             [p_d, p_na, p_i],
-                            [c_d, c_na, c_i],
-                            max_range=100
-                        )
-                        st.plotly_chart(fig_disp, use_container_width=True)
+                            [c_d, c_na, c_i]
+                        ), use_container_width=True)
                     
                     # Row 2: Email + SMS
                     rc3, rc4 = st.columns(2)
                     with rc3:
-                        fig_email = _make_radar(
+                        st.plotly_chart(_make_dumbbell(
                             "📧 Email Performance",
                             ['ED%', 'EO%', 'EC%', 'EF%'],
                             [p_ed, p_eo, p_ec, p_ef],
-                            [c_ed, c_eo, c_ec, c_ef],
-                            max_range=100
-                        )
-                        st.plotly_chart(fig_email, use_container_width=True)
+                            [c_ed, c_eo, c_ec, c_ef]
+                        ), use_container_width=True)
                     with rc4:
-                        fig_sms = _make_radar(
+                        st.plotly_chart(_make_dumbbell(
                             "📱 SMS Performance",
                             ['SD%', 'SP%', 'SF%'],
                             [p_sd, safe_pct(p['sp'], p['ss']), p_sf],
-                            [c_sd, safe_pct(c['sp'], c['ss']), c_sf],
-                            max_range=100
-                        )
-                        st.plotly_chart(fig_sms, use_container_width=True)
+                            [c_sd, safe_pct(c['sp'], c['ss']), c_sf]
+                        ), use_container_width=True)
             
             # Load benchmark data directly from snapshots (full history, sidebar-filtered)
             try:
