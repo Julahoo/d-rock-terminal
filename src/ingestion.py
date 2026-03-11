@@ -861,14 +861,16 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             client = mapped_info.get('client', "UNKNOWN")
             brand_name = mapped_info.get('brand', tag)
 
-            # Extract Benchmarking Data
+            # Extract Benchmarking Data — Campaign Naming Convention Components
             extracted_lifecycle = next((t for t in tokens if t in ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER']), "UNKNOWN")
             extracted_segment = next((t for t in tokens if t in ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4']), "UNKNOWN")
             extracted_engagement = next((t for t in tokens if t in ['NLI', 'LI']), "UNKNOWN")
+            extracted_product = next((t for t in tokens if t in ['SPO', 'CAS', 'LIVE', 'ALL']), "UNKNOWN")
+            extracted_sublifecycle = next((t for t in tokens if t in ['J1', 'J2', 'J3', 'BULK']), "UNKNOWN")
             
             # Extract Country
             # Look for a 2 or 3 letter alphabetical code not in the blocklist
-            blocklist = ['SPO', 'CAS', 'LIVE', 'ALL', 'DAY', 'A', 'B', 'J1', 'J2', 'J3', 'NLI', 'LI', 'NEW'] + \
+            blocklist = ['SPO', 'CAS', 'LIVE', 'ALL', 'DAY', 'A', 'B', 'J1', 'J2', 'J3', 'NLI', 'LI', 'NEW', 'BULK'] + \
                         ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER'] + \
                         ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4'] + \
                         [tag.upper()]
@@ -878,6 +880,16 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
                 if t not in blocklist and t.isalpha() and 2 <= len(t) <= 3:
                     country = t
                     break
+            
+            # Smart Language Defaults from Country
+            _LANG_DEFAULTS = {
+                'TR': 'TR', 'ES': 'ES', 'CL': 'ES', 'EC': 'ES', 'MX': 'ES',
+                'AR': 'ES', 'CO': 'ES', 'PE': 'ES', 'BR': 'PT', 'GB': 'EN',
+                'UK': 'EN', 'IE': 'EN', 'CA': 'EN', 'NZ': 'EN', 'JP': 'JA',
+                'DE': 'DE', 'AT': 'DE', 'CH': 'DE', 'SE': 'SV', 'NO': 'NO',
+                'DK': 'DA', 'FI': 'FI', 'IT': 'IT', 'FR': 'FR', 'ONT': 'EN'
+            }
+            extracted_language = _LANG_DEFAULTS.get(country, "UNKNOWN")
             
             calls = int(row["Calls"])
             convs = int(row["KPI1-Conv."])
@@ -932,6 +944,9 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
                 "extracted_engagement": extracted_engagement,
                 "extracted_lifecycle": extracted_lifecycle,
                 "extracted_segment": extracted_segment,
+                "extracted_product": extracted_product,
+                "extracted_language": extracted_language,
+                "extracted_sublifecycle": extracted_sublifecycle,
                 "country": country
             })
             

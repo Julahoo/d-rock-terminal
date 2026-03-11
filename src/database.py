@@ -145,7 +145,9 @@ def init_db():
             "optouts_all INT DEFAULT 0", "optout_call INT DEFAULT 0",
             "optout_sms INT DEFAULT 0", "optout_email INT DEFAULT 0",
             "extracted_engagement VARCHAR(50)", "extracted_lifecycle VARCHAR(50)", 
-            "extracted_segment VARCHAR(50)", "country VARCHAR(50)"
+            "extracted_segment VARCHAR(50)", "country VARCHAR(50)",
+            "extracted_product VARCHAR(50)", "extracted_language VARCHAR(50)",
+            "extracted_sublifecycle VARCHAR(50)"
         ]
         # We need to make sure the snapshots table exists before we try to ALTER it
         conn.execute(text("CREATE TABLE IF NOT EXISTS ops_telemarketing_snapshots (id SERIAL PRIMARY KEY)"))

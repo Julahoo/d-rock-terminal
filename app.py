@@ -368,42 +368,37 @@ with st.sidebar:
     if not raw_ops.empty and 'country' in raw_ops.columns:
         avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
     
-    CATEGORY_MAP = {'SPO': 'Sportsbook', 'CAS': 'Casino', 'LIVE': 'Live'}
-    avail_categories = []
-    if not raw_ops.empty:
-        def parse_category(x):
-            if pd.isna(x): return None
-            import re
-            tokens = re.split(r'[-_ ]+', str(x).upper())
-            for t in tokens:
-                if t in CATEGORY_MAP: return t
-            return None
-        if '__extracted_category' not in raw_ops.columns and 'campaign_name' in raw_ops.columns:
-            raw_ops['__extracted_category'] = raw_ops['campaign_name'].apply(parse_category)
-        avail_categories = sorted([str(c) for c in raw_ops['__extracted_category'].dropna().unique() if c])
+    PRODUCT_MAP = {'SPO': 'Sportsbook', 'CAS': 'Casino', 'LIVE': 'Live', 'ALL': 'All Products'}
+    avail_products = sorted([str(c) for c in raw_ops['extracted_product'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_product' in raw_ops.columns else []
     
+    avail_languages = sorted([str(c) for c in raw_ops['extracted_language'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_language' in raw_ops.columns else []
+
     avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
     avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
     
+    avail_sublifecycles = sorted([str(c) for c in raw_ops['extracted_sublifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_sublifecycle' in raw_ops.columns else []
+
     ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
     avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
     
     # Default values — overridden inside the form if the dropdown renders
     selected_country = "All"
+    selected_language = "All"
     selected_category = "All"
     selected_lifecycle = "All"
     selected_segment = "All"
+    selected_sublifecycle = "All"
     selected_engagement = "All"
 
     # ── FORM: Prevents reloads until Submit is clicked ──
-    # Order matches campaign naming convention: Client-Brand-Country-Product-Segment-Lifecycle-Engagement
+    # Order matches campaign naming convention: Client-Brand-Country-Language-Product-Segment-Lifecycle-Sublifecycle-Engagement
     with st.sidebar.form("global_filters"):
         client_options = ["All"] + db_clients if db_clients else ["All"]
-        selected_client = st.selectbox("🎯 Target Client", client_options)
+        selected_client = st.selectbox("🎯 Client", client_options)
 
         brand_options = ["All"] + sorted_brands if sorted_brands else ["All"]
         selected_brand = st.selectbox(
-            "🏷️ Target Brand", 
+            "🏷️ Brand", 
             brand_options, 
             format_func=lambda x: f"{x} — {b_map[x]}" if x != "All" and x in b_map else x
         )
@@ -415,17 +410,23 @@ with st.sidebar:
                 inv_map = {v: k for k, v in country_map.items()}
                 selected_country = inv_map.get(selected_country_display, selected_country_display)
 
-        if avail_categories:
-            display_categories = [CATEGORY_MAP.get(c, c) for c in avail_categories]
-            selected_category_display = st.selectbox("📦 Product", ["All"] + display_categories)
-            inv_map = {v: k for k, v in CATEGORY_MAP.items()}
-            selected_category = inv_map.get(selected_category_display, selected_category_display) if selected_category_display != "All" else "All"
+        if avail_languages:
+            selected_language = st.selectbox("🗣️ Language", ["All"] + avail_languages)
+
+        if avail_products:
+            display_products = [PRODUCT_MAP.get(c, c) for c in avail_products]
+            selected_product_display = st.selectbox("📦 Product", ["All"] + display_products)
+            inv_map = {v: k for k, v in PRODUCT_MAP.items()}
+            selected_category = inv_map.get(selected_product_display, selected_product_display) if selected_product_display != "All" else "All"
 
         if avail_segments:
             selected_segment = st.selectbox("🎯 Segment", ["All"] + avail_segments)
 
         if avail_lifecycles:
             selected_lifecycle = st.selectbox("🔁 Lifecycle", ["All"] + avail_lifecycles)
+
+        if avail_sublifecycles:
+            selected_sublifecycle = st.selectbox("📋 Sublifecycle", ["All"] + avail_sublifecycles)
 
         if avail_engagements:
             display_engagements = [ENGAGEMENT_MAP.get(e, e) for e in avail_engagements]
@@ -542,14 +543,18 @@ with st.sidebar:
             filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
             
     if selected_category != "All":
-        if not filtered_ops.empty and '__extracted_category' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['__extracted_category'] == selected_category]
-        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_category)]
+        if not filtered_ops.empty and 'extracted_product' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_product'] == selected_category]
+        if not filtered_ops_snapshots.empty and 'extracted_product' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['extracted_product'] == selected_category]
             
     if selected_country != "All":
         if not filtered_ops.empty and 'country' in filtered_ops.columns:
             filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
+    
+    if selected_language != "All":
+        if not filtered_ops.empty and 'extracted_language' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_language'] == selected_language]
             
     if selected_lifecycle != "All":
         if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
@@ -558,6 +563,10 @@ with st.sidebar:
     if selected_segment != "All":
         if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
             filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
+
+    if selected_sublifecycle != "All":
+        if not filtered_ops.empty and 'extracted_sublifecycle' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_sublifecycle'] == selected_sublifecycle]
             
     if selected_engagement != "All":
         if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
