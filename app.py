@@ -1399,7 +1399,7 @@ if view_mode == "📊 Dashboard":
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
                 bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
-                st.dataframe(bench_df, hide_index=True, use_container_width=True)
+                st.dataframe(bench_df, hide_index=True, use_container_width=True, height=(len(rows) + 1) * 35 + 3)
             
             # Load benchmark data directly from snapshots (full history, sidebar-filtered)
             try:
