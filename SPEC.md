@@ -153,6 +153,8 @@ Evaluated row-by-row in this strict priority order:
 - **Chart 4 — Raw KPI Volume (Column 3/3):**
   - Grouped bar chart: Green bars for `#KPI1-Conv.`, Yellow bars for `#KPI2-Login`.
 - **Theme:** All charts use Matrix dark theme (`paper_bgcolor/plot_bgcolor = transparent`, `font_color = #00FF41`), horizontal legends at bottom.
+- **Hover Tooltips:** All charts use dark hoverlabel (`bgcolor: rgba(20,20,20,0.9)`, `font_color: #FFFFFF`) to ensure readability on light-colored traces.
+- **Data Integrity Guards:** Conv% and Login% calculations apply `.clip(upper=100)` to cap impossible values. Source data rows where `conversions > records` are zeroed at ingestion/patch level.
 
 ### 4.6 Report Generation Engine
 - **Financial Report:** Exported from the Financial Deep-Dive tab.
