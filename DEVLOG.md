@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Refactor - Metric Order Standardization] - 2026-03-11 - COMPLETED
+- Standardized metric display order to **Volume → Login % → Conv %** across both Dashboard Pulse and Operations Efficiency Trends.
+- Updated `SPEC.md` §4.7: charts now render as Raw KPI Volume (1/3), Login % Trend (2/3), Conversion % Trend (3/3).
+- Uncommented Volume row in Dashboard Pulse Matrix.
+
 ### [Bugfix - Data Anomalies & Chart Guards] - 2026-03-10 - COMPLETED
 - SQL patched 54 snapshot + 51 data rows where `conversions > records` (root cause: NTR Finland campaigns with corrupted source CSVs).
 - Added `.clip(upper=100)` guards to Conv% and Login% calculations in both `display_trend_charts` and `_render_pulse_matrix`.

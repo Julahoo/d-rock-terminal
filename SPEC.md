@@ -144,14 +144,14 @@ Evaluated row-by-row in this strict priority order:
   - Line chart: Daily `Records` count.
   - Dashed overlay: `SLA Minimum` (daily = monthly / 30) when a single brand is active.
   - Dashed overlay: `Average Volume` (mean of Records over the filtered range).
-- **Chart 2 — Conversion % Trend (Column 1/3):**
-  - Green line: Daily `Conv%` (`KPI1-Conv. / Records * 100`).
-  - Dashed green line: `target_conv` benchmark from `granular_benchmarks`.
+- **Chart 2 — Raw KPI Volume (Column 1/3):**
+  - Grouped bar chart: Green bars for `#KPI1-Conv.`, Yellow bars for `#KPI2-Login`.
 - **Chart 3 — Login % Trend (Column 2/3):**
   - Yellow line: Daily `Logins%` (`KPI2-Login / Records * 100`).
   - Dashed yellow line: `target_li` benchmark from `granular_benchmarks`.
-- **Chart 4 — Raw KPI Volume (Column 3/3):**
-  - Grouped bar chart: Green bars for `#KPI1-Conv.`, Yellow bars for `#KPI2-Login`.
+- **Chart 4 — Conversion % Trend (Column 3/3):**
+  - Green line: Daily `Conv%` (`KPI1-Conv. / Records * 100`).
+  - Dashed green line: `target_conv` benchmark from `granular_benchmarks`.
 - **Theme:** All charts use Matrix dark theme (`paper_bgcolor/plot_bgcolor = transparent`, `font_color = #00FF41`), horizontal legends at bottom.
 - **Hover Tooltips:** All charts use dark hoverlabel (`bgcolor: rgba(20,20,20,0.9)`, `font_color: #FFFFFF`) to ensure readability on light-colored traces.
 - **Data Integrity Guards:** Conv% and Login% calculations apply `.clip(upper=100)` to cap impossible values. Source data rows where `conversions > records` are zeroed at ingestion/patch level.

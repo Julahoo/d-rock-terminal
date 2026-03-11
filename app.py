@@ -1228,9 +1228,9 @@ if view_mode == "📊 Dashboard":
                 
                 st.markdown(f"**> {title}_**")
                 
-                # Define metrics to render (Volume hidden for now)
+                # Define metrics to render: Volume → Login % → Conv %
                 metrics = [
-                    # ("Volume", "Records", "sum", "", "#AAAAAA"),
+                    ("Volume", "Records", "sum", "", "#AAAAAA"),
                     ("Login %", "Login%", "mean", "%", "#eab308"),
                     ("Conv %", "Conv%", "mean", "%", "#22c55e"),
                 ]
@@ -3147,27 +3147,29 @@ if "📞 Operations Command" in tab_map:
                         df_filtered['Conv%'] = ((df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI1-Conv.' in df_filtered.columns else 0
                         df_filtered['Logins%'] = ((df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI2-Login' in df_filtered.columns else 0
                         
-                        # ---- 3-COLUMN ROW: Conv%, LI%, Raw Volume ----
+                        # ---- 3-COLUMN ROW: Raw Volume, LI%, Conv% ----
                         tc1, tc2, tc3 = st.columns(3)
                         
-                        # Chart 1: Conversion % Trend
+                        # Chart 1: Raw KPI Volume (Bars)
                         with tc1:
                             import plotly.graph_objects as go
-                            fig_conv = go.Figure()
-                            fig_conv.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conv %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conv: %{y:.2f}%<extra></extra>'))
-                            if target_conv is not None:
-                                fig_conv.add_hline(y=target_conv, line_dash="dash", line_color="#22c55e", opacity=0.6, annotation_text=f"Benchmark: {target_conv:.1f}%", annotation_position="top left", annotation_font_color="#22c55e")
-                            fig_conv.update_layout(
-                                title="Conversion % Trend",
+                            fig_raw = go.Figure()
+                            if 'KPI1-Conv.' in df_filtered.columns:
+                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.6)'))
+                            if 'KPI2-Login' in df_filtered.columns:
+                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.6)'))
+                            fig_raw.update_layout(
+                                title="Raw KPI Volume",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
-                                yaxis_title="Conv %", xaxis_title="",
+                                barmode='group',
+                                yaxis_title="Count", xaxis_title="",
                                 margin=dict(t=40, b=60, l=40, r=20),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
                                 showlegend=True,
                                 hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
-                            fig_conv.update_yaxes(showgrid=False)
-                            st.plotly_chart(fig_conv, use_container_width=True)
+                            fig_raw.update_yaxes(showgrid=False)
+                            st.plotly_chart(fig_raw, use_container_width=True)
                         
                         # Chart 2: Login % Trend
                         with tc2:
@@ -3188,25 +3190,23 @@ if "📞 Operations Command" in tab_map:
                             fig_li.update_yaxes(showgrid=False)
                             st.plotly_chart(fig_li, use_container_width=True)
                         
-                        # Chart 3: Raw KPI Volume (Bars)
+                        # Chart 3: Conversion % Trend
                         with tc3:
-                            fig_raw = go.Figure()
-                            if 'KPI1-Conv.' in df_filtered.columns:
-                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.6)'))
-                            if 'KPI2-Login' in df_filtered.columns:
-                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.6)'))
-                            fig_raw.update_layout(
-                                title="Raw KPI Volume",
+                            fig_conv = go.Figure()
+                            fig_conv.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conv %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conv: %{y:.2f}%<extra></extra>'))
+                            if target_conv is not None:
+                                fig_conv.add_hline(y=target_conv, line_dash="dash", line_color="#22c55e", opacity=0.6, annotation_text=f"Benchmark: {target_conv:.1f}%", annotation_position="top left", annotation_font_color="#22c55e")
+                            fig_conv.update_layout(
+                                title="Conversion % Trend",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
-                                barmode='group',
-                                yaxis_title="Count", xaxis_title="",
+                                yaxis_title="Conv %", xaxis_title="",
                                 margin=dict(t=40, b=60, l=40, r=20),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5, title_text=""),
                                 showlegend=True,
                                 hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
-                            fig_raw.update_yaxes(showgrid=False)
-                            st.plotly_chart(fig_raw, use_container_width=True)
+                            fig_conv.update_yaxes(showgrid=False)
+                            st.plotly_chart(fig_conv, use_container_width=True)
                     else:
                         st.info("Not enough data to display trend charts for the selected range.")
 
