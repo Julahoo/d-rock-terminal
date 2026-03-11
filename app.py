@@ -370,7 +370,7 @@ with st.sidebar:
         "🏷️ Target Brand", 
         brand_options, 
         index=default_brand_index,
-        format_func=lambda x: str(b_map.get(x) or x) if x != "All" else "All"
+        format_func=lambda x: f"{x} — {b_map[x]}" if x != "All" and x in b_map else x
     )
 
     # 4. Extract Category and Sidebar Dropdowns
@@ -533,63 +533,96 @@ with st.sidebar:
     start_month = start_date_val.strftime("%Y-%m")
     end_month = end_date_val.strftime("%Y-%m")
 
+    # --- SUBMIT BUTTON ---
+    st.sidebar.markdown("---")
+    _filters_submitted = st.sidebar.button("🔍 Apply Filters", use_container_width=True, type="primary")
+    
+    # On first run (no cached filters yet), auto-apply so dashboard isn't empty
+    if _filters_submitted or "filters_applied" not in st.session_state:
+        st.session_state["filters_applied"] = True
+        st.session_state["_f_client"] = selected_client
+        st.session_state["_f_brand"] = selected_brand
+        st.session_state["_f_category"] = selected_category
+        st.session_state["_f_country"] = selected_country
+        st.session_state["_f_lifecycle"] = selected_lifecycle
+        st.session_state["_f_segment"] = selected_segment
+        st.session_state["_f_engagement"] = selected_engagement
+        st.session_state["_f_campaign"] = selected_campaign
+        st.session_state["_f_start_date"] = start_date_str
+        st.session_state["_f_end_date"] = end_date_str
+        st.session_state["_f_start_month"] = start_month
+        st.session_state["_f_end_month"] = end_month
+    
+    # Read committed filter values from session state
+    _fc = st.session_state.get("_f_client", "All")
+    _fb = st.session_state.get("_f_brand", "All")
+    _fcat = st.session_state.get("_f_category", "All")
+    _fcountry = st.session_state.get("_f_country", "All")
+    _flc = st.session_state.get("_f_lifecycle", "All")
+    _fseg = st.session_state.get("_f_segment", "All")
+    _feng = st.session_state.get("_f_engagement", "All")
+    _fcmp = st.session_state.get("_f_campaign", "All")
+    _fsd = st.session_state.get("_f_start_date", start_date_str)
+    _fed = st.session_state.get("_f_end_date", end_date_str)
+    _fsm = st.session_state.get("_f_start_month", start_month)
+    _fem = st.session_state.get("_f_end_month", end_month)
+
     # --- 3. APPLY FILTERS TO TABS ---
     filtered_ops = raw_ops.copy() if not raw_ops.empty else pd.DataFrame()
     filtered_ops_snapshots = raw_ops_snapshots.copy() if not raw_ops_snapshots.empty else pd.DataFrame()
     filtered_fin = raw_fin.copy() if not raw_fin.empty else pd.DataFrame()
 
-    if selected_client != "All":
+    if _fc != "All":
         if not filtered_ops.empty and 'ops_client' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
+            filtered_ops = filtered_ops[filtered_ops['ops_client'] == _fc]
         if not filtered_ops_snapshots.empty and 'ops_client' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == selected_client]
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == _fc]
         if not filtered_fin.empty and 'client' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
+            filtered_fin = filtered_fin[filtered_fin['client'] == _fc]
 
-    if selected_brand != "All":
+    if _fb != "All":
         if not filtered_ops.empty and 'ops_brand' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
+            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == _fb]
         if not filtered_ops_snapshots.empty and 'ops_brand' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == selected_brand]
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == _fb]
         if not filtered_fin.empty and 'brand' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
+            filtered_fin = filtered_fin[filtered_fin['brand'] == _fb]
             
-    if selected_category != "All":
+    if _fcat != "All":
         if not filtered_ops.empty and '__extracted_category' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['__extracted_category'] == selected_category]
+            filtered_ops = filtered_ops[filtered_ops['__extracted_category'] == _fcat]
         if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(selected_category)]
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].str.upper().str.contains(_fcat)]
             
-    if selected_country != "All":
+    if _fcountry != "All":
         if not filtered_ops.empty and 'country' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
+            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == _fcountry]
             
-    if selected_lifecycle != "All":
+    if _flc != "All":
         if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == selected_lifecycle]
+            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == _flc]
             
-    if selected_segment != "All":
+    if _fseg != "All":
         if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
+            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == _fseg]
             
-    if selected_engagement != "All":
+    if _feng != "All":
         if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
+            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == _feng]
             
-    if selected_campaign != "All":
+    if _fcmp != "All":
         if not filtered_ops.empty and 'Core_Signature' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['Core_Signature'] == selected_campaign]
+            filtered_ops = filtered_ops[filtered_ops['Core_Signature'] == _fcmp]
 
     # Apply Time Frame Filter
-    if start_date_val and end_date_val:
+    if _fsd and _fed:
         if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
-            # We must use proper string comparisons for SQLite / Postgres dates. Since they are YYYY-MM-DD strings usually:
-            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
+            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= _fsd) & (filtered_ops['ops_date'] <= _fed)]
         if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
+            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= _fsd) & (filtered_ops_snapshots['ops_date'] <= _fed)]
             
         if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
-            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= start_month) & (filtered_fin['report_month'] <= end_month)]
+            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= _fsm) & (filtered_fin['report_month'] <= _fem)]
 
     st.session_state["ops_df"] = filtered_ops
     st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
@@ -1284,7 +1317,7 @@ if view_mode == "📊 Dashboard":
                                     xaxis=dict(visible=False),
                                     yaxis=dict(visible=False)
                                 )
-                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
+                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False}, key=f'spark_{matrix_title}_{metric_label}_{wlabel}')
             
             # Render side-by-side LI / NLI matrices
             col_li, col_nli = st.columns(2)
