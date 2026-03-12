@@ -4,7 +4,7 @@
 - **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
 - **Architecture:** 4-Tier Modular Enterprise Platform (V3.0). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron.
 - **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
-- **UI Theme:** "Matrix/Terminal" (Pitch Black `#000000`, Secondary `#0D0D0D`, Text/Accent Neon Green `#00FF41`).
+- **UI Theme:** Material Design 3 Dark — Inter font (Google Fonts), Deep Purple primary (`#7C4DFF`), GitHub-dark backgrounds (`#0D1117`/`#161B22`), soft white text (`#E6EDF3`). Custom CSS injection via `st.markdown(unsafe_allow_html=True)` for metric cards with gradient/elevation, pill-style tabs/radio, rounded inputs/buttons with hover glow, and slim scrollbars. Config: `.streamlit/config.toml`.
 - **Deployment:** Railway (Docker) with PostgreSQL. Automated daily ops sync at 03:30 UTC.
 
 ---
@@ -114,7 +114,7 @@ During ingestion, each component is extracted via token matching:
   1. `📊 Dashboard`: Executive/CRM intelligence.
   2. `📞 Operations`: Operations Command and Ingestion.
   3. `🏦 Financial`: Financial Deep-Dive and Ingestion dropzones.
-  4. `⚙️ Admin`: Client Hub and settings.
+  4. `⚙️ Admin`: Client Hub, User Management, Data Maintenance, and File Explorer.
 - **🌍 GLOBAL INTELLIGENCE FILTERS (Form-Gated):**
   - All filters wrapped in `st.form("global_filters")` — page only re-renders on "🔍 Apply Filters" click.
   - **Filter Order** (matches campaign naming convention):
@@ -136,12 +136,28 @@ During ingestion, each component is extracted via token matching:
   - 📞 Operations uploads occur inside the `🗄️ Operations Ingestion` workspace.
 - **Analytical Auto-Hydration:** The dashboard computations (Monthly Summaries, Cohorts, Segmentations, etc.) are instantly generated from the PostgreSQL filtered `_master_df` using `@st.cache_data` wrappers to prevent blocking the main thread.
 
-### 4.2 ⚙️ Admin Tier: Client Hub
-- **Master Health Board:** Displays a dynamic grid showing the absolute timestamps of the latest Financial and Operational files uploaded per client, alongside their active SLA counts.
-- **Client Detail Profile:** Access via "⚙️ Manage Profile". Traps the `st.session_state` to a specific client to view a 3-tab dashboard:
-  - **Tab 1: Completeness & Uploads:** Dynamic inverted matrix (Months as Rows, Brands as Columns) tracking data synchronization. Includes an isolated financial up-loader directly injecting state to DB.
-  - **Tab 2: Brand Registry:** Manages the `client_mapping` table. Adding a tag dynamically traces and retroactively fixes Orphaned records in `ops_telemarketing_data`.
-  - **Tab 3: Contractual SLAs:** Manages the `contractual_slas` config table.
+### 4.2 ⚙️ Admin Tier (4 Modules)
+- **Radio selector:** `🏢 Client Hub | 👥 User Management | 🧹 Data Maintenance | 📂 File Explorer`.
+
+#### 4.2.1 🏢 Client Hub
+- **Master Health Board:** Dynamic grid showing latest Financial/Operational upload timestamps per client and active SLA counts.
+- **Client Detail Profile:** 3-tab dashboard (Completeness, Brand Registry, Contractual SLAs).
+
+#### 4.2.2 👥 User Management
+- CRUD interface for the `users` RBAC table.
+
+#### 4.2.3 🧹 Data Maintenance
+- **State Metrics:** Local file count, folder size, `ops_telemarketing_data` rows, `ops_telemarketing_snapshots` rows.
+- **Purge Local Files:** Deletes `data/raw/callsu_daily/` with expander+checkbox confirmation.
+- **Purge Operations DB:** TRUNCATEs both ops tables with expander+checkbox confirmation.
+- **📊 Benchmark Snapshots:** Auto-detects completed half-years from `ops_telemarketing_data`. Buttons to ⚡ Generate / 🔄 Regenerate / 🗑️ Delete benchmarks per period. Calls `scripts/jobs/generate_benchmarks.py` which aggregates daily averages by brand/country/lifecycle/segment/engagement into `ops_historical_benchmarks`.
+
+#### 4.2.4 📂 File Explorer
+- **Inventory Dashboard:** Metric cards showing file count + total size for `data/` and `docs/` directories.
+- **Folder-First Navigation:** Session-state driven drill-down with breadcrumbs (`🏠 → data → raw → callsu_daily`). Subfolders shown as clickable cards (rows of 4) with recursive file count and size. Only current folder's files listed.
+- **File Table:** Sortable by name, size, and modification date. Search filter narrows file selector.
+- **Online Viewer:** CSV/XLSX render full scrollable dataframe (500px height). `.md` renders as formatted markdown. `.py`, `.json`, `.yaml` etc. render as syntax-highlighted code (50K char limit).
+- **Download:** `st.download_button` for `.csv`, `.xlsx`, `.md`, `.txt`, `.json`, `.log`, `.py` files.
 
 ### 4.3 Cache Invalidation Strategy
 - Rather than persisting RAM-Csvs, all upload handlers save directly to PostgreSQL using `to_sql`. 
@@ -162,31 +178,25 @@ During ingestion, each component is extracted via token matching:
   - Delta = current window avg - prior equivalent period avg (e.g., last 7d vs 7d before that).
   - Color: Green ↑ improving, Red ↓ declining, Grey — flat (< 1% change).
 
-### 4.4.2 📊 Fixed Baseline Benchmark (H2 2025)
+### 4.4.2 📊 Dynamic Operational Baseline (H-over-H Comparison)
 - **Location:** `📊 Dashboard` tab, below the Operations Pulse Matrices.
 - **Data Source:** `ops_telemarketing_snapshots` queried directly from DB. Sidebar filters (client, brand, engagement, lifecycle, segment, country) apply; date range filter is ignored.
-- **Baseline Logic:** The prior period is permanently hardcoded to **H2 2025** (2025-07-01 to 2025-12-31). Operational structures changed during that summer, making it the fixed reference. The current period is auto-detected from `datetime.now()` (H1=Jan-Jun, H2=Jul-Dec of current year).
+- **Baseline Logic:** The prior period is selectable via a **"Compare against:" dropdown** (`st.selectbox`). Available options are auto-detected from snapshot data — only **completed** half-years appear (e.g., H2 2025 only appears after 2025-12-31). Default priority: H2 2025 → H1 2025 → first available. The current period is auto-detected from `datetime.now()` (H1=Jan-Jun, H2=Jul-Dec of current year). The `_render_fixed_benchmark(df, prior_half="H2 2025")` function parses any "HX YYYY" format into date ranges.
 - **Metric Groups:**
   - **Volume (raw totals):** Records, Logins, Conversions.
-  - **Call Dispositions (% of Records):** D% = `(d_plus + d_minus + d_neutral) / records`, NA% = `na / records`, I% = `(t + dnc + dx + wn + am) / records`.
-  - **Email Channel (% of `es`):** ED% = `ed / es`, EO% = `eo / es`, EC% = `ec / es`, EF% = `ef / es`.
-  - **SMS Channel (% of SS where SS = `sd + sf + sp`):** SD% = `sd / SS`, SF% = `sf / SS`, SP% = `sp / SS`.
+  - **Call Dispositions (% of Records):** D%, NA%, I%.
+  - **Email Channel (% of `es`):** ED%, EO%, EC%, EF%.
+  - **SMS Channel (% of SS where SS = `sd + sf + sp`):** SD%, SF%, SP%.
 
 #### Layer 1 — KPI Summary Cards (always visible)
-- Layout: `st.columns(3)`, rendered above the benchmark table.
-- **Card 1 — 📞 Volume:** Records headline with `st.metric` + delta. Sub-text: Logins and Conversions deltas.
-- **Card 2 — ☎️ Call Efficiency:** Headline D% with delta. Sub-text: NA% and I% deltas.
-- **Card 3 — 📧📱 Channel Health:** Email ED% + SMS SD% headlines with deltas.
+- Layout: `st.columns(4)`. Cards: Volume, Call Efficiency, Email Health, SMS Health.
 
 #### Layer 2 — Benchmark Table (always visible)
-- Columns: Metric | H2 2025 Baseline | Current YTD | Δ (arrow + value).
-- Height auto-expands to show all rows.
+- Columns: Metric | [Selected Prior] Baseline | Current YTD | Δ (arrow + value).
+- Column headers update dynamically to match dropdown selection.
 
 #### Layer 3 — Detailed Charts (expandable)
-- Wrapped in `st.expander("📊 H2 2025 Baseline vs Current Charts")`.
-- **Left:** Grouped bar chart (Plotly) — Volume metrics, H2 2025 (muted teal) vs Current (cyan).
-- **Right:** Radar chart (Plotly `Scatterpolar`) — all % rates, two overlapping polygons.
-- **Filters:** Sidebar globals apply to all calculations.
+- Dumbbell charts comparing prior vs current across Volume, Dispositions, Email, and SMS.
 
 ### 4.5 Tab 5: 📈 Campaigns & Tab 6: 🕵️ CRM Intelligence
 - **Campaigns:** Funnel visualizations and tracking per brand.
@@ -214,3 +224,35 @@ During ingestion, each component is extracted via token matching:
 - **Financial Report:** Exported from the Financial Deep-Dive tab.
 - **Operations Report:** Exported from the Operations Command tab.
 - **Master Report (Combined):** Exported from the Executive Summary tab, appending an Operations Tracker tab to the standard financial workbook.
+
+---
+
+## 5. OPERATIONS API INTEGRATION (iWinBack Native)
+
+### 5.1 Architecture
+- **Direct SaaS integration:** 5 iWinBack boxes, each with a unique base URL and Bearer token stored in `.env`.
+- **Boxes:** `bhfs2`, `bxq4c`, `bb4p7`, `baj7f`, `bdka4` — each serves a subset of clients/brands (auto-discovered).
+- **Module:** `src/iwinback_worker.py` replaces the legacy `src/api_worker.py` middleware at `dashboard.callsu.net`.
+
+### 5.2 Export Flow (per box, per date)
+1. `POST /api/exports` — `exportType: "campaign_summary_v3"`, `date_range: "YYYY-MM-DD - YYYY-MM-DD"`.
+2. `GET /api/exports/{id}` — Poll until `status == "done"` (max 120 attempts × 5s).
+3. `GET /api/exports/{id}/download` — Download Excel file.
+4. Parse Excel with `header=1` (row 0 = merged group headers, row 1 = column names).
+5. 81 columns across groups: Campaign Quality/ROI, Calls/VoIP, SMS, Email, Costs, Regulatory, Cost Ratios, Status.
+
+### 5.3 SLA Volume Metric
+- **Source column:** `"New Data"` (replaces legacy `"# Records"`).
+- **DB column:** `ops_telemarketing_data.records` (unchanged schema, new source).
+- **Fallback:** `row.get("New Data", 0) or row.get("# Records", 0)` for backward compatibility with legacy files.
+
+### 5.4 Duplicate Prevention
+- DB-level guard: `SELECT 1 FROM ops_telemarketing_data WHERE ops_date = :d LIMIT 1` per date before requesting exports.
+
+### 5.5 Credential Storage
+```
+# .env format
+IWINBACK_BOXES=bhfs2,bxq4c,bb4p7,baj7f,bdka4
+IWINBACK_{box}_URL=https://{box}.iwinback-saas.com
+IWINBACK_{box}_TOKEN=<bearer_token>
+```

@@ -4,7 +4,9 @@ import os
 import pandas as pd
 from datetime import datetime
 import logging
+from sqlalchemy import text
 from src.ingestion import load_operations_data_from_uploads
+from src.database import engine as db_engine
 
 # Set up a dedicated logger that writes to a file for the Streamlit UI to read
 LOG_FILE = "data/api_sync.log"
@@ -52,8 +54,18 @@ def run_historical_pull(start_date, end_date):
         os.makedirs(folder_path, exist_ok=True)
         file_path = os.path.join(folder_path, f"{target_date}.xlsx")
 
+        # --- DB-LEVEL DUPLICATE GUARD ---
+        try:
+            with db_engine.connect() as conn:
+                result = conn.execute(text("SELECT 1 FROM ops_telemarketing_data WHERE ops_date = :d LIMIT 1"), {"d": target_date})
+                if result.fetchone():
+                    log_msg(f"⏭️ Skipping {target_date} — data already exists in database")
+                    return True
+        except Exception as e:
+            log_msg(f"⚠️ DB check failed for {target_date}, proceeding with ingestion: {e}")
+
         if os.path.exists(file_path):
-            log_msg(f"⏭️ Skipping download for {target_date} (Already exists on disk)")
+            log_msg(f"📂 File exists on disk for {target_date}, ingesting to DB...")
             try:
                 with open(file_path, "rb") as f:
                     from src.ingestion import load_operations_data_from_uploads

@@ -68,6 +68,8 @@ CLIENT_HIERARCHY = {
     'YU': 'Simplicity Malta Limited',
     'LTRB': 'Offside Gaming',
     'ROJA': 'Offside Gaming',
+    'ROJB': 'Offside Gaming',
+    'FIYYJB': 'Magico Games/Interspin',
     'CASINODAYS': 'Rhino',
     'WG': 'Reliato',
     'BHB': 'Limitless'
@@ -139,6 +141,13 @@ CAMPAIGN_NUMERIC_COLS = [
 #  e.g. latribet_2025_08.csv  →  brand="latribet", year=2025, month=8
 FILE_RE = re.compile(
     r"^(?P<brand>[a-z]+)_(?P<year>\d{4})_(?P<month>\d{2})\.(?:csv|xlsx)$",
+    re.IGNORECASE,
+)
+
+# ── Multi-sheet Excel pattern ────────────────────────────────────────────
+#  e.g. sheet "2024-08 rojabet"  →  brand="rojabet", year=2024, month=08
+SHEET_RE = re.compile(
+    r"^(?P<year>\d{4})-(?P<month>\d{2})\s+(?P<brand>.+)$",
     re.IGNORECASE,
 )
 
@@ -271,12 +280,33 @@ def load_all_data(
         logger.warning("No brand directories found in %s", raw_dir)
         return pd.DataFrame(), registry
 
-    for brand_dir in brand_dirs:
-        csv_files = sorted(brand_dir.glob("*.csv"))
-        if not csv_files:
-            logger.warning("No CSVs in %s", brand_dir)
-            continue
+    # Build client_mapping lookup for deterministic routing
+    try:
+        mapping_df = pd.read_sql("SELECT brand_code, brand_name, client_name, financial_format FROM client_mapping", db_engine)
+        fin_map = {}
+        for _, row in mapping_df.iterrows():
+            val = {
+                'client': row['client_name'],
+                'brand': row['brand_name'] if pd.notna(row.get('brand_name')) else row['brand_code'],
+                'format': row.get('financial_format', 'Standard')
+            }
+            if pd.notna(row.get('brand_name')): fin_map[str(row['brand_name']).strip().lower()] = val
+            if pd.notna(row.get('brand_code')): fin_map[str(row['brand_code']).strip().lower()] = val
+    except Exception:
+        fin_map = {}
 
+    # Build set of existing brand+month combos for duplicate prevention
+    existing_combos = set()
+    try:
+        dup_df = pd.read_sql("SELECT DISTINCT brand, report_month FROM raw_financial_data", db_engine)
+        for _, r in dup_df.iterrows():
+            existing_combos.add((str(r['brand']).strip(), str(r['report_month']).strip()))
+    except Exception:
+        pass
+
+    for brand_dir in brand_dirs:
+        # ── Individual CSV files ──────────────────────────────────────
+        csv_files = sorted(brand_dir.glob("*.csv"))
         for csv_path in csv_files:
             parsed = _parse_filename(csv_path.name)
             if parsed is None:
@@ -292,12 +322,55 @@ def load_all_data(
 
             df["report_month"] = report_month
             frames.append(df)
+            registry.mark_complete(brand=brand_key, report_month=report_month, file_path=str(csv_path.relative_to(raw_dir)))
 
-            registry.mark_complete(
-                brand=brand_key,
-                report_month=report_month,
-                file_path=str(csv_path.relative_to(raw_dir)),
-            )
+        # ── Multi-sheet Excel files ───────────────────────────────────
+        xlsx_files = sorted(brand_dir.glob("*.xlsx"))
+        for xlsx_path in xlsx_files:
+            try:
+                xl = pd.ExcelFile(xlsx_path, engine="openpyxl")
+            except Exception:
+                logger.exception("Failed to open Excel: %s", xlsx_path)
+                continue
+
+            for sheet_name in xl.sheet_names:
+                sm = SHEET_RE.match(sheet_name.strip())
+                if not sm:
+                    logger.info("Skipping non-data sheet: '%s' in %s", sheet_name, xlsx_path.name)
+                    continue
+
+                year, month = sm.group("year"), sm.group("month")
+                brand_key = sm.group("brand").strip().lower()
+                report_month = f"{year}-{month}"
+
+                # Resolve brand/client/format from client_mapping
+                mapped = fin_map.get(brand_key, {})
+                target_format = mapped.get('format', 'Standard')
+                target_client = mapped.get('client', 'UNKNOWN')
+                target_brand = mapped.get('brand', brand_key.title())
+                if target_client == 'LeoVegas Group': target_format = 'LeoVegas'
+                elif 'Offside' in target_client: target_format = 'Offside'
+
+                # Duplicate protection: skip if brand+month already in DB
+                if (target_brand, report_month) in existing_combos:
+                    logger.info("Skipping duplicate: %s %s (already in DB)", target_brand, report_month)
+                    continue
+
+                try:
+                    raw = xl.parse(sheet_name)
+                except Exception:
+                    logger.exception("Failed to read sheet '%s' in %s", sheet_name, xlsx_path.name)
+                    continue
+
+                df = _normalise_player_columns(raw, f"{xlsx_path.name}:{sheet_name}", target_format, target_client, target_brand)
+                if df is None or df.empty:
+                    logger.warning("Empty after cleaning: %s [%s]", xlsx_path.name, sheet_name)
+                    continue
+
+                df["report_month"] = report_month
+                frames.append(df)
+                existing_combos.add((target_brand, report_month))  # Prevent intra-file dupes
+                registry.mark_complete(brand=brand_key, report_month=report_month, file_path=f"{xlsx_path.relative_to(raw_dir)}:{sheet_name}")
 
     if not frames:
         logger.warning("No data loaded.")
@@ -322,6 +395,17 @@ def load_all_data(
 
     # Persist registry
     registry.save()
+
+    # --- PERMANENT DB SAVE FOR DISK-BASED FINANCIAL DATA ---
+    if not unified.empty:
+        try:
+            db_df = unified.rename(columns={"id": "player_id"})
+            expected_cols = ["player_id", "client", "brand", "country", "wb_tag", "segment", "bet", "revenue", "ngr", "bet_casino", "revenue_casino", "ngr_casino", "bet_sports", "revenue_sports", "ngr_sports", "deposit_count", "deposits", "withdrawals", "bonus_total", "bonus_casino", "bonus_sports", "tax_total", "report_month", "reactivation_date", "campaign_start_date", "reactivation_days"]
+            db_df = db_df[[c for c in expected_cols if c in db_df.columns]]
+            db_df.to_sql("raw_financial_data", db_engine, if_exists="append", index=False)
+            logger.info("Persisted %d financial rows to raw_financial_data", len(db_df))
+        except Exception as e:
+            logger.exception("Failed to persist financial data to DB: %s", e)
 
     return unified, registry
 
@@ -650,57 +734,85 @@ def load_all_data_from_uploads(
     except:
         fin_map = {}
 
+    # Build set of existing brand+month combos for duplicate prevention
+    existing_combos = set()
+    try:
+        dup_df = pd.read_sql("SELECT DISTINCT brand, report_month FROM raw_financial_data", db_engine)
+        for _, r in dup_df.iterrows():
+            existing_combos.add((str(r['brand']).strip(), str(r['report_month']).strip()))
+    except Exception:
+        pass
+
+    def _ingest_single(brand_key, report_month, raw, source_label):
+        """Process a single brand+month DataFrame and append to frames."""
+        mapped_info = fin_map.get(brand_key.strip().lower(), {})
+        target_format = mapped_info.get('format', 'Standard')
+        target_client = mapped_info.get('client', 'UNKNOWN')
+        target_brand = mapped_info.get('brand', brand_key.title())
+        if target_client == 'LeoVegas Group': target_format = 'LeoVegas'
+        elif 'Offside' in target_client: target_format = 'Offside'
+
+        # Duplicate protection
+        if (target_brand, report_month) in existing_combos:
+            try:
+                import streamlit as st
+                st.warning(f"⚠️ Rejected '{source_label}': Data for {target_brand} ({report_month}) already exists.")
+            except: pass
+            return
+
+        df = _normalise_player_columns(raw, source_label, target_format, target_client, target_brand)
+        if df is None or df.empty:
+            logger.warning("Empty after cleaning: %s", source_label)
+            return
+
+        df["report_month"] = report_month
+        frames.append(df)
+        existing_combos.add((target_brand, report_month))
+        registry.mark_complete(brand=brand_key, report_month=report_month, file_path=source_label)
+
     for f in files:
+        is_xlsx = f.name.lower().endswith(".xlsx")
+
+        # Try multi-sheet Excel first
+        if is_xlsx:
+            try:
+                xl = pd.ExcelFile(f, engine="openpyxl")
+                has_multi = any(SHEET_RE.match(s.strip()) for s in xl.sheet_names)
+            except Exception:
+                has_multi = False
+                xl = None
+
+            if has_multi and xl:
+                for sheet_name in xl.sheet_names:
+                    sm = SHEET_RE.match(sheet_name.strip())
+                    if not sm:
+                        logger.info("Skipping non-data sheet: '%s' in %s", sheet_name, f.name)
+                        continue
+                    year, month = sm.group("year"), sm.group("month")
+                    brand_key = sm.group("brand").strip().lower()
+                    report_month = f"{year}-{month}"
+                    try:
+                        raw = xl.parse(sheet_name)
+                    except Exception:
+                        logger.exception("Failed to read sheet '%s' in %s", sheet_name, f.name)
+                        continue
+                    _ingest_single(brand_key, report_month, raw, f"{f.name}:{sheet_name}")
+                continue  # Done with this file
+
+        # Single-file path (CSV or single-sheet XLSX)
         parsed = _parse_filename(f.name)
         if parsed is None:
             logger.warning("Skipping unrecognised file: %s", f.name)
             continue
 
         brand_key, report_month = parsed
-        mapped_info = fin_map.get(brand_key.strip().lower(), {})
-        target_format = mapped_info.get('format', 'Standard')
-        target_client = mapped_info.get('client', 'UNKNOWN')
-        target_brand = mapped_info.get('brand', brand_key.title())
-
-        # --- PARENT-CHILD FORMAT INHERITANCE OVERRIDE ---
-        if target_client == 'LeoVegas Group':
-            target_format = 'LeoVegas'
-        elif target_client == 'Offside Gaming' or 'Offside' in target_client:
-            target_format = 'Offside'
-
-        # --- DUPLICATE PROTECTION ---
         try:
-            import streamlit as st
-            # Check if this exact brand + month combination already exists in the raw data table
-            check_query = f"SELECT 1 FROM raw_financial_data WHERE brand = '{target_brand}' AND report_month = '{report_month}' LIMIT 1"
-            exists = pd.read_sql(check_query, db_engine)
-            if not exists.empty:
-                st.warning(f"⚠️ Rejected '{f.name}': Data for {target_brand} ({report_month}) already exists in the database.")
-                continue # Skip to the next file
-        except Exception as e:
-            pass # If DB check fails for any reason, safely proceed
-
-        try:
-            if f.name.lower().endswith(".xlsx"):
-                raw = pd.read_excel(f, engine="openpyxl")
-            else:
-                raw = pd.read_csv(f)
+            raw = pd.read_excel(f, engine="openpyxl") if is_xlsx else pd.read_csv(f)
         except Exception:
             logger.exception("Failed to read %s", f.name)
             continue
 
-        # Normalise columns via Deterministic Router
-        df = _normalise_player_columns(raw, f.name, target_format, target_client, target_brand)
-        if df is None:
-            continue
-
-        if df.empty:
-            logger.warning("Empty after cleaning: %s", f.name)
-            continue
-
-        df["report_month"] = report_month
-        frames.append(df)
-        registry.mark_complete(brand=brand_key, report_month=report_month, file_path=f.name)
+        _ingest_single(brand_key, report_month, raw, f.name)
 
     if not frames:
         logger.warning("No data loaded from uploads.")
@@ -815,7 +927,7 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
         
         if "Campaign Name" not in df.columns: continue
             
-        ops_metrics = ["# Records", "Calls", "KPI1-Conv.", "KPI2-Login", "LI%", "Cost Caller", "Cost SIP", "Cost SMS", "Cost Email", 
+        ops_metrics = ["# Records", "New Data", "Calls", "KPI1-Conv.", "KPI2-Login", "LI%", "Cost Caller", "Cost SIP", "Cost SMS", "Cost Email", 
                        "D", "D+", "D-", "D Ratio", "T", "AM", "DNC", "NA", "DX", "WN",
                        "HLRV", "2XRV", "SA", "SD", "SF", "SP", "EV", "ES", "ED", "EO", "EC", "EF", 
                        "Optouts (All)", "Optout - Call", "Optout - SMS", "Optout - Email"]
@@ -902,7 +1014,7 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
                 "ops_client": client,
                 "ops_brand": brand_name,
                 "ops_date": file_date,
-                "records": int(row.get("# Records", 0)),
+                "records": int(row.get("New Data", 0) or row.get("# Records", 0)),
                 "calls": calls,
                 "conversions": convs,
                 "total_cost": total_cost,

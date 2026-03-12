@@ -10,19 +10,6 @@ API_TOKEN = "Bearer 204|bUfc0GNczvNg1u3danK8nEreasH9VYl8AjVGTKmY7f07018f"
 # List the year and month combinations you want to backfill (e.g., LeoVegas months)
 # Format: (Year, Month)
 MONTHS_TO_FETCH = [
-    (2024, 1),
-    (2024, 2),
-    (2024, 3),
-    (2024, 4),
-    (2024, 5),
-    (2024, 6),
-    (2024, 7),
-    (2024, 8),
-    (2024, 9),
-    (2024, 10),
-    (2024, 11),
-    (2024, 12),
-    (2026, 1),
     (2026, 2)
 ]
 

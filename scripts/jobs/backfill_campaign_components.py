@@ -53,20 +53,25 @@ def backfill():
                 "c": country
             })
             
-        # Execute Batch Update
+        # Execute Batch Update via Temp Table
+        temp_df = pd.DataFrame(updates)
+        temp_df.to_sql('tmp_ops_backfill', engine, if_exists='replace', index=False)
         with engine.begin() as conn:
-            for u in updates:
-                conn.execute(text("""
-                    UPDATE ops_telemarketing_data 
-                    SET extracted_lifecycle = :l, extracted_segment = :s, 
-                        extracted_engagement = :e, country = :c
-                    WHERE id = :id
-                """), u)
+            conn.execute(text("""
+                UPDATE ops_telemarketing_data a
+                SET extracted_lifecycle = b.l, 
+                    extracted_segment = b.s, 
+                    extracted_engagement = b.e, 
+                    country = b.c
+                FROM tmp_ops_backfill b
+                WHERE a.id = b.id
+            """))
+            conn.execute(text("DROP TABLE tmp_ops_backfill"))
         print(f"✅ Successfully backfilled ops_telemarketing_data.")
 
     # Apply identical backfill to snapshots
     snap_query = """
-    SELECT id, campaign_name 
+    SELECT DISTINCT campaign_name 
     FROM ops_telemarketing_snapshots 
     WHERE extracted_lifecycle = 'UNKNOWN' OR extracted_lifecycle IS NULL
        OR extracted_engagement = 'UNKNOWN' OR extracted_engagement IS NULL
@@ -99,22 +104,27 @@ def backfill():
                         break
                         
                 snap_updates.append({
-                    "id": row["id"],
+                    "campaign_name": row["campaign_name"],
                     "l": extracted_lifecycle,
                     "s": extracted_segment,
                     "e": extracted_engagement,
                     "c": country
                 })
                 
-            # Execute Batch Update
+            # Execute Batch Update via Temp Table
+            temp_snap_df = pd.DataFrame(snap_updates)
+            temp_snap_df.to_sql('tmp_snap_backfill', engine, if_exists='replace', index=False)
             with engine.begin() as conn:
-                for u in snap_updates:
-                    conn.execute(text("""
-                        UPDATE ops_telemarketing_snapshots 
-                        SET extracted_lifecycle = :l, extracted_segment = :s, 
-                            extracted_engagement = :e, country = :c
-                        WHERE id = :id
-                    """), u)
+                conn.execute(text("""
+                    UPDATE ops_telemarketing_snapshots a
+                    SET extracted_lifecycle = b.l, 
+                        extracted_segment = b.s, 
+                        extracted_engagement = b.e, 
+                        country = b.c
+                    FROM tmp_snap_backfill b
+                    WHERE a.campaign_name = b.campaign_name
+                """))
+                conn.execute(text("DROP TABLE tmp_snap_backfill"))
             print(f"✅ Successfully backfilled ops_telemarketing_snapshots.")
     except Exception as e:
         print(f"⚠️ Error during snapshots backfill (may not exist yet): {e}")

@@ -131,6 +131,12 @@ def init_db():
         
         # Safe Migration: Add columns to existing tables if they don't exist
         new_columns = [
+            # Base columns (must mirror ops_telemarketing_data core fields)
+            "campaign_name TEXT", "ops_client TEXT", "ops_brand TEXT",
+            "ops_date DATE", "calls INT DEFAULT 0", "conversions INT DEFAULT 0",
+            "total_cost FLOAT DEFAULT 0", "true_cac FLOAT DEFAULT 0",
+            "ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            # Metric columns
             "records INT DEFAULT 0", "d_total INT DEFAULT 0", "d_plus INT DEFAULT 0", 
             "d_minus INT DEFAULT 0", "d_neutral INT DEFAULT 0", "d_ratio DECIMAL(10,4) DEFAULT 0", 
             "kpi2_logins INT DEFAULT 0", "li_pct DECIMAL(10,4) DEFAULT 0", 

@@ -4,6 +4,60 @@
 
 ## LOG ENTRIES
 
+### [Feature - Data Maintenance & Duplicate Guard] - 2026-03-12 - COMPLETED
+- **`app.py`:** Added `🧹 Data Maintenance` as 3rd Admin module with 4 state metrics (file count, folder size, ops rows, snapshot rows) and two purge buttons:
+  - `Purge Local Files`: deletes `data/raw/callsu_daily/` folder with expander+checkbox confirmation.
+  - `Purge Operations DB`: TRUNCATES `ops_telemarketing_data` + `ops_telemarketing_snapshots` and clears session state cache.
+- **`src/api_worker.py`:** Added DB-level duplicate guard — queries `ops_telemarketing_data` for existing `ops_date` before downloading or ingesting. 3-tier check: DB → Disk → API.
+- **`src/ingestion.py`:** Added `ROJB` and `FIYYJB` to `CLIENT_HIERARCHY` for future ingestion fallback.
+- **SQL Heal:** Normalized 5,974 existing rows — all `ops_brand` values now use proper brand names, zero `UNKNOWN` clients remain. Added `ROJB` and `FIYYJB` to `client_mapping` table.
+
+### [Feature - Benchmark Generation & Comparison Dropdown] - 2026-03-12 - COMPLETED
+- **`app.py` (Data Maintenance):** Added "📊 Benchmark Snapshots" section that auto-detects completed half-years from `ops_telemarketing_data`, shows generation status, and provides ⚡ Generate / 🔄 Regenerate / 🗑️ Delete buttons per period.
+- **`app.py` (Dashboard):** Replaced hardcoded "H2 2025 OPERATIONAL BASELINE" with dynamic "📊 OPERATIONAL BASELINE" section featuring a "Compare against:" dropdown that lists all available completed half-years from snapshot data. Default priority: H2 2025 → H1 2025 → first available.
+- **`_render_fixed_benchmark()`:** Now accepts `prior_half` parameter to dynamically parse any "HX YYYY" format into the correct date range.
+
+### [Feature - Admin File Explorer] - 2026-03-12 - COMPLETED
+- **`app.py`:** Added "📂 File Explorer" as 4th Admin module covering `data/` and `docs/` directories.
+  - **Inventory Dashboard:** Metric cards per folder showing file count and total size.
+  - **Folder-First Navigation:** Session-state driven drill-down with breadcrumbs (`🏠 → data → raw → callsu_daily`). Subfolders shown as clickable buttons in rows of 4 with recursive file count/size. Only current folder contents displayed.
+  - **Online Viewer:** CSV/XLSX render full scrollable dataframe (500px). `.md` renders as formatted markdown. `.py`, `.json`, `.yaml` etc. as syntax-highlighted code.
+  - **Download:** `st.download_button` for supported file types (.csv, .xlsx, .md, .txt, .json, .log, .py).
+  - **Search:** Text input filters file selector list.
+
+### [Feature - Material Design 3 Dark Theme] - 2026-03-12 - COMPLETED
+- **`.streamlit/config.toml`:** Updated to Material Design 3 palette: Deep Purple primary (`#7C4DFF`), GitHub-dark backgrounds (`#0D1117`/`#161B22`), soft white text (`#E6EDF3`).
+- **`app.py`:** Injected comprehensive CSS via `st.markdown(unsafe_allow_html=True)`:
+  - Inter font (Google Fonts) for all typography.
+  - Metric cards with gradient backgrounds, subtle borders, and purple hover glow.
+  - Pill-style tabs and radio groups with purple active state.
+  - Rounded buttons with hover glow and press animations.
+  - Styled sidebar with gradient background and purple accent border.
+  - Rounded inputs/selects with purple focus borders.
+  - Slim custom scrollbars. Rounded dataframes, alerts, and info boxes.
+
+### [SDD - V3.0 Documentation Refresh] - 2026-03-12 - COMPLETED
+- **`SPEC.md`:** Updated §1 UI theme (Matrix → Material Design 3), §4.1 Admin router (4 modules), §4.2 expanded to document Data Maintenance + File Explorer, §4.4.2 from hardcoded H2 2025 to dynamic dropdown baseline.
+
+### [Feature - Native iWinBack API Integration] - 2026-03-12 - COMPLETED
+- **`src/iwinback_worker.py` [NEW]:** Native 5-box worker replacing `dashboard.callsu.net` middleware. Loads box credentials from `.env`, POSTs `campaign_summary_v3` to each box, polls for completion, downloads Excel, merges all boxes into combined file, ingests via ops pipeline. Includes auto-discovery logging (`GET /api/clients` + `/api/brands`), DB-level dedup, and retry queue.
+- **`.env`:** Added `IWINBACK_BOXES` and per-box `_URL`/`_TOKEN` credentials for 5 boxes (bhfs2, bxq4c, bb4p7, baj7f, bdka4).
+- **`docker-compose.yml`:** Added `env_file: .env` to forward all env vars to container.
+- **`src/ingestion.py`:** Swapped SLA volume metric from `"# Records"` → `"New Data"` with backward-compatible fallback. Added `"New Data"` to `ops_metrics` numeric coercion list.
+- **`app.py`:** Import swap `api_worker` → `iwinback_worker`.
+- **`scripts/jobs/daily_operations_sync.py`:** Import swap `api_worker` → `iwinback_worker`.
+- **`SPEC.md`:** Added §5 Operations API Integration (iWinBack Native) documenting 5-box architecture, export flow, SLA metric, dedup, and credential storage.
+
+### [Feature - Multi-Sheet Excel Financial Ingestion] - 2026-03-12 - COMPLETED
+- **`src/ingestion.py`:**
+  - Added `SHEET_RE` regex to parse sheet names like `"2024-08 rojabet"` → `(brand="rojabet", month="2024-08")`.
+  - Extended `load_all_data()` (disk reader) to glob `*.xlsx`, iterate sheets, resolve brand/client/format from `client_mapping`, and route through `_normalise_player_columns()`. Adds DB persistence via `to_sql("raw_financial_data", if_exists="append")`.
+  - Extended `load_all_data_from_uploads()` (upload reader) with same multi-sheet support.
+  - **Duplicate prevention:** Both paths query `SELECT DISTINCT brand, report_month FROM raw_financial_data` upfront and skip any brand+month combo already in DB. Intra-file dedup via in-memory set.
+  - Non-data sheets (e.g., `"tes"`) silently skipped.
+- **Initial Ingestion:** 51,307 rows loaded — RojaBet (42,159 rows, 18 months) + LaTriBet (9,148 rows, 18 months) from `data/raw/rojabet/Rojabet.xlsx` and `data/raw/latribet/Latribet.xlsx`.
+
+
 ### [SDD - V3.0 Spec Refresh] - 2026-03-11 - COMPLETED
 - Bumped `SPEC.md` from v2.0 → v3.0 to reflect current architecture.
 - Added §3.8 Campaign Naming Convention: documents all 8 extraction rules (Brand, Country, Language, Product, Segment, Lifecycle, Sublifecycle, Engagement) with smart Language defaults from Country.

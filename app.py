@@ -15,7 +15,7 @@ import time
 import os
 import calendar
 from datetime import datetime, timedelta
-from src.api_worker import run_historical_pull
+from src.iwinback_worker import run_historical_pull
 
 import pandas as pd
 import streamlit as st
@@ -30,6 +30,212 @@ from src.analytics import generate_monthly_summaries, generate_campaign_summarie
 from src.exporter import export_to_excel
 from src.database import init_db, execute_query, engine
 from sqlalchemy.exc import ProgrammingError
+
+# ── Material Design 3 Dark Theme ─────────────────────────────────────────
+_MATERIAL_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── Global Typography ── */
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.02em !important;
+}
+h1 { font-size: 1.8rem !important; }
+h2 { font-size: 1.4rem !important; }
+h3 { font-size: 1.15rem !important; }
+
+/* ── Main Container ── */
+.main .block-container {
+    padding: 2rem 2.5rem !important;
+    max-width: 100% !important;
+}
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0D1117 0%, #161B22 100%) !important;
+    border-right: 1px solid rgba(124, 77, 255, 0.15) !important;
+}
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] .stSelectbox label {
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    color: #8B949E !important;
+}
+
+/* ── Cards / Containers ── */
+div[data-testid="stExpander"] {
+    background: #161B22 !important;
+    border: 1px solid #30363D !important;
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+div[data-testid="stExpander"] summary {
+    font-weight: 500 !important;
+    color: #E6EDF3 !important;
+}
+
+/* ── Metric Cards ── */
+div[data-testid="stMetric"] {
+    background: linear-gradient(135deg, #161B22 0%, #1C2333 100%) !important;
+    border: 1px solid #30363D !important;
+    border-radius: 12px !important;
+    padding: 1rem 1.2rem !important;
+    transition: all 0.2s ease !important;
+}
+div[data-testid="stMetric"]:hover {
+    border-color: rgba(124, 77, 255, 0.4) !important;
+    box-shadow: 0 4px 16px rgba(124, 77, 255, 0.08) !important;
+    transform: translateY(-1px);
+}
+div[data-testid="stMetric"] label {
+    color: #8B949E !important;
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    font-size: 1.6rem !important;
+    font-weight: 700 !important;
+    color: #E6EDF3 !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+    padding: 0.5rem 1.2rem !important;
+    transition: all 0.15s ease !important;
+    border: 1px solid #30363D !important;
+    background: #21262D !important;
+    color: #E6EDF3 !important;
+}
+.stButton > button:hover {
+    background: #30363D !important;
+    border-color: #7C4DFF !important;
+    box-shadow: 0 2px 8px rgba(124, 77, 255, 0.15) !important;
+}
+.stButton > button:active {
+    transform: scale(0.98) !important;
+}
+/* Primary buttons */
+.stButton > button[kind="primary"],
+.stDownloadButton > button {
+    background: linear-gradient(135deg, #7C4DFF 0%, #651FFF 100%) !important;
+    border: none !important;
+    color: white !important;
+}
+.stDownloadButton > button:hover {
+    box-shadow: 0 4px 12px rgba(124, 77, 255, 0.3) !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0 !important;
+    background: #161B22 !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+    border: 1px solid #30363D !important;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px !important;
+    padding: 8px 16px !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+    color: #8B949E !important;
+    background: transparent !important;
+    border: none !important;
+}
+.stTabs [aria-selected="true"] {
+    background: #7C4DFF !important;
+    color: white !important;
+}
+
+/* ── Radio Buttons (Horizontal) ── */
+.stRadio [role="radiogroup"] {
+    gap: 0 !important;
+    background: #161B22 !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+    border: 1px solid #30363D !important;
+}
+.stRadio [role="radiogroup"] label {
+    border-radius: 8px !important;
+    padding: 6px 14px !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    transition: all 0.15s ease !important;
+}
+.stRadio [role="radiogroup"] label[data-checked="true"],
+.stRadio [role="radiogroup"] label:has(input:checked) {
+    background: rgba(124, 77, 255, 0.2) !important;
+    color: #B794F6 !important;
+}
+
+/* ── Dataframes & Tables ── */
+div[data-testid="stDataFrame"] {
+    border: 1px solid #30363D !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+}
+
+/* ── Selectbox & Inputs ── */
+.stSelectbox, .stTextInput, .stNumberInput, .stDateInput {
+    font-size: 0.85rem !important;
+}
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div {
+    border-radius: 8px !important;
+    border-color: #30363D !important;
+    background: #0D1117 !important;
+}
+div[data-baseweb="select"] > div:hover,
+div[data-baseweb="input"] > div:hover {
+    border-color: #7C4DFF !important;
+}
+
+/* ── Dividers ── */
+hr {
+    border-color: #21262D !important;
+    margin: 1rem 0 !important;
+}
+
+/* ── Alerts & Info boxes ── */
+div[data-testid="stAlert"] {
+    border-radius: 10px !important;
+    border: none !important;
+    font-size: 0.85rem !important;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363D; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484F58; }
+
+/* ── Success/Error Toasts ── */
+.stSuccess, .stError, .stWarning, .stInfo {
+    border-radius: 10px !important;
+}
+
+/* ── Caption text ── */
+.stCaption, small {
+    color: #8B949E !important;
+    font-size: 0.78rem !important;
+}
+</style>
+"""
+st.markdown(_MATERIAL_CSS, unsafe_allow_html=True)
 
 # ── Cached wrappers to prevent recomputation on Streamlit rerun ───────────
 @st.cache_data(show_spinner=False)
@@ -578,6 +784,7 @@ with st.sidebar:
         if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
             filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
         if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots['ops_date'] = filtered_ops_snapshots['ops_date'].astype(str)
             filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
             
         if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
@@ -607,7 +814,7 @@ with st.sidebar:
 #  System Settings View (Full-Screen, Superadmin Only)
 # ═══════════════════════════════════════════════════════════════════════════
 if view_mode == "⚙️ Admin":
-    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management"], horizontal=True)
+    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management", "🧹 Data Maintenance", "📂 File Explorer"], horizontal=True)
     
     if admin_mode == "🏢 Client Hub":
         # Initialize router state
@@ -1152,6 +1359,311 @@ if view_mode == "⚙️ Admin":
                     st.success(f"User {del_user} deleted!")
                     st.rerun()
 
+    elif admin_mode == "🧹 Data Maintenance":
+        st.markdown("## 🧹 DATA MAINTENANCE")
+        st.markdown("*Purge cached files or database records to force a clean re-sync from the CallsU API.*")
+        st.markdown("---")
+
+        import shutil
+        from src.database import engine as _maint_engine, execute_query as _maint_exec
+
+        callsu_dir = "data/raw/callsu_daily"
+
+        # --- Show current state ---
+        file_count = 0
+        folder_size_mb = 0.0
+        if os.path.exists(callsu_dir):
+            for root, dirs, files in os.walk(callsu_dir):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    file_count += 1
+                    folder_size_mb += os.path.getsize(fp) / (1024 * 1024)
+
+        try:
+            ops_count = pd.read_sql("SELECT COUNT(*) as cnt FROM ops_telemarketing_data", _maint_engine).iloc[0]['cnt']
+            snap_count = pd.read_sql("SELECT COUNT(*) as cnt FROM ops_telemarketing_snapshots", _maint_engine).iloc[0]['cnt']
+        except:
+            ops_count, snap_count = 0, 0
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("📁 Local Files", f"{file_count:,}")
+        m2.metric("💾 Folder Size", f"{folder_size_mb:.1f} MB")
+        m3.metric("🗃️ Ops DB Rows", f"{ops_count:,}")
+        m4.metric("📸 Snapshot Rows", f"{snap_count:,}")
+
+        st.markdown("---")
+
+        pc1, pc2 = st.columns(2)
+
+        # --- PURGE LOCAL FILES ---
+        with pc1:
+            st.markdown("### 📁 Purge Local Files")
+            st.markdown(f"Deletes all `.xlsx` files from `{callsu_dir}/`.")
+            st.markdown("The API sync will re-download them on next trigger.")
+            with st.expander("⚠️ Confirm File Purge", expanded=False):
+                confirm_files = st.checkbox("I understand this will delete all cached CallsU files", key="confirm_purge_files")
+                if st.button("🗑️ Purge All Local Files", disabled=not confirm_files, use_container_width=True, type="primary"):
+                    if os.path.exists(callsu_dir):
+                        shutil.rmtree(callsu_dir)
+                        os.makedirs(callsu_dir, exist_ok=True)
+                        st.success(f"✅ Purged {file_count} files ({folder_size_mb:.1f} MB freed)")
+                        st.rerun()
+                    else:
+                        st.info("No files to purge.")
+
+        # --- PURGE DATABASE ---
+        with pc2:
+            st.markdown("### 🗃️ Purge Operations Database")
+            st.markdown("Truncates `ops_telemarketing_data` and `ops_telemarketing_snapshots`.")
+            st.markdown("The API sync will re-ingest on next trigger.")
+            with st.expander("⚠️ Confirm Database Purge", expanded=False):
+                confirm_db = st.checkbox("I understand this will permanently delete all operations data", key="confirm_purge_db")
+                if st.button("🗑️ Purge Operations DB", disabled=not confirm_db, use_container_width=True, type="primary"):
+                    try:
+                        _maint_exec("TRUNCATE TABLE ops_telemarketing_data RESTART IDENTITY")
+                        _maint_exec("TRUNCATE TABLE ops_telemarketing_snapshots RESTART IDENTITY")
+                        # Clear cached session state
+                        for key in ["raw_ops_df", "raw_ops_snapshots_df", "ops_df", "benchmarks_df"]:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.success(f"✅ Purged {ops_count:,} ops rows + {snap_count:,} snapshot rows")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Purge failed: {e}")
+
+        st.markdown("---")
+        st.markdown("### 📊 Benchmark Snapshots")
+        st.markdown("*Generate historical daily-average benchmarks from completed half-year periods. These power the H-over-H comparison table in the Dashboard.*")
+
+        # Detect completed half-years from ops_telemarketing_data
+        try:
+            date_range = pd.read_sql("SELECT MIN(ops_date) as min_d, MAX(ops_date) as max_d FROM ops_telemarketing_data", _maint_engine)
+            existing_benchmarks = pd.read_sql("SELECT DISTINCT benchmark_period FROM ops_historical_benchmarks", _maint_engine)['benchmark_period'].tolist()
+        except:
+            date_range = pd.DataFrame()
+            existing_benchmarks = []
+
+        if not date_range.empty and pd.notna(date_range.iloc[0]['min_d']):
+            from datetime import datetime as _dt
+            min_date = pd.to_datetime(date_range.iloc[0]['min_d'])
+            max_date = pd.to_datetime(date_range.iloc[0]['max_d'])
+            now = _dt.now()
+
+            # Build list of completed half-years
+            completed_halves = []
+            year = min_date.year
+            while year <= max_date.year:
+                # H1: Jan-Jun
+                h1_end = _dt(year, 6, 30)
+                if h1_end < now and min_date <= h1_end:
+                    completed_halves.append({
+                        "label": f"H1 {year}",
+                        "start": f"{year}-01-01",
+                        "end": f"{year}-06-30",
+                        "generated": f"H1 {year}" in existing_benchmarks
+                    })
+                # H2: Jul-Dec
+                h2_end = _dt(year, 12, 31)
+                if h2_end < now and min_date <= h2_end:
+                    completed_halves.append({
+                        "label": f"H2 {year}",
+                        "start": f"{year}-07-01",
+                        "end": f"{year}-12-31",
+                        "generated": f"H2 {year}" in existing_benchmarks
+                    })
+                year += 1
+
+            if completed_halves:
+                for h in completed_halves:
+                    bc1, bc2, bc3 = st.columns([3, 2, 2])
+                    with bc1:
+                        status = "✅ Generated" if h["generated"] else "⬜ Not generated"
+                        st.markdown(f"**{h['label']}** ({h['start']} → {h['end']}) — {status}")
+                    with bc2:
+                        btn_label = "🔄 Regenerate" if h["generated"] else "⚡ Generate"
+                        if st.button(btn_label, key=f"gen_bench_{h['label']}", use_container_width=True):
+                            with st.spinner(f"Generating benchmarks for {h['label']}..."):
+                                from scripts.jobs.generate_benchmarks import generate_benchmarks
+                                generate_benchmarks(h["start"], h["end"], h["label"])
+                                st.success(f"✅ Benchmarks generated for {h['label']}!")
+                                st.rerun()
+                    with bc3:
+                        if h["generated"]:
+                            if st.button("🗑️ Delete", key=f"del_bench_{h['label']}", use_container_width=True):
+                                _maint_exec(f"DELETE FROM ops_historical_benchmarks WHERE benchmark_period = '{h['label']}'")
+                                st.success(f"Deleted benchmarks for {h['label']}")
+                                st.rerun()
+            else:
+                st.info("No completed half-year periods found in the data yet.")
+        else:
+            st.info("No operations data available to generate benchmarks from.")
+
+    elif admin_mode == "📂 File Explorer":
+        st.markdown("## 📂 FILE EXPLORER")
+        st.markdown("*Browse application data and documentation files.*")
+        st.markdown("---")
+
+        from datetime import datetime as _fe_dt
+
+        _EXPLORER_ROOTS = {"data": "data", "docs": "docs"}
+
+        def _fmt_size(size_bytes):
+            if size_bytes >= 1_048_576:
+                return f"{size_bytes / 1_048_576:.1f} MB"
+            elif size_bytes >= 1024:
+                return f"{size_bytes / 1024:.1f} KB"
+            return f"{size_bytes} B"
+
+        def _count_recursive(path):
+            count, size = 0, 0
+            if os.path.exists(path):
+                for dp, _, fns in os.walk(path):
+                    for f in fns:
+                        count += 1
+                        try: size += os.path.getsize(os.path.join(dp, f))
+                        except: pass
+            return count, size
+
+        # --- INVENTORY DASHBOARD ---
+        inv_cols = st.columns(len(_EXPLORER_ROOTS))
+        for i, (label, path) in enumerate(_EXPLORER_ROOTS.items()):
+            cnt, sz = _count_recursive(path)
+            with inv_cols[i]:
+                st.metric(f"📁 {label}/", f"{cnt:,} files")
+                st.caption(f"💾 {_fmt_size(sz)}")
+
+        st.markdown("---")
+
+        # --- FOLDER NAVIGATION STATE ---
+        if "fe_current_path" not in st.session_state:
+            st.session_state["fe_current_path"] = None
+
+        current_path = st.session_state["fe_current_path"]
+
+        if current_path is None:
+            st.markdown("#### Select a root folder:")
+            for label, path in _EXPLORER_ROOTS.items():
+                cnt, sz = _count_recursive(path)
+                if st.button(f"📁 {label}/ — {cnt:,} files ({_fmt_size(sz)})", key=f"fe_root_{label}", use_container_width=True):
+                    st.session_state["fe_current_path"] = path
+                    st.rerun()
+        else:
+            # --- BREADCRUMB BAR ---
+            parts = current_path.replace("\\", "/").split("/")
+            bc_cols = st.columns(len(parts) + 1)
+            with bc_cols[0]:
+                if st.button("🏠", key="fe_bc_home", help="Back to root"):
+                    st.session_state["fe_current_path"] = None
+                    st.rerun()
+            for idx, part in enumerate(parts):
+                with bc_cols[idx + 1]:
+                    is_last = (idx == len(parts) - 1)
+                    if is_last:
+                        st.markdown(f"**📂 {part}/**")
+                    else:
+                        if st.button(f"📂 {part}/", key=f"fe_bc_{idx}"):
+                            st.session_state["fe_current_path"] = "/".join(parts[:idx + 1])
+                            st.rerun()
+
+            st.markdown("---")
+
+            if not os.path.exists(current_path):
+                st.warning(f"Path `{current_path}` does not exist.")
+                if st.button("← Back to root"):
+                    st.session_state["fe_current_path"] = None
+                    st.rerun()
+            else:
+                entries = sorted(os.listdir(current_path))
+                subdirs = [e for e in entries if os.path.isdir(os.path.join(current_path, e))]
+                files = [e for e in entries if os.path.isfile(os.path.join(current_path, e))]
+
+                # --- SUBFOLDERS ---
+                if subdirs:
+                    st.markdown(f"##### 📁 Folders ({len(subdirs)})")
+                    for row_start in range(0, len(subdirs), 4):
+                        row_dirs = subdirs[row_start:row_start + 4]
+                        folder_cols = st.columns(4)
+                        for j, d in enumerate(row_dirs):
+                            full_d = os.path.join(current_path, d)
+                            cnt, sz = _count_recursive(full_d)
+                            with folder_cols[j]:
+                                if st.button(f"📂 {d}/\n{cnt} files • {_fmt_size(sz)}", key=f"fe_dir_{d}", use_container_width=True):
+                                    st.session_state["fe_current_path"] = full_d.replace("\\", "/")
+                                    st.rerun()
+
+                # --- FILES ---
+                if files:
+                    st.markdown(f"##### 📄 Files ({len(files)})")
+                    file_data = []
+                    for fname in files:
+                        fpath = os.path.join(current_path, fname)
+                        try:
+                            stat = os.stat(fpath)
+                            file_data.append({
+                                "Name": fname, "Size": _fmt_size(stat.st_size),
+                                "Modified": _fe_dt.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                                "_abs": fpath
+                            })
+                        except: pass
+
+                    if file_data:
+                        files_df = pd.DataFrame(file_data)
+                        st.dataframe(
+                            files_df[["Name", "Size", "Modified"]], use_container_width=True, hide_index=True,
+                            column_config={
+                                "Name": st.column_config.TextColumn("📄 Name", width="large"),
+                                "Size": st.column_config.TextColumn("💾 Size"),
+                                "Modified": st.column_config.TextColumn("📅 Modified")
+                            },
+                            height=min(len(files_df) * 35 + 40, 400)
+                        )
+
+                        file_names = files_df["Name"].tolist()
+                        _search = st.text_input("🔎 Search:", placeholder="Filter files...", key="fe_search")
+                        if _search:
+                            file_names = [f for f in file_names if _search.lower() in f.lower()]
+                            st.caption(f"{len(file_names)} match(es)")
+
+                        sel = st.selectbox("🔍 Open file:", ["— Select —"] + file_names, key="fe_file_sel")
+                        if sel != "— Select —":
+                            row = files_df[files_df["Name"] == sel].iloc[0]
+                            abs_path = row["_abs"]
+                            ext = os.path.splitext(abs_path)[1].lower()
+                            st.markdown(f"**{sel}** — {row['Size']} • {row['Modified']}")
+
+                            _mime = {".csv": "text/csv", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                     ".xls": "application/vnd.ms-excel", ".md": "text/markdown", ".txt": "text/plain",
+                                     ".json": "application/json", ".log": "text/plain", ".py": "text/x-python"}
+                            if ext in _mime:
+                                with open(abs_path, "rb") as _dl:
+                                    st.download_button(f"⬇️ Download {sel}", _dl.read(), sel, _mime[ext], key=f"dl_{sel}")
+
+                            try:
+                                if ext == ".csv":
+                                    df = pd.read_csv(abs_path)
+                                    st.caption(f"📊 {len(df):,} rows × {len(df.columns)} cols")
+                                    st.dataframe(df, use_container_width=True, hide_index=True, height=500)
+                                elif ext in [".xlsx", ".xls"]:
+                                    df = pd.read_excel(abs_path)
+                                    st.caption(f"📊 {len(df):,} rows × {len(df.columns)} cols")
+                                    st.dataframe(df, use_container_width=True, hide_index=True, height=500)
+                                elif ext == ".md":
+                                    with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                                        st.markdown("---"); st.markdown(f.read())
+                                elif ext in [".txt", ".log", ".json", ".yml", ".yaml", ".toml", ".env", ".py"]:
+                                    with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                                        content = f.read(50000)
+                                    lang = {".py": "python", ".json": "json", ".yml": "yaml", ".yaml": "yaml"}.get(ext, "text")
+                                    if len(content) >= 50000: st.caption("First 50K chars")
+                                    st.code(content, language=lang)
+                                else:
+                                    st.info(f"No viewer for `{ext}` files.")
+                            except Exception as e:
+                                st.error(f"Could not open: {e}")
+
+                if not subdirs and not files:
+                    st.info("This folder is empty.")
+
     st.stop()  # Don't render Main Workspace below
 
 # 🌍 FINANCIAL DATA FILTERS (for legacy Financial/CRM tabs)
@@ -1285,13 +1797,11 @@ if view_mode == "📊 Dashboard":
             with col_nli:
                 _render_pulse_matrix(_pulse_ops, "NLI OPERATIONS PULSE", "NLI")
             
-            # ── H2 2025 OPERATIONAL BASELINE ──
+            # ── HALF-YEAR OPERATIONAL BASELINE ──
             st.markdown("---")
-            st.markdown("#### > 📊 H2 2025 OPERATIONAL BASELINE_")
-            st.markdown("*Fixed baseline: H2 2025 vs current half-year YTD.*")
             
-            def _render_fixed_benchmark(df):
-                """Render fixed H2 2025 baseline vs current half-year benchmark."""
+            def _render_fixed_benchmark(df, prior_half="H2 2025"):
+                """Render half-year baseline comparison with selectable prior period."""
                 from datetime import datetime
                 
                 if df.empty or 'ops_date' not in df.columns:
@@ -1312,11 +1822,17 @@ if view_mode == "📊 Dashboard":
                     half_label = "H2"
                     curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
                 
-                # Fixed baseline: H2 2025 (hardcoded)
-                prior_start, prior_end = "2025-07-01", "2025-12-31"
+                # Parse selected prior half (e.g. "H2 2025" → 2025-07-01, 2025-12-31)
+                prior_parts = prior_half.split()
+                prior_h = prior_parts[0]  # H1 or H2
+                prior_year = int(prior_parts[1])
+                if prior_h == "H1":
+                    prior_start, prior_end = f"{prior_year}-01-01", f"{prior_year}-06-30"
+                else:
+                    prior_start, prior_end = f"{prior_year}-07-01", f"{prior_year}-12-31"
                 
                 curr_label = f"{half_label} {current_year}"
-                prior_label = "H2 2025 Baseline"
+                prior_label = f"{prior_half} Baseline"
                 
                 curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
                 prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
@@ -1545,7 +2061,40 @@ if view_mode == "📊 Dashboard":
                         _bench_df = _bench_df[_bench_df['campaign_name'].str.upper().str.contains(selected_category, na=False)]
                     if selected_campaign != "All" and 'Core_Signature' in _bench_df.columns:
                         _bench_df = _bench_df[_bench_df['Core_Signature'] == selected_campaign]
-                    _render_fixed_benchmark(_bench_df)
+                    
+                    # Build available half-year options from snapshot data
+                    _bench_df['ops_date'] = pd.to_datetime(_bench_df['ops_date'], errors='coerce')
+                    _bench_dates = _bench_df.dropna(subset=['ops_date'])
+                    _available_halves = []
+                    if not _bench_dates.empty:
+                        from datetime import datetime as _bdt
+                        _b_now = _bdt.now()
+                        _b_min_yr = _bench_dates['ops_date'].min().year
+                        _b_max_yr = _bench_dates['ops_date'].max().year
+                        for _yr in range(_b_min_yr, _b_max_yr + 1):
+                            h1_end = _bdt(_yr, 6, 30)
+                            if h1_end < _b_now and not _bench_dates[(_bench_dates['ops_date'] >= f"{_yr}-01-01") & (_bench_dates['ops_date'] <= f"{_yr}-06-30")].empty:
+                                _available_halves.append(f"H1 {_yr}")
+                            h2_end = _bdt(_yr, 12, 31)
+                            if h2_end < _b_now and not _bench_dates[(_bench_dates['ops_date'] >= f"{_yr}-07-01") & (_bench_dates['ops_date'] <= f"{_yr}-12-31")].empty:
+                                _available_halves.append(f"H2 {_yr}")
+                    
+                    # Default selection priority: H2 2025 → H1 2025 → first available
+                    _default_halves = ["H2 2025", "H1 2025"]
+                    _all_options = _default_halves + [h for h in _available_halves if h not in _default_halves]
+                    # Only keep options that exist in data
+                    _valid_options = [h for h in _all_options if h in _available_halves]
+                    if not _valid_options:
+                        _valid_options = _available_halves if _available_halves else ["H2 2025"]
+                    
+                    _hdr_col, _dd_col = st.columns([3, 2])
+                    with _hdr_col:
+                        st.markdown("#### > 📊 OPERATIONAL BASELINE_")
+                        st.markdown("*Compare current half-year YTD against a prior baseline.*")
+                    with _dd_col:
+                        _selected_prior = st.selectbox("Compare against:", _valid_options, key="bench_prior_half")
+                    
+                    _render_fixed_benchmark(_bench_df, prior_half=_selected_prior)
                 else:
                     st.caption("No snapshot data available.")
             except Exception as e:
@@ -2100,19 +2649,19 @@ if not _master_df.empty:
                 st.markdown("*Insight: Identifies players active on both primary brands (Rojabet and Latribet) and their shared revenue footprint.*")
                 
                 from src.analytics import generate_overlap_stats
-                overlap_m = generate_overlap_stats(_raw_df)
+                overlap_m = generate_overlap_stats(raw_fin)
                 
                 o1, o2 = st.columns(2)
                 with o1:
                     st.metric(
                         "Overlapping Players", 
-                        f"{int(overlap_m['Overlap_Count']):,}", 
+                        f"{int(overlap_m['overlap_count']):,}", 
                         help="Unique players who have placed bets on BOTH Rojabet and Latribet."
                     )
                 with o2:
                     st.metric(
                         "Shared GGR Footprint", 
-                        f"${overlap_m['Overlap_GGR']:,.2f}", 
+                        f"${overlap_m['overlap_ggr']:,.2f}", 
                         help="The combined Lifetime GGR generated by these specific overlapping players."
                     )
 
@@ -2471,32 +3020,35 @@ if not _master_df.empty:
                              color=["#00FF41", "#FF0000", "#CCCCCC", "#804040"])
 
                 # ── VIP Tiering (Phase 15 - RFM) ─────────────────────────
-                latest_month_str = filtered_both["month"].max()
-                rfm = _cached_rfm_summary(_raw_df, latest_month_str)
-                if not rfm.empty:
-                    st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({latest_month_str})")
-                    t1, t2, t3 = st.columns(3)
-                    for i, (col_widget, tier_name, color) in enumerate([
-                        (t1, "True VIP", "#00FF41"),
-                        (t2, "Churn Risk", "#FF4444"),
-                        (t3, "Casual", "#AAAAAA"),
-                    ]):
-                        tier_row = rfm[rfm["Tier"] == tier_name]
-                        players = int(tier_row["Players"].iloc[0]) if not tier_row.empty else 0
-                        ggr = float(tier_row["GGR"].iloc[0]) if not tier_row.empty else 0.0
-                        with col_widget:
-                            st.metric(tier_name, f"{players:,} players")
-                            st.caption(f"GGR: ${ggr:,.2f}")
-                    st.dataframe(
-                        rfm,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Tier": st.column_config.TextColumn("Tier"),
-                            "Players": st.column_config.NumberColumn("Players", format="%d"),
-                            "GGR": st.column_config.NumberColumn("GGR", format="$%.2f"),
-                        },
-                    )
+                try:
+                    latest_month_str = filtered_both["month"].max()
+                    rfm = _cached_rfm_summary(_raw_df, latest_month_str)
+                    if not rfm.empty:
+                        st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({latest_month_str})")
+                        t1, t2, t3 = st.columns(3)
+                        for i, (col_widget, tier_name, color) in enumerate([
+                            (t1, "True VIP", "#00FF41"),
+                            (t2, "Churn Risk", "#FF4444"),
+                            (t3, "Casual", "#AAAAAA"),
+                        ]):
+                            tier_row = rfm[rfm["Tier"] == tier_name]
+                            players = int(tier_row["Players"].iloc[0]) if not tier_row.empty else 0
+                            ggr = float(tier_row["GGR"].iloc[0]) if not tier_row.empty else 0.0
+                            with col_widget:
+                                st.metric(tier_name, f"{players:,} players")
+                                st.caption(f"GGR: ${ggr:,.2f}")
+                        st.dataframe(
+                            rfm,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Tier": st.column_config.TextColumn("Tier"),
+                                "Players": st.column_config.NumberColumn("Players", format="%d"),
+                                "GGR": st.column_config.NumberColumn("GGR", format="$%.2f"),
+                            },
+                        )
+                except (NameError, Exception):
+                    pass  # RFM Phase 15 not yet implemented
 
                 # Full Both Business table
                 with st.expander(f"📋 Both Business Summary ({len(filtered_both)} months)", expanded=True):
@@ -3163,19 +3715,37 @@ if "📞 Operations Command" in tab_map:
                 )
                 
                 if not merged_vol.empty:
-                    for _, row in merged_vol.iterrows():
-                        # Scale the volume minimum by the time slice
-                        target_min_records = max(1, int(row["monthly_minimum_records"] * sla_scale_factor))
-                        
-                        # Calculations
-                        pct_complete = min(row["Actual_Records"] / target_min_records, 1.0) if target_min_records > 0 else 0
-                        
-                        # UI Rendering
-                        st.markdown(f"**{row['client_name']} - {row['brand_code']} ({row['lifecycle']})** — *{num_days}-Day Target*")
-                        
-                        progress_color = "normal" if pct_complete >= 0.9 else "error"
-                        st.progress(pct_complete, text=f"{int(row['Actual_Records']):,} / {target_min_records:,} Minimum Records Received (Scaled from {int(row['monthly_minimum_records']):,}/mo)")
-                        st.markdown("---")
+                    # Build per-brand cards: group lifecycles under each brand
+                    from itertools import groupby as _groupby
+                    brand_data = {}
+                    for _, row in merged_vol.sort_values(['client_name', 'brand_code', 'lifecycle']).iterrows():
+                        target = max(1, int(row["monthly_minimum_records"] * sla_scale_factor))
+                        actual = int(row["Actual_Records"])
+                        pct = min(actual / target, 1.0) if target > 0 else 0
+                        key = (row['client_name'], row['brand_code'])
+                        if key not in brand_data:
+                            brand_data[key] = {'lifecycles': [], 'total_actual': 0, 'total_target': 0}
+                        brand_data[key]['lifecycles'].append({'lc': row['lifecycle'], 'actual': actual, 'target': target, 'pct': pct})
+                        brand_data[key]['total_actual'] += actual
+                        brand_data[key]['total_target'] += target
+                    
+                    # Render 3-column grid of brand cards
+                    brand_keys = list(brand_data.keys())
+                    for row_start in range(0, len(brand_keys), 3):
+                        row_keys = brand_keys[row_start:row_start + 3]
+                        cols = st.columns(3)
+                        for i, (client, brand) in enumerate(row_keys):
+                            bd = brand_data[(client, brand)]
+                            overall_pct = min(bd['total_actual'] / bd['total_target'], 1.0) if bd['total_target'] > 0 else 0
+                            status = "🟢" if overall_pct >= 0.9 else ("🟡" if overall_pct >= 0.5 else "🔴")
+                            with cols[i]:
+                                st.markdown(f"{status} **{brand}** · {client}")
+                                st.progress(overall_pct)
+                                st.caption(f"**{bd['total_actual']:,} / {bd['total_target']:,}** ({num_days}d)")
+                                for lc in bd['lifecycles']:
+                                    lc_icon = "✅" if lc['pct'] >= 0.9 else "⚠️"
+                                    st.caption(f"  {lc_icon} {lc['lc']}: {lc['actual']:,} / {lc['target']:,}")
+                    st.markdown("---")
                 else:
                     st.info("No active Volume SLAs match the currently loaded operations data. Add them in System Settings.")
             else:
@@ -3220,7 +3790,9 @@ if "📞 Operations Command" in tab_map:
                     b_conv_delta = f"{int(total_conv - exp_tot_convs):,} vs 6mo Avg"
                     b_cr_delta = f"{contact_rate - exp_cr:.1f}% vs 6mo Avg"
             
-            o1, o2, o3, o4, o5 = st.columns(5)
+            total_new_records = ops_df["Records"].sum()
+            o0, o1, o2, o3, o4, o5 = st.columns(6)
+            o0.metric("📋 New Records", f"{int(total_new_records):,}")
             o1.metric("Total Telecom Spend", f"${total_spend:,.2f}")
             o2.metric("Total SIP Calls", f"{int(total_calls):,}", delta=b_calls_delta)
             o3.metric("Contact Rate (D Ratio)", f"{contact_rate:.1f}%", delta=b_cr_delta)
@@ -3346,7 +3918,9 @@ if "📞 Operations Command" in tab_map:
                         target_li = b_row.iloc[0]['target_li_pct'] * 100 if pd.notnull(b_row.iloc[0]['target_li_pct']) else None
                 
                 # 1. Group by exact daily date using standard UI names
-                agg_dict = {'Calls': 'sum'}
+                agg_dict = {'Records': 'sum'}
+                if 'Calls' in latest_snaps.columns:
+                    agg_dict['Calls'] = 'sum'
                 if 'KPI1-Conv.' in latest_snaps.columns:
                     agg_dict['KPI1-Conv.'] = 'sum'
                 if 'KPI2-Login' in latest_snaps.columns:
@@ -3355,9 +3929,6 @@ if "📞 Operations Command" in tab_map:
                     agg_dict['LI%'] = 'mean'
                     
                 daily_trends = latest_snaps.groupby('ops_date').agg(agg_dict).reset_index().sort_values('ops_date')
-                
-                # 2. Rename back to UI standard for Plotly and downstream efficiency math
-                daily_trends.rename(columns={'Calls': 'Records'}, inplace=True)
 
                 def display_trend_charts(df_filtered):
                     if len(df_filtered) > 0:
@@ -3402,7 +3973,7 @@ if "📞 Operations Command" in tab_map:
                                 
                         st.plotly_chart(fig_trend_vol, use_container_width=True)
                         
-                        # ---- Calculate efficiency percentages ----
+                        # ---- Calculate efficiency percentages (vs New Data) ----
                         df_filtered['Conv%'] = ((df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI1-Conv.' in df_filtered.columns else 0
                         df_filtered['Logins%'] = ((df_filtered['KPI2-Login'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI2-Login' in df_filtered.columns else 0
                         
@@ -3479,12 +4050,20 @@ if "📞 Operations Command" in tab_map:
 
             if not ops_df.empty:
                 # Ensure previously unmapped columns default to 0 to prevent KeyError
-                req_cols = ["Records", "Calls", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "ev", "es", "ed", "eo", "ec", "D"]
+                req_cols = ["Records", "Calls", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "sp", "ev", "es", "ed", "ef", "eo", "ec", "D"]
                 for c in req_cols:
                     if c not in ops_df.columns:
                         ops_df[c] = 0
 
-                # Core_Signature is now compiled globally on hydration
+                # Build Core_Signature: strip the trailing date suffix from campaign names
+                import re as _re
+                def _strip_date_suffix(name):
+                    # Strip _YYYY-MM-DD or _DDMMMYYYY (e.g. _01MAR2026) from the end
+                    name = _re.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', str(name))
+                    name = _re.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', name)
+                    name = _re.sub(r'[_-]\d{4}[_-]\d{2}$', '', name)
+                    return name
+                ops_df['Core_Signature'] = ops_df['Campaign Name'].apply(_strip_date_suffix)
 
                 agg_dict = {c: 'sum' for c in req_cols}
                 scorecard_df = ops_df.groupby("Core_Signature").agg(agg_dict).reset_index()
@@ -3511,23 +4090,66 @@ if "📞 Operations Command" in tab_map:
                 rendered_scorecard["NA_%"] = (rendered_scorecard["NA"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
                 rendered_scorecard["Issues_%"] = (rendered_scorecard["Issues"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
 
-                # Render Dataframe
-                st.dataframe(
-                    rendered_scorecard, 
-                    use_container_width=True, 
-                    hide_index=True,
+                # Render with color-coded styling
+                def _style_deliveries(val):
+                    if pd.isna(val): return ''
+                    if val >= 20: return 'color: #4ade80; font-weight: bold;'
+                    if val >= 15: return 'color: #facc15; font-weight: bold;'
+                    if val >= 10: return 'color: #fb923c; font-weight: bold;'
+                    return 'color: #f87171; font-weight: bold;'
+                
+                def _style_issues(val):
+                    if pd.isna(val): return ''
+                    if val > 10: return 'color: #f87171; font-weight: bold;'
+                    return ''
+                
+                def _style_delivery_rate(val):
+                    if pd.isna(val): return ''
+                    if val >= 90: return 'color: #4ade80; font-weight: bold;'
+                    if val >= 85: return 'color: #facc15; font-weight: bold;'
+                    return 'color: #f87171; font-weight: bold;'
+                
+                def _style_engagement(val):
+                    if pd.isna(val): return ''
+                    if val >= 10: return 'color: #4ade80; font-weight: bold;'
+                    if val >= 5: return 'color: #facc15; font-weight: bold;'
+                    return 'color: #f87171; font-weight: bold;'
+
+                # Calculate Email & SMS funnel percentages
+                rendered_scorecard['Email Delivered'] = (rendered_scorecard['ed'] / (rendered_scorecard['ed'] + rendered_scorecard['ef']).replace(0, float('nan')) * 100).fillna(0)
+                rendered_scorecard['Email Open'] = (rendered_scorecard['eo'] / rendered_scorecard['ed'].replace(0, float('nan')) * 100).fillna(0)
+                rendered_scorecard['Email Clicked'] = (rendered_scorecard['ec'] / rendered_scorecard['eo'].replace(0, float('nan')) * 100).fillna(0)
+                rendered_scorecard['SMS Delivered'] = (rendered_scorecard['sd'] / (rendered_scorecard['sd'] + rendered_scorecard['sp'] + rendered_scorecard['sf']).replace(0, float('nan')) * 100).fillna(0)
+
+                display_sc = rendered_scorecard[['Core_Signature', 'Gross_Completion_%', 'Net_Completion_%', 'Calls', 'Deliveries_%', 'NA_%', 'Issues_%', 'Email Delivered', 'Email Open', 'Email Clicked', 'SMS Delivered']].copy()
+                display_sc.rename(columns={
+                    'Core_Signature': 'Campaign',
+                    'Gross_Completion_%': 'Gross %',
+                    'Net_Completion_%': 'Net %',
+                    'Deliveries_%': 'Deliveries %',
+                    'NA_%': 'No Answers %',
+                    'Issues_%': 'Issues %',
+                }, inplace=True)
+
+                styled_sc = display_sc.style.format({
+                    'Calls': '{:,.0f}',
+                    'Deliveries %': '{:.1f}%',
+                    'No Answers %': '{:.1f}%',
+                    'Issues %': '{:.1f}%',
+                    'Email Delivered': '{:.1f}%',
+                    'Email Open': '{:.1f}%',
+                    'Email Clicked': '{:.1f}%',
+                    'SMS Delivered': '{:.1f}%',
+                }).map(_style_deliveries, subset=['Deliveries %']
+                ).map(_style_issues, subset=['Issues %']
+                ).map(_style_delivery_rate, subset=['Email Delivered', 'SMS Delivered']
+                ).map(_style_engagement, subset=['Email Open', 'Email Clicked'])
+
+                st.dataframe(styled_sc, use_container_width=True, hide_index=True,
                     column_config={
-                        "Core_Signature": st.column_config.TextColumn("Campaign"),
-                        "Calls": st.column_config.NumberColumn("Calls", format="%d"),
-                        "Gross_Completion_%": st.column_config.ProgressColumn("Gross Completion", format="%.1f%%", min_value=0, max_value=100),
-                        "Net_Completion_%": st.column_config.ProgressColumn("Net Completion", format="%.1f%%", min_value=0, max_value=100),
-                        "Deliveries_%": st.column_config.NumberColumn("Deliveries", format="%.1f%%"),
-                        "NA_%": st.column_config.NumberColumn("No Answers", format="%.1f%%"),
-                        "Issues_%": st.column_config.NumberColumn("Issues", format="%.1f%%"),
-                        "sa": st.column_config.NumberColumn("SMS", format="%d"),
-                        "es": st.column_config.NumberColumn("Email", format="%d")
-                    },
-                    column_order=["Core_Signature", "Gross_Completion_%", "Net_Completion_%", "Deliveries_%", "NA_%", "Issues_%", "sa", "es"]
+                        "Gross %": st.column_config.ProgressColumn("Gross %", format="%.1f%%", min_value=0, max_value=100),
+                        "Net %": st.column_config.ProgressColumn("Net %", format="%.1f%%", min_value=0, max_value=100),
+                    }
                 )
 
 
@@ -3608,15 +4230,13 @@ if "📞 Operations Command" in tab_map:
             st.markdown("---")
             st.markdown("### 🔍 Campaign Comparison Matrix")
             if not ops_df.empty:
-                # Strip date suffix (e.g., _2025_02 or _2025-02-15) to aggregate generic campaign logic
+                # Strip date suffix: _YYYY-MM-DD, _DDMMMYYYY (e.g. 01MAR2026), _YYYY-MM
+                import re as _re2
                 def strip_campaign_date(c):
-                    parts = c.replace("-", "_").split('_')
-                    # Check for YYYY_MM_DD
-                    if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
-                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-                    # Check for YYYY_MM
-                    if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
-                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                    c = str(c)
+                    c = _re2.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', c)
+                    c = _re2.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', c)
+                    c = _re2.sub(r'[_-]\d{4}[_-]\d{2}$', '', c)
                     return c
                 
                 comp_df = ops_df.copy()
@@ -3667,20 +4287,37 @@ if "📞 Operations Command" in tab_map:
                 
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
-            display_cols = ["Campaign Name", "ops_client", "ops_brand", "Records", "Calls", "D Ratio", "Total_Campaign_Cost", "KPI1-Conv.", "True_CAC"]
+            # Group by campaign type (strip date suffix) for aggregated view
+            if 'Core_Signature' not in ops_df.columns:
+                import re as _re3
+                ops_df['Core_Signature'] = ops_df['Campaign Name'].apply(lambda n: _re3.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', _re3.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', str(n))))
+            
+            ledger_agg_cols = {'Records': 'sum', 'Calls': 'sum', 'Total_Campaign_Cost': 'sum', 'KPI1-Conv.': 'sum'}
+            # Add disposition columns for Contact Rate calc
+            for c in ['D', 'NA', 'AM', 'DNC', 'DX', 'WN', 'T']:
+                if c in ops_df.columns: ledger_agg_cols[c] = 'sum'
+            ledger_group = ['Core_Signature', 'ops_client', 'ops_brand']
+            ledger_group = [c for c in ledger_group if c in ops_df.columns]
+            ledger_df = ops_df.groupby(ledger_group).agg(ledger_agg_cols).reset_index()
+            ledger_df['True_CAC'] = (ledger_df['Total_Campaign_Cost'] / ledger_df['KPI1-Conv.']).replace([float('inf'), -float('inf')], 0).fillna(0)
+            
+            # Conv % = Conversions / New Data
+            ledger_df['Conv %'] = (ledger_df['KPI1-Conv.'] / ledger_df['Records'].replace(0, float('nan')) * 100).fillna(0)
+            
+            # Contact Rate = D / (D + NA + Issues) where Issues = AM + DNC + DX + WN + T
+            if 'D' in ledger_df.columns and 'NA' in ledger_df.columns:
+                issues = ledger_df.get('AM', 0) + ledger_df.get('DNC', 0) + ledger_df.get('DX', 0) + ledger_df.get('WN', 0) + ledger_df.get('T', 0)
+                total = ledger_df['D'] + ledger_df['NA'] + issues
+                ledger_df['Contact Rate'] = (ledger_df['D'] / total.replace(0, float('nan')) * 100).fillna(0)
+            else:
+                ledger_df['Contact Rate'] = 0.0
+            
+            ledger_df.rename(columns={'Core_Signature': 'Campaign Name'}, inplace=True)
             
             # Additional signature columns needed for joining benchmarks
             sig_cols = ["country", "extracted_lifecycle", "extracted_segment", "extracted_engagement"]
-            for c in sig_cols:
-                if c in ops_df.columns:
-                    display_cols.append(c)
-                    
-            # Only display columns that actually exist in the dataframe
-            display_cols = [c for c in display_cols if c in ops_df.columns]
-            
-            ledger_df = ops_df[display_cols].copy()
-            if "D Ratio" in ledger_df.columns:
-                ledger_df["D Ratio"] = ledger_df["D Ratio"] * 100
+            display_cols = ["Campaign Name", "ops_client", "ops_brand", "Records", "Calls", "Contact Rate", "Conv %", "Total_Campaign_Cost", "True_CAC"]
+            display_cols = [c for c in display_cols if c in ledger_df.columns]
                 
             # Cross-reference with benchmarks
             if "benchmarks_df" in st.session_state and not st.session_state["benchmarks_df"].empty:
@@ -3700,7 +4337,7 @@ if "📞 Operations Command" in tab_map:
                 ledger_df['CAC Delta'] = 0.0
 
             # Drop signature columns for clean display
-            final_display_df = ledger_df.drop(columns=[c for c in sig_cols if c in ledger_df.columns]).sort_values("True_CAC", ascending=False)
+            final_display_df = ledger_df.drop(columns=[c for c in sig_cols + ['D', 'NA', 'AM', 'DNC', 'DX', 'WN', 'T', 'KPI1-Conv.'] if c in ledger_df.columns]).sort_values("True_CAC", ascending=False)
 
             def style_cac_delta(val):
                 if pd.isna(val) or val == 0:
@@ -3716,14 +4353,15 @@ if "📞 Operations Command" in tab_map:
                     "True_CAC": "${:,.2f}",
                     "Benchmark CAC": "${:,.2f}",
                     "CAC Delta": "${:,.2f}",
-                    "D Ratio": "{:.2f}%"
+                    "Contact Rate": "{:.1f}%",
+                    "Conv %": "{:.1f}%",
             }).map(style_cac_delta, subset=["CAC Delta"])
                 
             st.dataframe(
                 styled_ledger,
                 use_container_width=True, hide_index=True,
                 column_config={
-                    "Records": st.column_config.NumberColumn("Total Records"),
+                    "Records": st.column_config.NumberColumn("New Data"),
                     "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend"),
                     "True_CAC": st.column_config.NumberColumn("True CAC"),
                     "Benchmark CAC": st.column_config.NumberColumn("Benchmark CAC"),

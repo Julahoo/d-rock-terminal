@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 # Ensure we can import from src
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
-from src.api_worker import run_historical_pull, log_msg
+from src.iwinback_worker import run_historical_pull, log_msg
 
 def run_daily_sync():
     """
