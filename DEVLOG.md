@@ -1,8 +1,16 @@
-﻿# DEVELOPMENT LOG
-**Status:** V2.0 Enterprise Ready (Multi-Client Architecture Deployed)
+# DEVELOPMENT LOG
+**Status:** V3.0 SDD Refresh (Campaign Convention Alignment)
 **Started:** 2026-03-01
 
 ## LOG ENTRIES
+
+### [SDD - V3.0 Spec Refresh] - 2026-03-11 - COMPLETED
+- Bumped `SPEC.md` from v2.0 → v3.0 to reflect current architecture.
+- Added §3.8 Campaign Naming Convention: documents all 8 extraction rules (Brand, Country, Language, Product, Segment, Lifecycle, Sublifecycle, Engagement) with smart Language defaults from Country.
+- Updated §2.1: added `ops_telemarketing_snapshots`, `ops_historical_benchmarks`, `users` tables. Expanded `ops_telemarketing_data` to list all 8 campaign component columns.
+- Updated §4.1: documented form-gated sidebar with 9 filters in campaign naming convention order.
+- Rewrote `.cursorrules.txt` with v3.0 context, campaign convention rules, deployment workflow (dev→master).
+- Added `extracted_product`, `extracted_language`, `extracted_sublifecycle` to `database.py` migration, `ingestion.py` extraction, and `app.py` sidebar form. Pushed to `dev` only.
 
 ### [Refactor - H2 2025 Baseline Benchmark] - 2026-03-11 - COMPLETED
 - Updated `SPEC.md` §4.4.2 to reflect the new static benchmark strategy requested by stakeholders.

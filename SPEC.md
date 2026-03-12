@@ -1,20 +1,24 @@
-# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.0)
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
-- **Goal:** Automate the ingestion of monthly betting CSVs to calculate financial metrics, track player lifecycles, and generate business intelligence via a web application and Excel exports.
-- **Architecture:** 4-Tier Modular Enterprise Platform (V2.0). Utilizes an ETL Pipeline saving state to a persistent PostgreSQL database (`src/database.py`).
+- **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
+- **Architecture:** 4-Tier Modular Enterprise Platform (V3.0). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron.
 - **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
 - **UI Theme:** "Matrix/Terminal" (Pitch Black `#000000`, Secondary `#0D0D0D`, Text/Accent Neon Green `#00FF41`).
+- **Deployment:** Railway (Docker) with PostgreSQL. Automated daily ops sync at 03:30 UTC.
 
 ---
 
 ## 2. DATA MODELS (PostgreSQL Persistence Layer)
 
 ### 2.1 Database Tables (Single Source of Truth)
-- **`ops_telemarketing_data`:** Core telemarketing operational records. Columns include `ops_hash`, `ops_client`, `ops_brand`, `ops_date`, total dials, connections, promises, etc.
-- **`financial_data`:** Core financial records populated from ingestion. Columns match the Smart Adapters (e.g., `brand`, `month`, `ogr`, `ngr`, `deposits`).
+- **`ops_telemarketing_data`:** Core telemarketing operational records. Key columns: `campaign_name` (UNIQUE), `ops_client`, `ops_brand`, `ops_date`, `records`, `calls`, `conversions`, `total_cost`, `true_cac`, dispositions (`d_plus`, `d_minus`, `d_neutral`, `am`, `dnc`, `na`, `dx`, `wn`, `t`), channel metrics (`sa`, `sd`, `sf`, `sp`, `ev`, `es`, `ed`, `eo`, `ec`, `ef`), optouts, and **8 campaign naming convention components:** `country`, `extracted_lifecycle`, `extracted_segment`, `extracted_engagement`, `extracted_product`, `extracted_language`, `extracted_sublifecycle`.
+- **`ops_telemarketing_snapshots`:** Mirror of `ops_telemarketing_data` for daily snapshots used by Dashboard Pulse matrices and benchmarks. Same column schema.
+- **`raw_financial_data`:** Core financial records populated from ingestion. Columns: `player_id`, `client`, `brand`, `country`, `wb_tag`, `segment`, `bet`, `revenue`, `ngr`, casino/sports splits, `deposits`, `withdrawals`, `bonus_*`, `tax_total`, `report_month`, `reactivation_date`, `campaign_start_date`, `reactivation_days`.
 - **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`, `financial_format` (Enum: Standard, LeoVegas, Offside). Used to normalize incoming data and intercept/quarantine orphaned tags.
-- **`contractual_slas`:** Stores client-specific SLA thresholds for Operations command tracking. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`, `target_cac_usd`, `benchmark_conv_pct`.
+- **`contractual_slas`:** Client-specific SLA thresholds. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`, `target_cac_usd`.
+- **`ops_historical_benchmarks`:** Aggregated benchmark averages per brand/country/lifecycle/segment/engagement.
+- **`users`:** RBAC authentication registry. Columns: `username` (UNIQUE), `password`, `role` (Superadmin/Admin/Viewer), `name`, `allowed_clients` (JSONB array).
 
 ### 2.1.1 Deterministic UI-Driven Parsers
 - The parser logic is now explicitly mapped in the database via the `financial_format` column, completely replacing the legacy "column sniffing" fallback.
@@ -88,19 +92,43 @@ Evaluated row-by-row in this strict priority order:
 
 ---
 
+### 3.8 Campaign Naming Convention (Ops Ingestion)
+Campaign names follow: `Brand-Country-Language-Product-Segment-Lifecycle-Sublifecycle-Engagement-Date`.
+During ingestion, each component is extracted via token matching:
+- **Brand:** First token → lookup in `client_mapping` for `ops_client` and `ops_brand`.
+- **Country:** First 2-3 letter alphabetic token not in blocklist → stored as ISO code (e.g., `TR`, `CL`). Default: `Global`.
+- **Language:** Smart default from country (`TR→TR`, `BR→PT`, `GB→EN`, `ES/CL/MX/PE/EC/AR/CO→ES`, `JP→JA`, `DE/AT/CH→DE`). Falls back to `UNKNOWN`.
+- **Product:** Token in `[SPO, CAS, LIVE, ALL]`. Default: `UNKNOWN`.
+- **Segment:** Token in `[HIGH, MID, MED, LOW, VIP, NA, AFF, COH1-COH4]`. Default: `UNKNOWN`.
+- **Lifecycle:** Token in `[RND, WB, CS, ROC, FD, OTD, CHU, ACQ, SL, LFC, LOADER]`. Default: `UNKNOWN`.
+- **Sublifecycle:** Token in `[J1, J2, J3, BULK]`. Default: `UNKNOWN`.
+- **Engagement:** Token in `[NLI, LI]`. Default: `UNKNOWN`.
+- **Missing fields:** Default to `"UNKNOWN"`. UNKNOWN values excluded from sidebar dropdowns but included when filter = "All".
+
+---
+
 ## 4. FRONTEND APPLICATION (`app.py`)
 
 ### 4.1 🧭 4-Tier Navigation Router & Global Filters
-- **Sidebar Router:** Replaced flat-tab structure with a role-based radio router (`view_mode`):
+- **Sidebar Router:** Role-based radio router (`view_mode`):
   1. `📊 Dashboard`: Executive/CRM intelligence.
   2. `📞 Operations`: Operations Command and Ingestion.
   3. `🏦 Financial`: Financial Deep-Dive and Ingestion dropzones.
   4. `⚙️ Admin`: Client Hub and settings.
-- **🌍 GLOBAL INTELLIGENCE FILTERS:**
-  - Placed in the sidebar globally. DB-Hydrated logic explicitly strips hidden whitespace to prevent filtering bugs.
-  - Cascading logic: **Client** selection perfectly limits the **Brand** dropdown to registered components via SQL `WHERE` clauses on `client_mapping`.
-  - UX Trick: Auto-selects the brand if the client only has 1 registered.
-  - Unified Time Frame Filter (Date Slider): Synchronously slices both Financial (report_month) and Operations (ops_date) data across all tabs.
+- **🌍 GLOBAL INTELLIGENCE FILTERS (Form-Gated):**
+  - All filters wrapped in `st.form("global_filters")` — page only re-renders on "🔍 Apply Filters" click.
+  - **Filter Order** (matches campaign naming convention):
+    1. 🎯 **Client** — from `ops_client` + `client` columns.
+    2. 🏷️ **Brand** — from `ops_brand` + `brand` columns. Display: `CODE — Name`.
+    3. 🌍 **Country** — from `country` column, display-mapped to full names.
+    4. 🗣️ **Language** — from `extracted_language` column.
+    5. 📦 **Product** — from `extracted_product` column, display-mapped (SPO→Sportsbook, CAS→Casino, LIVE→Live).
+    6. 🎯 **Segment** — from `extracted_segment` column.
+    7. 🔁 **Lifecycle** — from `extracted_lifecycle` column.
+    8. 📋 **Sublifecycle** — from `extracted_sublifecycle` column.
+    9. 🔥 **Engagement** — from `extracted_engagement` column, display-mapped (LI→Log In, NLI→Not Logged In).
+  - All default to "All". Dropdowns dynamically populated from actual DB data. UNKNOWN values hidden.
+  - Unified Time Frame Filter (Date Slider): Synchronously slices both Financial and Operations data.
 
 ### 4.2 ⚡ Real-Time Auto-Hydration & Ingestion Decoupling
 - **Decentralized Ingestion:** Legacy Data Control Room destroyed. Uploaders are now scoped to their specific domains:
