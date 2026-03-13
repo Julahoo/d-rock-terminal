@@ -131,6 +131,84 @@ def materialize_dashboard_pulse():
     except Exception as e:
         print(f"❌ Failed to materialize dashboard pulse: {e}")
 
+def materialize_crm_intelligence():
+    print(f"[{datetime.now().isoformat()}] Starting CRM Intelligence Pre-Computation...")
+    try:
+        df = pd.read_sql("SELECT * FROM raw_financial_data", db_engine)
+        if df.empty:
+            print("No data found in raw_financial_data.")
+            return False
+
+        # Apply UI standardizations 
+        df.rename(columns={"player_id": "id"}, inplace=True)
+        if 'client' in df.columns: df['client'] = df['client'].astype(str).str.strip()
+        if 'brand' in df.columns: df['brand'] = df['brand'].astype(str).str.strip()
+
+        from src.analytics.base import generate_cohort_matrix, generate_ltv_curves, generate_retention_heatmap, generate_tier_summary
+        
+        # 1. Cohort Matrix
+        print(" > Computing Cohort Matrix...")
+        matrices = generate_cohort_matrix(df)
+        cohort_records = []
+        for brand, matrix_df in matrices.items():
+            cohort_records.append({
+                "brand": brand,
+                "matrix_json": matrix_df.to_json(orient="split")
+            })
+        if cohort_records:
+            pd.DataFrame(cohort_records).to_sql('cache_cohort_matrices', db_engine, if_exists='replace', index=False)
+            
+        # 2. LTV Curves
+        print(" > Computing LTV Curves...")
+        ltv_fig = generate_ltv_curves(df)
+        ltv_json = ltv_fig.to_json() if ltv_fig else None
+        
+        # 3. Retention Heatmap
+        print(" > Computing Retention Heatmap...")
+        heatmap_fig = generate_retention_heatmap(df)
+        heatmap_json = heatmap_fig.to_json() if heatmap_fig else None
+        
+        figs_df = pd.DataFrame([
+            {"visualization": "ltv_curves", "figure_json": ltv_json},
+            {"visualization": "retention_heatmap", "figure_json": heatmap_json}
+        ])
+        figs_df.to_sql('cache_financial_figures', db_engine, if_exists='replace', index=False)
+        
+        # 4. VIP Tier Summary
+        print(" > Computing VIP Tier Summary...")
+        active_brands = sorted([b for b in df["brand"].unique() if b != "Combined" and pd.notna(b)])
+        
+        def _get_true_latest(brand_df):
+            if "report_month" in brand_df.columns:
+                return brand_df["report_month"].max()
+            return pd.Timestamp.today().strftime('%Y-%m')
+
+        tier_records = []
+        latest_all = _get_true_latest(df)
+        tier_rfm_all = generate_tier_summary(df, latest_all)
+        tier_records.append({
+            "brand": "Combined",
+            "tier_json": tier_rfm_all.to_json(orient="split")
+        })
+        
+        for brand in active_brands:
+            b_df = df[df["brand"] == brand]
+            latest_b = _get_true_latest(b_df)
+            tier_rfm_b = generate_tier_summary(b_df, latest_b)
+            tier_records.append({
+                "brand": brand,
+                "tier_json": tier_rfm_b.to_json(orient="split")
+            })
+            
+        if tier_records:
+            pd.DataFrame(tier_records).to_sql('cache_tier_summaries', db_engine, if_exists='replace', index=False)
+            
+        print(f"[{datetime.now().isoformat()}] Successfully materialized CRM Intelligence Caches.")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to materialize CRM Intelligence: {e}")
+        return False
+
 def main():
     print(f"🚀 ETL Worker starting at {datetime.now().isoformat()}")
     success_base = materialize_ops_base_view()
@@ -138,6 +216,7 @@ def main():
         materialize_dashboard_pulse()
         
     materialize_ops_snapshots_view()
+    materialize_crm_intelligence()
     print(f"🏁 ETL Worker complete at {datetime.now().isoformat()}")
 
 if __name__ == "__main__":

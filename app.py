@@ -238,32 +238,59 @@ div[data-testid="stAlert"] {
 st.markdown(_MATERIAL_CSS, unsafe_allow_html=True)
 
 # ── Cached wrappers to prevent recomputation on Streamlit rerun ───────────
+import plotly.io as pio
+
 @st.cache_data(show_spinner=False)
 def _cached_time_series(data):
     return generate_time_series(data)
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl="24h", show_spinner=False)
 def _cached_tier_summary(raw_df, target_month):
-    return generate_tier_summary(raw_df, target_month)
+    brand = raw_df["brand"].iloc[0] if "brand" in raw_df.columns and raw_df["brand"].nunique() == 1 else "Combined"
+    try:
+        from src.database import engine as _db
+        import pandas as pd
+        res = pd.read_sql(f"SELECT tier_json FROM cache_tier_summaries WHERE brand = '{brand}'", _db)
+        if not res.empty: return pd.read_json(res.iloc[0]["tier_json"], orient="split")
+    except Exception: pass
+    return pd.DataFrame()
 
 @st.cache_data(show_spinner=False)
 def _cached_player_master_list(raw_df):
     return generate_player_master_list(raw_df)
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl="24h", show_spinner=False)
 def _cached_retention_heatmap(raw_df):
-    return generate_retention_heatmap(raw_df)
+    try:
+        from src.database import engine as _db
+        import pandas as pd
+        res = pd.read_sql("SELECT figure_json FROM cache_financial_figures WHERE visualization = 'retention_heatmap'", _db)
+        if not res.empty and res.iloc[0]["figure_json"]: return pio.from_json(res.iloc[0]["figure_json"])
+    except Exception: pass
+    return None
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl="24h", show_spinner=False)
 def _cached_ltv_curves(raw_df):
-    return generate_ltv_curves(raw_df)
+    try:
+        from src.database import engine as _db
+        import pandas as pd
+        res = pd.read_sql("SELECT figure_json FROM cache_financial_figures WHERE visualization = 'ltv_curves'", _db)
+        if not res.empty and res.iloc[0]["figure_json"]: return pio.from_json(res.iloc[0]["figure_json"])
+    except Exception: pass
+    return None
 
 @st.cache_data(show_spinner=False)
 def _cached_monthly_summaries(df, start=None, end=None): 
     return generate_monthly_summaries(df, force_start=start, force_end=end)
 
-@st.cache_data(show_spinner=False)
-def _cached_cohort_matrix(df): return generate_cohort_matrix(df)
+@st.cache_data(ttl="24h", show_spinner=False)
+def _cached_cohort_matrix(df): 
+    try:
+        from src.database import engine as _db
+        import pandas as pd
+        res = pd.read_sql("SELECT brand, matrix_json FROM cache_cohort_matrices", _db)
+        return {row["brand"]: pd.read_json(row["matrix_json"], orient="split") for _, row in res.iterrows()}
+    except Exception: return {}
 
 @st.cache_data(show_spinner=False)
 def _cached_segmentation(df): return generate_segmentation_summary(df)
