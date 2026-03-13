@@ -1748,6 +1748,247 @@ rev_col = "ggr" if revenue_mode == "GGR" else "ngr"
 tab_map = {}
 run_clicked = False
 
+
+# --- GLOBAL BENCHMARK RENDER HELPER ---
+def _render_fixed_benchmark(df, prior_half="H2 2025"):
+    """Render half-year baseline comparison with selectable prior period."""
+    from datetime import datetime
+
+    if df.empty or 'ops_date' not in df.columns:
+        st.caption("No data available for benchmark.")
+        return
+
+    df['ops_date'] = pd.to_datetime(df['ops_date'], errors='coerce')
+
+    now = datetime.now()
+    current_year = now.year
+    current_month = now.month
+
+    # Current half-year (auto-detected)
+    if current_month <= 6:
+        half_label = "H1"
+        curr_start, curr_end = f"{current_year}-01-01", f"{current_year}-06-30"
+    else:
+        half_label = "H2"
+        curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
+
+    # Parse selected prior half (e.g. "H2 2025" → 2025-07-01, 2025-12-31)
+    prior_parts = prior_half.split()
+    prior_h = prior_parts[0]  # H1 or H2
+    prior_year = int(prior_parts[1])
+    if prior_h == "H1":
+        prior_start, prior_end = f"{prior_year}-01-01", f"{prior_year}-06-30"
+    else:
+        prior_start, prior_end = f"{prior_year}-07-01", f"{prior_year}-12-31"
+
+    curr_label = f"{half_label} {current_year}"
+    prior_label = f"{prior_half} Baseline"
+
+    curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
+    prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
+
+    if curr_df.empty and prior_df.empty:
+        st.caption("No data available for either half-year period.")
+        return
+
+    def safe_sum(frame, col):
+        return frame[col].sum() if col in frame.columns else 0
+
+    def safe_pct(num, denom):
+        return (num / denom * 100) if denom > 0 else 0
+
+    def fmt_num(val):
+        if val >= 1_000_000:
+            return f"{val/1_000_000:.2f}M"
+        elif val >= 1_000:
+            return f"{val/1_000:.1f}K"
+        return f"{val:,.0f}"
+
+    def fmt_pct(val):
+        return f"{val:.1f}%"
+
+    def calc_delta(curr_val, prior_val, is_pct=False):
+        if is_pct:
+            diff = curr_val - prior_val
+            arrow = "↑" if diff > 0 else "↓" if diff < 0 else "→"
+            return f"{arrow} {abs(diff):.1f}pp"
+        else:
+            if prior_val == 0:
+                return "N/A"
+            change = ((curr_val - prior_val) / prior_val) * 100
+            arrow = "↑" if change > 0 else "↓" if change < 0 else "→"
+            return f"{arrow} {abs(change):.1f}%"
+
+    # Aggregate sums
+    agg_cols = ['records', 'kpi2_logins', 'conversions',
+         'd_plus', 'd_minus', 'd_neutral', 'na', 't', 'dnc', 'dx', 'wn', 'am',
+         'es', 'ed', 'eo', 'ec', 'ef', 'sd', 'sf', 'sp']
+    c = {col: safe_sum(curr_df, col) for col in agg_cols}
+    p = {col: safe_sum(prior_df, col) for col in agg_cols}
+
+    # Derive SS (SMS Sent) = sd + sf + sp
+    c['ss'] = c['sd'] + c['sf'] + c['sp']
+    p['ss'] = p['sd'] + p['sf'] + p['sp']
+
+    # Pre-compute rates for reuse in cards and charts
+    c_d = safe_pct(c['d_plus'] + c['d_minus'] + c['d_neutral'], c['records'])
+    p_d = safe_pct(p['d_plus'] + p['d_minus'] + p['d_neutral'], p['records'])
+    c_na = safe_pct(c['na'], c['records'])
+    p_na = safe_pct(p['na'], p['records'])
+    c_i = safe_pct(c['t'] + c['dnc'] + c['dx'] + c['wn'] + c['am'], c['records'])
+    p_i = safe_pct(p['t'] + p['dnc'] + p['dx'] + p['wn'] + p['am'], p['records'])
+    c_ed = safe_pct(c['ed'], c['es']); p_ed = safe_pct(p['ed'], p['es'])
+    c_eo = safe_pct(c['eo'], c['es']); p_eo = safe_pct(p['eo'], p['es'])
+    c_ec = safe_pct(c['ec'], c['es']); p_ec = safe_pct(p['ec'], p['es'])
+    c_ef = safe_pct(c['ef'], c['es']); p_ef = safe_pct(p['ef'], p['es'])
+    c_sd = safe_pct(c['sd'], c['ss']); p_sd = safe_pct(p['sd'], p['ss'])
+    c_sf = safe_pct(c['sf'], c['ss']); p_sf = safe_pct(p['sf'], p['ss'])
+
+    # ── LAYER 1: KPI SUMMARY CARDS ──
+    kc1, kc2, kc3, kc4 = st.columns(4)
+    with kc1:
+        st.markdown("##### 📞 Volume")
+        st.metric("Records", fmt_num(c['records']), calc_delta(c['records'], p['records']))
+        st.caption(f"Logins: {fmt_num(c['kpi2_logins'])} ({calc_delta(c['kpi2_logins'], p['kpi2_logins'])})")
+        st.caption(f"Conv: {fmt_num(c['conversions'])} ({calc_delta(c['conversions'], p['conversions'])})")
+    with kc2:
+        st.markdown("##### ☎️ Call Efficiency")
+        st.metric("Calls Delivered %", fmt_pct(c_d), calc_delta(c_d, p_d, True))
+        st.caption(f"No Answer %: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
+        st.caption(f"Invalid %: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
+    with kc3:
+        st.markdown("##### 📧 Email Health")
+        st.metric("Email Delivered %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
+        st.caption(f"Email Opened %: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
+        st.caption(f"Email Clicked %: {fmt_pct(c_ec)} ({calc_delta(c_ec, p_ec, True)})")
+    with kc4:
+        st.markdown("##### 📱 SMS Health")
+        st.metric("SMS Delivered %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
+        st.caption(f"SMS Failed %: {fmt_pct(c_sf)} ({calc_delta(c_sf, p_sf, True)})")
+
+    st.markdown("---")
+
+    # ── LAYER 2: BENCHMARK TABLE ──
+    rows = []
+    # Volume
+    rows.append(("📞 **Volume**", "", "", ""))
+    rows.append(("Records", fmt_num(p['records']), fmt_num(c['records']), calc_delta(c['records'], p['records'])))
+    rows.append(("Logins", fmt_num(p['kpi2_logins']), fmt_num(c['kpi2_logins']), calc_delta(c['kpi2_logins'], p['kpi2_logins'])))
+    rows.append(("Conversions", fmt_num(p['conversions']), fmt_num(c['conversions']), calc_delta(c['conversions'], p['conversions'])))
+
+    # Dispositions
+    rows.append(("☎️ **Dispositions**", "", "", ""))
+    rows.append(("Calls Delivered %", fmt_pct(p_d), fmt_pct(c_d), calc_delta(c_d, p_d, True)))
+    rows.append(("No Answer %", fmt_pct(p_na), fmt_pct(c_na), calc_delta(c_na, p_na, True)))
+    rows.append(("Invalid %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
+
+    # Email (% of es)
+    rows.append(("📧 **Email**", "", "", ""))
+    for label, c_val, p_val in [("Email Delivered %", c_ed, p_ed), ("Email Opened %", c_eo, p_eo), ("Email Clicked %", c_ec, p_ec), ("Email Failed %", c_ef, p_ef)]:
+        rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
+
+    # SMS (% of SS = sd + sf + sp)
+    rows.append(("📱 **SMS**", "", "", ""))
+    for label, c_val, p_val in [("SMS Delivered %", c_sd, p_sd), ("SMS Failed %", c_sf, p_sf), ("SMS Pending %", safe_pct(c['sp'], c['ss']), safe_pct(p['sp'], p['ss']))]:
+        rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
+
+    bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
+    st.dataframe(bench_df, hide_index=True, use_container_width=True, height=(len(rows) + 1) * 35 + 3)
+
+    # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
+    import plotly.graph_objects as go
+
+    def _make_dumbbell(title, labels, prior_vals, curr_vals, fmt_fn=fmt_pct, is_pct=True):
+        """Build a horizontal dumbbell chart comparing baseline vs current."""
+        fig = go.Figure()
+        n = len(labels)
+
+        for i, (lbl, pv, cv) in enumerate(zip(labels, prior_vals, curr_vals)):
+            color = 'rgba(0, 200, 100, 0.7)' if (cv >= pv if lbl not in ['NA%', 'I%', 'EF%', 'SF%', 'SP%'] else cv <= pv) else 'rgba(255, 80, 80, 0.7)'
+            # Connector line
+            fig.add_trace(go.Scatter(
+                x=[pv, cv], y=[lbl, lbl], mode='lines',
+                line=dict(color=color, width=3),
+                showlegend=False, hoverinfo='skip'
+            ))
+            # Baseline dot (teal)
+            fig.add_trace(go.Scatter(
+                x=[pv], y=[lbl], mode='markers+text',
+                marker=dict(color='rgba(100, 160, 180, 0.9)', size=12, line=dict(width=1, color='white')),
+                text=[fmt_fn(pv)], textposition='top center',
+                name=prior_label if i == 0 else None,
+                showlegend=(i == 0), legendgroup='baseline',
+                hovertemplate=f'{lbl}: {fmt_fn(pv)}<extra>{prior_label}</extra>'
+            ))
+            # Current dot (cyan)
+            fig.add_trace(go.Scatter(
+                x=[cv], y=[lbl], mode='markers+text',
+                marker=dict(color='rgba(0, 200, 220, 0.9)', size=12, line=dict(width=1, color='white')),
+                text=[fmt_fn(cv)], textposition='bottom center',
+                name=curr_label if i == 0 else None,
+                showlegend=(i == 0), legendgroup='current',
+                hovertemplate=f'{lbl}: {fmt_fn(cv)}<extra>{curr_label}</extra>'
+            ))
+            # Delta annotation
+            delta_text = calc_delta(cv, pv, is_pct)
+            max_val = max(pv, cv)
+            fig.add_annotation(
+                x=max_val, y=lbl,
+                text=f"<b>{delta_text}</b>",
+                showarrow=False, xanchor='left', xshift=15,
+                font=dict(size=12, color=color)
+            )
+
+        fig.update_layout(
+            title=title,
+            template='plotly_dark',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            height=55 * n + 100,
+            margin=dict(l=140, r=80, t=45, b=25),
+            font=dict(size=11),
+            yaxis=dict(autorange='reversed'),
+            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+            legend=dict(orientation='h', y=-0.2)
+        )
+        return fig
+
+    with st.expander("📊 H2 2025 Baseline vs Current Charts"):
+        # Row 1: Volume + Dispositions
+        rc1, rc2 = st.columns(2)
+        with rc1:
+            st.plotly_chart(_make_dumbbell(
+                "📞 Volume",
+                ['Records', 'Logins', 'Conversions'],
+                [p['records'], p['kpi2_logins'], p['conversions']],
+                [c['records'], c['kpi2_logins'], c['conversions']],
+                fmt_fn=fmt_num, is_pct=False
+            ), use_container_width=True)
+        with rc2:
+            st.plotly_chart(_make_dumbbell(
+                "☎️ Call Dispositions",
+                ['Calls Delivered %', 'No Answer %', 'Invalid %'],
+                [p_d, p_na, p_i],
+                [c_d, c_na, c_i]
+            ), use_container_width=True)
+
+        # Row 2: Email + SMS
+        rc3, rc4 = st.columns(2)
+        with rc3:
+            st.plotly_chart(_make_dumbbell(
+                "📧 Email Performance",
+                ['Email Delivered %', 'Email Opened %', 'Email Clicked %', 'Email Failed %'],
+                [p_ed, p_eo, p_ec, p_ef],
+                [c_ed, c_eo, c_ec, c_ef]
+            ), use_container_width=True)
+        with rc4:
+            st.plotly_chart(_make_dumbbell(
+                "📱 SMS Performance",
+                ['SMS Delivered %', 'SMS Pending %', 'SMS Failed %'],
+                [p_sd, safe_pct(p['sp'], p['ss']), p_sf],
+                [c_sd, safe_pct(c['sp'], c['ss']), c_sf]
+            ), use_container_width=True)
+
 if view_mode == "📊 Dashboard":
     tabs = ["📊 Dashboard"]
     created_tabs = st.tabs(tabs)
@@ -1871,247 +2112,6 @@ if view_mode == "📊 Dashboard":
             
             # ── HALF-YEAR OPERATIONAL BASELINE ──
             st.markdown("---")
-            
-            def _render_fixed_benchmark(df, prior_half="H2 2025"):
-                """Render half-year baseline comparison with selectable prior period."""
-                from datetime import datetime
-                
-                if df.empty or 'ops_date' not in df.columns:
-                    st.caption("No data available for benchmark.")
-                    return
-                
-                df['ops_date'] = pd.to_datetime(df['ops_date'], errors='coerce')
-                
-                now = datetime.now()
-                current_year = now.year
-                current_month = now.month
-                
-                # Current half-year (auto-detected)
-                if current_month <= 6:
-                    half_label = "H1"
-                    curr_start, curr_end = f"{current_year}-01-01", f"{current_year}-06-30"
-                else:
-                    half_label = "H2"
-                    curr_start, curr_end = f"{current_year}-07-01", f"{current_year}-12-31"
-                
-                # Parse selected prior half (e.g. "H2 2025" → 2025-07-01, 2025-12-31)
-                prior_parts = prior_half.split()
-                prior_h = prior_parts[0]  # H1 or H2
-                prior_year = int(prior_parts[1])
-                if prior_h == "H1":
-                    prior_start, prior_end = f"{prior_year}-01-01", f"{prior_year}-06-30"
-                else:
-                    prior_start, prior_end = f"{prior_year}-07-01", f"{prior_year}-12-31"
-                
-                curr_label = f"{half_label} {current_year}"
-                prior_label = f"{prior_half} Baseline"
-                
-                curr_df = df[(df['ops_date'] >= curr_start) & (df['ops_date'] <= curr_end)]
-                prior_df = df[(df['ops_date'] >= prior_start) & (df['ops_date'] <= prior_end)]
-                
-                if curr_df.empty and prior_df.empty:
-                    st.caption("No data available for either half-year period.")
-                    return
-                
-                def safe_sum(frame, col):
-                    return frame[col].sum() if col in frame.columns else 0
-                
-                def safe_pct(num, denom):
-                    return (num / denom * 100) if denom > 0 else 0
-                
-                def fmt_num(val):
-                    if val >= 1_000_000:
-                        return f"{val/1_000_000:.2f}M"
-                    elif val >= 1_000:
-                        return f"{val/1_000:.1f}K"
-                    return f"{val:,.0f}"
-                
-                def fmt_pct(val):
-                    return f"{val:.1f}%"
-                
-                def calc_delta(curr_val, prior_val, is_pct=False):
-                    if is_pct:
-                        diff = curr_val - prior_val
-                        arrow = "↑" if diff > 0 else "↓" if diff < 0 else "→"
-                        return f"{arrow} {abs(diff):.1f}pp"
-                    else:
-                        if prior_val == 0:
-                            return "N/A"
-                        change = ((curr_val - prior_val) / prior_val) * 100
-                        arrow = "↑" if change > 0 else "↓" if change < 0 else "→"
-                        return f"{arrow} {abs(change):.1f}%"
-                
-                # Aggregate sums
-                agg_cols = ['records', 'kpi2_logins', 'conversions',
-                     'd_plus', 'd_minus', 'd_neutral', 'na', 't', 'dnc', 'dx', 'wn', 'am',
-                     'es', 'ed', 'eo', 'ec', 'ef', 'sd', 'sf', 'sp']
-                c = {col: safe_sum(curr_df, col) for col in agg_cols}
-                p = {col: safe_sum(prior_df, col) for col in agg_cols}
-                
-                # Derive SS (SMS Sent) = sd + sf + sp
-                c['ss'] = c['sd'] + c['sf'] + c['sp']
-                p['ss'] = p['sd'] + p['sf'] + p['sp']
-                
-                # Pre-compute rates for reuse in cards and charts
-                c_d = safe_pct(c['d_plus'] + c['d_minus'] + c['d_neutral'], c['records'])
-                p_d = safe_pct(p['d_plus'] + p['d_minus'] + p['d_neutral'], p['records'])
-                c_na = safe_pct(c['na'], c['records'])
-                p_na = safe_pct(p['na'], p['records'])
-                c_i = safe_pct(c['t'] + c['dnc'] + c['dx'] + c['wn'] + c['am'], c['records'])
-                p_i = safe_pct(p['t'] + p['dnc'] + p['dx'] + p['wn'] + p['am'], p['records'])
-                c_ed = safe_pct(c['ed'], c['es']); p_ed = safe_pct(p['ed'], p['es'])
-                c_eo = safe_pct(c['eo'], c['es']); p_eo = safe_pct(p['eo'], p['es'])
-                c_ec = safe_pct(c['ec'], c['es']); p_ec = safe_pct(p['ec'], p['es'])
-                c_ef = safe_pct(c['ef'], c['es']); p_ef = safe_pct(p['ef'], p['es'])
-                c_sd = safe_pct(c['sd'], c['ss']); p_sd = safe_pct(p['sd'], p['ss'])
-                c_sf = safe_pct(c['sf'], c['ss']); p_sf = safe_pct(p['sf'], p['ss'])
-                
-                # ── LAYER 1: KPI SUMMARY CARDS ──
-                kc1, kc2, kc3, kc4 = st.columns(4)
-                with kc1:
-                    st.markdown("##### 📞 Volume")
-                    st.metric("Records", fmt_num(c['records']), calc_delta(c['records'], p['records']))
-                    st.caption(f"Logins: {fmt_num(c['kpi2_logins'])} ({calc_delta(c['kpi2_logins'], p['kpi2_logins'])})")
-                    st.caption(f"Conv: {fmt_num(c['conversions'])} ({calc_delta(c['conversions'], p['conversions'])})")
-                with kc2:
-                    st.markdown("##### ☎️ Call Efficiency")
-                    st.metric("Calls Delivered %", fmt_pct(c_d), calc_delta(c_d, p_d, True))
-                    st.caption(f"No Answer %: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
-                    st.caption(f"Invalid %: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
-                with kc3:
-                    st.markdown("##### 📧 Email Health")
-                    st.metric("Email Delivered %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
-                    st.caption(f"Email Opened %: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
-                    st.caption(f"Email Clicked %: {fmt_pct(c_ec)} ({calc_delta(c_ec, p_ec, True)})")
-                with kc4:
-                    st.markdown("##### 📱 SMS Health")
-                    st.metric("SMS Delivered %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
-                    st.caption(f"SMS Failed %: {fmt_pct(c_sf)} ({calc_delta(c_sf, p_sf, True)})")
-                
-                st.markdown("---")
-                
-                # ── LAYER 2: BENCHMARK TABLE ──
-                rows = []
-                # Volume
-                rows.append(("📞 **Volume**", "", "", ""))
-                rows.append(("Records", fmt_num(p['records']), fmt_num(c['records']), calc_delta(c['records'], p['records'])))
-                rows.append(("Logins", fmt_num(p['kpi2_logins']), fmt_num(c['kpi2_logins']), calc_delta(c['kpi2_logins'], p['kpi2_logins'])))
-                rows.append(("Conversions", fmt_num(p['conversions']), fmt_num(c['conversions']), calc_delta(c['conversions'], p['conversions'])))
-                
-                # Dispositions
-                rows.append(("☎️ **Dispositions**", "", "", ""))
-                rows.append(("Calls Delivered %", fmt_pct(p_d), fmt_pct(c_d), calc_delta(c_d, p_d, True)))
-                rows.append(("No Answer %", fmt_pct(p_na), fmt_pct(c_na), calc_delta(c_na, p_na, True)))
-                rows.append(("Invalid %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
-                
-                # Email (% of es)
-                rows.append(("📧 **Email**", "", "", ""))
-                for label, c_val, p_val in [("Email Delivered %", c_ed, p_ed), ("Email Opened %", c_eo, p_eo), ("Email Clicked %", c_ec, p_ec), ("Email Failed %", c_ef, p_ef)]:
-                    rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
-                
-                # SMS (% of SS = sd + sf + sp)
-                rows.append(("📱 **SMS**", "", "", ""))
-                for label, c_val, p_val in [("SMS Delivered %", c_sd, p_sd), ("SMS Failed %", c_sf, p_sf), ("SMS Pending %", safe_pct(c['sp'], c['ss']), safe_pct(p['sp'], p['ss']))]:
-                    rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
-                
-                bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
-                st.dataframe(bench_df, hide_index=True, use_container_width=True, height=(len(rows) + 1) * 35 + 3)
-                
-                # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
-                import plotly.graph_objects as go
-                
-                def _make_dumbbell(title, labels, prior_vals, curr_vals, fmt_fn=fmt_pct, is_pct=True):
-                    """Build a horizontal dumbbell chart comparing baseline vs current."""
-                    fig = go.Figure()
-                    n = len(labels)
-                    
-                    for i, (lbl, pv, cv) in enumerate(zip(labels, prior_vals, curr_vals)):
-                        color = 'rgba(0, 200, 100, 0.7)' if (cv >= pv if lbl not in ['NA%', 'I%', 'EF%', 'SF%', 'SP%'] else cv <= pv) else 'rgba(255, 80, 80, 0.7)'
-                        # Connector line
-                        fig.add_trace(go.Scatter(
-                            x=[pv, cv], y=[lbl, lbl], mode='lines',
-                            line=dict(color=color, width=3),
-                            showlegend=False, hoverinfo='skip'
-                        ))
-                        # Baseline dot (teal)
-                        fig.add_trace(go.Scatter(
-                            x=[pv], y=[lbl], mode='markers+text',
-                            marker=dict(color='rgba(100, 160, 180, 0.9)', size=12, line=dict(width=1, color='white')),
-                            text=[fmt_fn(pv)], textposition='top center',
-                            name=prior_label if i == 0 else None,
-                            showlegend=(i == 0), legendgroup='baseline',
-                            hovertemplate=f'{lbl}: {fmt_fn(pv)}<extra>{prior_label}</extra>'
-                        ))
-                        # Current dot (cyan)
-                        fig.add_trace(go.Scatter(
-                            x=[cv], y=[lbl], mode='markers+text',
-                            marker=dict(color='rgba(0, 200, 220, 0.9)', size=12, line=dict(width=1, color='white')),
-                            text=[fmt_fn(cv)], textposition='bottom center',
-                            name=curr_label if i == 0 else None,
-                            showlegend=(i == 0), legendgroup='current',
-                            hovertemplate=f'{lbl}: {fmt_fn(cv)}<extra>{curr_label}</extra>'
-                        ))
-                        # Delta annotation
-                        delta_text = calc_delta(cv, pv, is_pct)
-                        max_val = max(pv, cv)
-                        fig.add_annotation(
-                            x=max_val, y=lbl,
-                            text=f"<b>{delta_text}</b>",
-                            showarrow=False, xanchor='left', xshift=15,
-                            font=dict(size=12, color=color)
-                        )
-                    
-                    fig.update_layout(
-                        title=title,
-                        template='plotly_dark',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        height=55 * n + 100,
-                        margin=dict(l=140, r=80, t=45, b=25),
-                        font=dict(size=11),
-                        yaxis=dict(autorange='reversed'),
-                        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
-                        legend=dict(orientation='h', y=-0.2)
-                    )
-                    return fig
-                
-                with st.expander("📊 H2 2025 Baseline vs Current Charts"):
-                    # Row 1: Volume + Dispositions
-                    rc1, rc2 = st.columns(2)
-                    with rc1:
-                        st.plotly_chart(_make_dumbbell(
-                            "📞 Volume",
-                            ['Records', 'Logins', 'Conversions'],
-                            [p['records'], p['kpi2_logins'], p['conversions']],
-                            [c['records'], c['kpi2_logins'], c['conversions']],
-                            fmt_fn=fmt_num, is_pct=False
-                        ), use_container_width=True)
-                    with rc2:
-                        st.plotly_chart(_make_dumbbell(
-                            "☎️ Call Dispositions",
-                            ['Calls Delivered %', 'No Answer %', 'Invalid %'],
-                            [p_d, p_na, p_i],
-                            [c_d, c_na, c_i]
-                        ), use_container_width=True)
-                    
-                    # Row 2: Email + SMS
-                    rc3, rc4 = st.columns(2)
-                    with rc3:
-                        st.plotly_chart(_make_dumbbell(
-                            "📧 Email Performance",
-                            ['Email Delivered %', 'Email Opened %', 'Email Clicked %', 'Email Failed %'],
-                            [p_ed, p_eo, p_ec, p_ef],
-                            [c_ed, c_eo, c_ec, c_ef]
-                        ), use_container_width=True)
-                    with rc4:
-                        st.plotly_chart(_make_dumbbell(
-                            "📱 SMS Performance",
-                            ['SMS Delivered %', 'SMS Pending %', 'SMS Failed %'],
-                            [p_sd, safe_pct(p['sp'], p['ss']), p_sf],
-                            [c_sd, safe_pct(c['sp'], c['ss']), c_sf]
-                        ), use_container_width=True)
-            
-
             
         else:
             st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")

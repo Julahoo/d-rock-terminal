@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Hotfix - Benchmark Initialization] - 2026-03-13 - COMPLETED
+- **Problem:** Users experienced a `NameError: name '_render_fixed_benchmark' is not defined` when loading the new Historical Benchmarks tab.
+- **Root Cause:** The function `_render_fixed_benchmark` was defined locally inside the `if "📊 Dashboard" in tab_map:` scope. When the call was moved to the Operations tab, the function was never evaluated by the Python interpreter during a direct Operations view rendering.
+- **Fix:** Surgically excised the `_render_fixed_benchmark` function, dedented it, and hoisted it globally into `app.py` before the workspace-routing logic begins.
+
 ### [UI Re-Architecture - Operational Benchmarks] - 2026-03-13 - COMPLETED
 - **Problem:** Operational benchmarks and standard abbreviations (`SD%`, `ED%`) were floating in the global Executive Dashboard which created context-switching friction for Operations personnel. The acronyms were also hard to rapidly decipher for non-technical managers.
 - **Solution:** Surgically extracted the `_render_fixed_benchmark` snapshot injection and embedded it directly inside a new `📉 Historical Benchmarks` tab within the `📞 Operations Command` tier. Expanded 10+ operational abbreviated keys (`Email Delivered %`, `SMS Pending %`, `No Answer %`) across all KPI cards, data frames, and interactive Plotly Dumbbell graphs.
