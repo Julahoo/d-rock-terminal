@@ -826,7 +826,7 @@ with st.sidebar:
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"👤 **Role:** {st.session_state['user_role']}")
     
-    if st.sidebar.button("🚪 Logout", use_container_width=True):
+    if st.sidebar.button("🚪 Logout", width='stretch'):
         st.session_state["authenticated"] = False
         st.session_state["user_role"] = None
         st.session_state["user_name"] = None
@@ -902,7 +902,7 @@ if view_mode == "⚙️ Admin":
                     c1, c2, _ = st.columns([2, 1, 3])
                     target_client = c1.selectbox("Select Client Profile to Manage:", all_clients)
                     c2.markdown("<br>", unsafe_allow_html=True)
-                    if c2.button("⚙️ Manage Profile", use_container_width=True):
+                    if c2.button("⚙️ Manage Profile", width='stretch'):
                         st.session_state["managing_client"] = target_client
                         st.rerun()
                     
@@ -924,7 +924,7 @@ if view_mode == "⚙️ Admin":
                             "Status": "🟢 Healthy" if l_ops != "Missing" and l_fin != "Missing" else "🟡 Action Needed"
                         })
                 
-                    st.dataframe(pd.DataFrame(health_records), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(health_records), width='stretch', hide_index=True)
                     
                     # --- GLOBAL OPERATIONS RECAP ---
                     st.markdown("---")
@@ -956,7 +956,7 @@ if view_mode == "⚙️ Admin":
                                 }])
                                 client_agg = pd.concat([client_agg, total_row_client], ignore_index=True)
                                 
-                                st.dataframe(client_agg, use_container_width=True, hide_index=True)
+                                st.dataframe(client_agg, width='stretch', hide_index=True)
                                 
                             # 2. By Month View
                             with recap_tabs[1]:
@@ -979,7 +979,7 @@ if view_mode == "⚙️ Admin":
                                 }])
                                 month_agg = pd.concat([month_agg, total_row_month], ignore_index=True)
                                 
-                                st.dataframe(month_agg, use_container_width=True, hide_index=True)
+                                st.dataframe(month_agg, width='stretch', hide_index=True)
                         else:
                             st.info("No Operations data found to recap.")
                             
@@ -1000,7 +1000,7 @@ if view_mode == "⚙️ Admin":
         
             c1, c2 = st.columns([4, 1])
             c1.markdown(f"## ⚙️ Profile: {client}")
-            if c2.button("⬅️ Back to Hub", use_container_width=True):
+            if c2.button("⬅️ Back to Hub", width='stretch'):
                 st.session_state["managing_client"] = None
                 st.rerun()
             
@@ -1133,7 +1133,7 @@ if view_mode == "⚙️ Admin":
                         
                         completeness_df = completeness_df[['Month', 'Actual Days Logged', 'Ops Status', 'Records', 'Logins', 'Conversions', 'Calls', 'Financial Status']]
                         
-                        st.dataframe(completeness_df.sort_values('Month', ascending=False), use_container_width=True, hide_index=True)
+                        st.dataframe(completeness_df.sort_values('Month', ascending=False), width='stretch', hide_index=True)
                         
                         st.markdown("#### 📅 Daily Ingestion Drill-Down")
                         available_months = sorted(completeness_df['Month'].tolist(), reverse=True)
@@ -1147,7 +1147,7 @@ if view_mode == "⚙️ Admin":
                                     calls=('calls', 'sum')
                                 ).reset_index()
                                 daily_df.columns = ['Date', 'Records', 'Logins', 'Conversions', 'Calls']
-                                st.dataframe(daily_df.sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+                                st.dataframe(daily_df.sort_values('Date', ascending=False), width='stretch', hide_index=True)
                     else:
                         st.info("No Operations data found for this client to evaluate completeness.")
                         
@@ -1168,7 +1168,7 @@ if view_mode == "⚙️ Admin":
                         fetch_config_tables.clear()
                         st.rerun()
 
-                if st.button("Run Financial Ingestion", use_container_width=True) and fin_files:
+                if st.button("Run Financial Ingestion", width='stretch') and fin_files:
                     from src.ingestion import load_all_data_from_uploads
                     with st.spinner("Processing..."):
                         df, reg = load_all_data_from_uploads(fin_files)
@@ -1188,7 +1188,7 @@ if view_mode == "⚙️ Admin":
                 st.markdown(f"### 🏷️ Brand Registry: {client}")
                 try:
                     registry_df = pd.read_sql(f"SELECT brand_name as \"Brand Name\", brand_code as \"Ops Tag\" FROM client_mapping WHERE client_name = '{client}' ORDER BY brand_name", engine)
-                    st.dataframe(registry_df, use_container_width=True, hide_index=True)
+                    st.dataframe(registry_df, width='stretch', hide_index=True)
                 except Exception as e:
                     st.info("No brands registered yet.")
                 
@@ -1233,7 +1233,7 @@ if view_mode == "⚙️ Admin":
                 st.markdown("#### 1️⃣ Monthly Volume Minimums")
                 try:
                     vol_df = pd.read_sql(f"SELECT brand_code as \"Brand\", lifecycle as \"Lifecycle\", monthly_minimum_records as \"Min Records\" FROM contractual_volumes WHERE client_name = '{client}'", engine)
-                    st.dataframe(vol_df, use_container_width=True, hide_index=True)
+                    st.dataframe(vol_df, width='stretch', hide_index=True)
                 except Exception as e:
                     st.info("No Volume Targets set.")
                 
@@ -1266,7 +1266,7 @@ if view_mode == "⚙️ Admin":
                 st.markdown("#### 2️⃣ Granular Campaign Benchmarks")
                 try:
                     bench_df = pd.read_sql(f"SELECT brand_code as \"Brand\", campaign_signature as \"Campaign Signature\", target_conv_pct * 100 as \"Target Conv%\", target_li_pct * 100 as \"Target LI%\", target_cac_usd as \"Target True CAC ($)\" FROM granular_benchmarks WHERE client_name = '{client}'", engine)
-                    st.dataframe(bench_df, use_container_width=True, hide_index=True)
+                    st.dataframe(bench_df, width='stretch', hide_index=True)
                 except Exception as e:
                     st.info("No Efficiency Benchmarks set.")
                 
@@ -1309,7 +1309,7 @@ if view_mode == "⚙️ Admin":
             users_df = pd.read_sql("SELECT username, name, role, allowed_clients FROM users", engine)
             # Format JSON for display
             users_df["allowed_clients"] = users_df["allowed_clients"].apply(lambda x: ", ".join(json.loads(x)) if isinstance(x, str) else ", ".join(x))
-            st.dataframe(users_df, use_container_width=True, hide_index=True)
+            st.dataframe(users_df, width='stretch', hide_index=True)
         except Exception as e:
             st.error(f"Could not load users: {e}")
             
@@ -1443,7 +1443,7 @@ if view_mode == "⚙️ Admin":
             st.markdown("The API sync will re-download them on next trigger.")
             with st.expander("⚠️ Confirm File Purge", expanded=False):
                 confirm_files = st.checkbox("I understand this will delete all cached CallsU files", key="confirm_purge_files")
-                if st.button("🗑️ Purge All Local Files", disabled=not confirm_files, use_container_width=True, type="primary"):
+                if st.button("🗑️ Purge All Local Files", disabled=not confirm_files, width='stretch', type="primary"):
                     if os.path.exists(callsu_dir):
                         shutil.rmtree(callsu_dir)
                         os.makedirs(callsu_dir, exist_ok=True)
@@ -1459,7 +1459,7 @@ if view_mode == "⚙️ Admin":
             st.markdown("The API sync will re-ingest on next trigger.")
             with st.expander("⚠️ Confirm Database Purge", expanded=False):
                 confirm_db = st.checkbox("I understand this will permanently delete all operations data", key="confirm_purge_db")
-                if st.button("🗑️ Purge Operations DB", disabled=not confirm_db, use_container_width=True, type="primary"):
+                if st.button("🗑️ Purge Operations DB", disabled=not confirm_db, width='stretch', type="primary"):
                     try:
                         _maint_exec("TRUNCATE TABLE ops_telemarketing_data RESTART IDENTITY")
                         _maint_exec("TRUNCATE TABLE ops_telemarketing_snapshots RESTART IDENTITY")
@@ -1522,7 +1522,7 @@ if view_mode == "⚙️ Admin":
                         st.markdown(f"**{h['label']}** ({h['start']} → {h['end']}) — {status}")
                     with bc2:
                         btn_label = "🔄 Regenerate" if h["generated"] else "⚡ Generate"
-                        if st.button(btn_label, key=f"gen_bench_{h['label']}", use_container_width=True):
+                        if st.button(btn_label, key=f"gen_bench_{h['label']}", width='stretch'):
                             with st.spinner(f"Generating benchmarks for {h['label']}..."):
                                 from scripts.jobs.generate_benchmarks import generate_benchmarks
                                 generate_benchmarks(h["start"], h["end"], h["label"])
@@ -1530,7 +1530,7 @@ if view_mode == "⚙️ Admin":
                                 st.rerun()
                     with bc3:
                         if h["generated"]:
-                            if st.button("🗑️ Delete", key=f"del_bench_{h['label']}", use_container_width=True):
+                            if st.button("🗑️ Delete", key=f"del_bench_{h['label']}", width='stretch'):
                                 _maint_exec(f"DELETE FROM ops_historical_benchmarks WHERE benchmark_period = '{h['label']}'")
                                 st.success(f"Deleted benchmarks for {h['label']}")
                                 st.rerun()
@@ -1585,7 +1585,7 @@ if view_mode == "⚙️ Admin":
             st.markdown("#### Select a root folder:")
             for label, path in _EXPLORER_ROOTS.items():
                 cnt, sz = _count_recursive(path)
-                if st.button(f"📁 {label}/ — {cnt:,} files ({_fmt_size(sz)})", key=f"fe_root_{label}", use_container_width=True):
+                if st.button(f"📁 {label}/ — {cnt:,} files ({_fmt_size(sz)})", key=f"fe_root_{label}", width='stretch'):
                     st.session_state["fe_current_path"] = path
                     st.rerun()
         else:
@@ -1628,7 +1628,7 @@ if view_mode == "⚙️ Admin":
                             full_d = os.path.join(current_path, d)
                             cnt, sz = _count_recursive(full_d)
                             with folder_cols[j]:
-                                if st.button(f"📂 {d}/\n{cnt} files • {_fmt_size(sz)}", key=f"fe_dir_{d}", use_container_width=True):
+                                if st.button(f"📂 {d}/\n{cnt} files • {_fmt_size(sz)}", key=f"fe_dir_{d}", width='stretch'):
                                     st.session_state["fe_current_path"] = full_d.replace("\\", "/")
                                     st.rerun()
 
@@ -1650,7 +1650,7 @@ if view_mode == "⚙️ Admin":
                     if file_data:
                         files_df = pd.DataFrame(file_data)
                         st.dataframe(
-                            files_df[["Name", "Size", "Modified"]], use_container_width=True, hide_index=True,
+                            files_df[["Name", "Size", "Modified"]], width='stretch', hide_index=True,
                             column_config={
                                 "Name": st.column_config.TextColumn("📄 Name", width="large"),
                                 "Size": st.column_config.TextColumn("💾 Size"),
@@ -1683,11 +1683,11 @@ if view_mode == "⚙️ Admin":
                                 if ext == ".csv":
                                     df = pd.read_csv(abs_path)
                                     st.caption(f"📊 {len(df):,} rows × {len(df.columns)} cols")
-                                    st.dataframe(df, use_container_width=True, hide_index=True, height=500)
+                                    st.dataframe(df, width='stretch', hide_index=True, height=500)
                                 elif ext in [".xlsx", ".xls"]:
                                     df = pd.read_excel(abs_path)
                                     st.caption(f"📊 {len(df):,} rows × {len(df.columns)} cols")
-                                    st.dataframe(df, use_container_width=True, hide_index=True, height=500)
+                                    st.dataframe(df, width='stretch', hide_index=True, height=500)
                                 elif ext == ".md":
                                     with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                                         st.markdown("---"); st.markdown(f.read())
@@ -1862,7 +1862,7 @@ def _render_fixed_benchmark(df, prior_half="H2 2025"):
         rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
 
     bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
-    st.dataframe(bench_df, hide_index=True, use_container_width=True, height=(len(rows) + 1) * 35 + 3)
+    st.dataframe(bench_df, hide_index=True, width='stretch', height=(len(rows) + 1) * 35 + 3)
 
     # ── LAYER 3: EXPANDABLE DETAIL CHARTS ──
     import plotly.graph_objects as go
@@ -1932,14 +1932,14 @@ def _render_fixed_benchmark(df, prior_half="H2 2025"):
                 [p['records'], p['kpi2_logins'], p['conversions']],
                 [c['records'], c['kpi2_logins'], c['conversions']],
                 fmt_fn=fmt_num, is_pct=False
-            ), use_container_width=True)
+            ), width='stretch')
         with rc2:
             st.plotly_chart(_make_dumbbell(
                 "☎️ Call Dispositions",
                 ['Calls Delivered %', 'No Answer %', 'Invalid %'],
                 [p_d, p_na, p_i],
                 [c_d, c_na, c_i]
-            ), use_container_width=True)
+            ), width='stretch')
 
         # Row 2: Email + SMS
         rc3, rc4 = st.columns(2)
@@ -1949,14 +1949,14 @@ def _render_fixed_benchmark(df, prior_half="H2 2025"):
                 ['Email Delivered %', 'Email Opened %', 'Email Clicked %', 'Email Failed %'],
                 [p_ed, p_eo, p_ec, p_ef],
                 [c_ed, c_eo, c_ec, c_ef]
-            ), use_container_width=True)
+            ), width='stretch')
         with rc4:
             st.plotly_chart(_make_dumbbell(
                 "📱 SMS Performance",
                 ['SMS Delivered %', 'SMS Pending %', 'SMS Failed %'],
                 [p_sd, safe_pct(p['sp'], p['ss']), p_sf],
                 [c_sd, safe_pct(c['sp'], c['ss']), c_sf]
-            ), use_container_width=True)
+            ), width='stretch')
 
 if view_mode == "📊 Dashboard":
     tabs = ["📊 Dashboard"]
@@ -2049,7 +2049,7 @@ if view_mode == "📊 Dashboard":
                                     xaxis=dict(visible=False),
                                     yaxis=dict(visible=False)
                                 )
-                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False}, key=f'spark_{title}_{metric_label}_{wlabel}')
+                                st.plotly_chart(fig_spark, width='stretch', config={'displayModeBar': False}, key=f'spark_{title}_{metric_label}_{wlabel}')
             
             # Render side-by-side LI / NLI matrices
             col_li, col_nli = st.columns(2)
@@ -2096,7 +2096,7 @@ if "📥 Financial Ingestion" in tab_map:
             grid_data = {"Month": sorted_months}
             for b in sorted(registry._entries.keys()):
                 grid_data[f"{b.title()}"] = ["🟢 IMPORTED" if registry._entries[b].get(m, {}).get("status") == "COMPLETE" else "🔴 PENDING" for m in sorted_months]
-            st.dataframe(pd.DataFrame(grid_data), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(grid_data), width='stretch', hide_index=True)
         
         # --- UPLOADERS ---
         st.markdown("---")
@@ -2111,7 +2111,7 @@ if "📥 Financial Ingestion" in tab_map:
                 fetch_config_tables.clear()
                 st.rerun()
 
-        if st.button("Process Financial Data", use_container_width=True) and fin_files:
+        if st.button("Process Financial Data", width='stretch') and fin_files:
             with st.spinner("Saving securely to PostgreSQL..."):
                 from src.ingestion import load_all_data_from_uploads
                 df, reg = load_all_data_from_uploads(fin_files)
@@ -2142,7 +2142,7 @@ if "🗄️ Operations Ingestion" in tab_map:
 
         with col_btn:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🚀 Trigger Background Sync", use_container_width=True):
+            if st.button("🚀 Trigger Background Sync", width='stretch'):
                 if "sync_thread" not in st.session_state or not st.session_state.sync_thread.is_alive():
                     # Clear old log
                     open("data/api_sync.log", "w").close()
@@ -2187,7 +2187,7 @@ if "🗄️ Operations Ingestion" in tab_map:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun()
 
-        if st.button("Process Operations Data", use_container_width=True) and ops_files:
+        if st.button("Process Operations Data", width='stretch') and ops_files:
             with st.spinner("Saving securely to PostgreSQL..."):
                 from src.ingestion import load_operations_data_from_uploads
                 load_operations_data_from_uploads(ops_files)
@@ -2256,7 +2256,7 @@ if not _master_df.empty:
         # ── GGR Trend Chart ───────────────────────────────────────────────
         st.markdown("#### 📈 GGR Month-over-Month")
         chart_data = bdf[["month", "ggr"]].set_index("month")
-        st.bar_chart(chart_data, use_container_width=True)
+        st.bar_chart(chart_data, width='stretch')
 
         # ── Player Demographics Chart ─────────────────────────────────────
         st.markdown(f"#### > {brand_key.upper()} PLAYER DEMOGRAPHICS (MONTH OVER MONTH)_")
@@ -2268,7 +2268,7 @@ if not _master_df.empty:
         })
         st.line_chart(
             demo_df.set_index("month"),
-            use_container_width=True,
+            width='stretch',
             color=["#AAAAAA", "#00FF41", "#FF4444"],
         )
 
@@ -2317,7 +2317,7 @@ if not _master_df.empty:
                     row["QoQ Δ"] = _b_arrow(b_latest_q.get(f"{col}_qoq_delta"))
                     row["QoQ %"] = _b_arrow_pct(b_latest_q.get(f"{col}_qoq_pct"))
                 b_fin_rows.append(row)
-            st.dataframe(pd.DataFrame(b_fin_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(b_fin_rows), width='stretch', hide_index=True)
 
             # EOY Projected metrics — Dual Engine (brand-level)
             b_eoy_rows = []
@@ -2329,7 +2329,7 @@ if not _master_df.empty:
                                        "YoY Δ": "—", "YoY %": "—",
                                        "YTD": f"${eoy_val:,.0f}"})
             if b_eoy_rows:
-                st.dataframe(pd.DataFrame(b_eoy_rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(b_eoy_rows), width='stretch', hide_index=True)
             st.caption("🔮 **EOY PROJECTIONS:** Seasonal uses prior-year proportional scaling. Momentum uses 3-month rolling average × remaining months.")
 
             # [ PLAYER DEMOGRAPHICS ]
@@ -2348,7 +2348,7 @@ if not _master_df.empty:
                     row["QoQ Δ"] = _b_arrow(b_latest_q.get(f"{col}_qoq_delta"))
                     row["QoQ %"] = _b_arrow_pct(b_latest_q.get(f"{col}_qoq_pct"))
                 b_plr_rows.append(row)
-            st.dataframe(pd.DataFrame(b_plr_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(b_plr_rows), width='stretch', hide_index=True)
 
         # ── Risk & Value Metrics (brand-level) ─────────────────────
         st.markdown(f"#### > {brand_key.upper()} RISK & VALUE METRICS_")
@@ -2387,7 +2387,7 @@ if not _master_df.empty:
                 with col_w:
                     st.metric(tier_name, f"{players:,} players")
                     st.caption(f"GGR: ${ggr_v:,.2f}")
-            st.dataframe(b_rfm, use_container_width=True, hide_index=True,
+            st.dataframe(b_rfm, width='stretch', hide_index=True,
                          column_config={
                              "Tier": st.column_config.TextColumn("Tier"),
                              "Players": st.column_config.NumberColumn("Players", format="%d"),
@@ -2398,7 +2398,7 @@ if not _master_df.empty:
         with st.expander(f"📋 {brand_key} — Full Financial Data ({len(bdf)} months)", expanded=False):
             st.dataframe(
                 bdf,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "month": st.column_config.TextColumn("Month"),
@@ -2426,7 +2426,7 @@ if not _master_df.empty:
                 with st.expander(f"🔄 {brand_key} — Cohort Retention Matrix", expanded=False):
                     st.dataframe(
                         matrix.style.format("{:.1f}%", na_rep="—"),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
         # ── Cohort Retention Heatmap (Phase 18) ──────────────────────────
@@ -2435,7 +2435,7 @@ if not _master_df.empty:
         brand_raw = df[df["brand"] == brand_key]
         heatmap_fig = _cached_retention_heatmap(brand_raw)
         if heatmap_fig is not None:
-            st.plotly_chart(heatmap_fig, use_container_width=True, config={"scrollZoom": False})
+            st.plotly_chart(heatmap_fig, width='stretch', config={"scrollZoom": False})
         else:
             st.info("Not enough data to generate a retention heatmap.")
 
@@ -2445,7 +2445,7 @@ if not _master_df.empty:
         st.markdown("*Insight: Tracks the cumulative revenue generation of player cohorts over time to determine break-even points and long-term value.*")
         ltv_fig = _cached_ltv_curves(brand_raw)
         if ltv_fig is not None:
-            st.plotly_chart(ltv_fig, use_container_width=True, config={"scrollZoom": False})
+            st.plotly_chart(ltv_fig, width='stretch', config={"scrollZoom": False})
         else:
             st.info("Not enough data to generate LTV curves.")
 
@@ -2458,7 +2458,7 @@ if not _master_df.empty:
                 st.markdown("*Insight: Evaluates the financial efficiency and house edge (Margin) across different marketing programs (ACQ, RET, WB).*")
                 st.dataframe(
                     brand_progs,
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     column_config={
                         "brand": st.column_config.TextColumn("Brand"),
@@ -2600,7 +2600,7 @@ if not _master_df.empty:
                 for brand in active_brands:
                     cfg[brand] = st.column_config.NumberColumn(brand, format="%.2f")
 
-                st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True, column_config=cfg)
+                st.dataframe(pd.DataFrame(matrix_data), width='stretch', hide_index=True, column_config=cfg)
 
                 # ── Brand vs Brand Trajectory ─────────────────────────────────
                 st.markdown("#### > BRAND vs BRAND TRAJECTORY_")
@@ -2635,7 +2635,7 @@ if not _master_df.empty:
                     margin=dict(l=0, r=0, t=30, b=0), 
                     height=400
                 )
-                st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": False})
+                st.plotly_chart(fig, width='stretch', config={"scrollZoom": False})
 
                 # ── Cross-Brand Cannibalization ───────────────────────────────
                 st.markdown("---")
@@ -2680,7 +2680,7 @@ if not _master_df.empty:
             
                 cfg_demo = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
                 for brand in active_brands: cfg_demo[brand] = st.column_config.NumberColumn(brand, format="%d")
-                st.dataframe(pd.DataFrame(demo_data), use_container_width=True, hide_index=True, column_config=cfg_demo)
+                st.dataframe(pd.DataFrame(demo_data), width='stretch', hide_index=True, column_config=cfg_demo)
 
                 # ── Cross-Brand Cash Flow & Promo ─────────────────────────────
                 if "LeoVegas Group" in df["client"].unique():
@@ -2705,7 +2705,7 @@ if not _master_df.empty:
 
                     cfg_cf = {"Metric": st.column_config.TextColumn("Metric"), combined_label: st.column_config.NumberColumn(combined_label, format="$%.2f")}
                     for brand in active_brands: cfg_cf[brand] = st.column_config.NumberColumn(brand, format="$%.2f")
-                    st.dataframe(pd.DataFrame(cf_data), use_container_width=True, hide_index=True, column_config=cfg_cf)
+                    st.dataframe(pd.DataFrame(cf_data), width='stretch', hide_index=True, column_config=cfg_cf)
                     st.caption("⚠️ **Note:** Cash Flow and Promo data is currently only provided by LeoVegas Group. Offside Gaming brands will reflect $0.00.")
 
                 # ── Geographic Intelligence ─────────────────────────────
@@ -2735,12 +2735,12 @@ if not _master_df.empty:
                         font_color="#00FF41",
                         margin=dict(t=30, l=0, r=0, b=0)
                     )
-                    st.plotly_chart(fig_tree, use_container_width=True)
+                    st.plotly_chart(fig_tree, width='stretch')
                 
                 # 2. The Market Leaderboard
                 st.dataframe(
                     geo_df,
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     column_config={
                         "country": st.column_config.TextColumn("Market"),
@@ -2796,7 +2796,7 @@ if not _master_df.empty:
                 st.download_button("📥 Download Financial Detail Report", data=fin_excel, file_name=f"Financial_Detail_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
                 chart_data = filtered_both[["month", rev_col]].set_index("month")
-                st.bar_chart(chart_data, use_container_width=True)
+                st.bar_chart(chart_data, width='stretch')
 
                 # --- 3. VERTICAL COMPOSITION (CASINO VS SPORTS) ---
                 # Only show the vertical chart if LeoVegas data actually exists in the current slice
@@ -2843,7 +2843,7 @@ if not _master_df.empty:
                         height=450,
                         yaxis=dict(gridcolor="#1a1a1a", tickprefix="$")
                     )
-                    st.plotly_chart(fig_waterfall, use_container_width=True, config={"scrollZoom": False})
+                    st.plotly_chart(fig_waterfall, width='stretch', config={"scrollZoom": False})
 
                 # --- 3.6 PRODUCT AFFINITY & CROSS-SELLING ---
                 if "LeoVegas Group" in _raw_df["client"].unique():
@@ -2878,12 +2878,12 @@ if not _master_df.empty:
                                 margin=dict(t=30, l=0, r=0, b=0),
                                 showlegend=True
                             )
-                            st.plotly_chart(fig_donut, use_container_width=True)
+                            st.plotly_chart(fig_donut, width='stretch')
 
                         with aff2:
                             st.dataframe(
                                 affinity_df,
-                                use_container_width=True,
+                                width='stretch',
                                 hide_index=True,
                                 column_config={
                                     "Affinity": st.column_config.TextColumn("Segment"),
@@ -2895,7 +2895,7 @@ if not _master_df.empty:
 
                 # --- 4. FULL DATA TABLE ---
                 with st.expander(f"📋 Raw Data Table ({len(filtered_both)} months)", expanded=True):
-                    st.dataframe(filtered_both, use_container_width=True, hide_index=True)
+                    st.dataframe(filtered_both, width='stretch', hide_index=True)
 
                 # ── Player Demographics Chart ───────────────────────────────
                 st.markdown("#### > COMBINED PLAYER DEMOGRAPHICS (MONTH OVER MONTH)_")
@@ -2907,7 +2907,7 @@ if not _master_df.empty:
                 })
                 st.line_chart(
                     demo_bb.set_index("month"),
-                    use_container_width=True,
+                    width='stretch',
                     color=["#AAAAAA", "#00FF41", "#FF4444"],
                 )
 
@@ -2967,7 +2967,7 @@ if not _master_df.empty:
                             fin_rows.append({"Metric": f"EOY {proj_label} ({eng_label})", "MoM Δ": "—", "MoM %": "—",
                                              "YoY Δ": "—", "YoY %": "—",
                                              "YTD": f"${eoy_val:,.0f}"})
-                    st.dataframe(pd.DataFrame(fin_rows), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(fin_rows), width='stretch', hide_index=True)
                     st.caption("🔮 **EOY PROJECTIONS:** Seasonal uses prior-year proportional scaling. Momentum uses 3-month rolling average × remaining months.")
 
                     # Player Demographics group
@@ -2986,7 +2986,7 @@ if not _master_df.empty:
                             row["QoQ Δ"] = _arrow(latest_q.get(f"{col}_qoq_delta"))
                             row["QoQ %"] = _arrow_pct(latest_q.get(f"{col}_qoq_pct"))
                         plr_rows.append(row)
-                    st.dataframe(pd.DataFrame(plr_rows), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(plr_rows), width='stretch', hide_index=True)
 
                 # ── Risk & Value Metrics (Phase 12) ─────────────────────────
                 st.markdown("#### > RISK & VALUE METRICS_")
@@ -3033,7 +3033,7 @@ if not _master_df.empty:
                                 st.caption(f"GGR: ${ggr:,.2f}")
                         st.dataframe(
                             rfm,
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True,
                             column_config={
                                 "Tier": st.column_config.TextColumn("Tier"),
@@ -3048,7 +3048,7 @@ if not _master_df.empty:
                 with st.expander(f"📋 Both Business Summary ({len(filtered_both)} months)", expanded=True):
                     st.dataframe(
                         filtered_both,
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config={
                             "month": st.column_config.TextColumn("Month"),
@@ -3081,7 +3081,7 @@ if not _master_df.empty:
                         with st.expander("🔄 Combined Cohort Retention Matrix", expanded=False):
                             st.dataframe(
                                 matrix.style.format("{:.1f}%", na_rep="—"),
-                                use_container_width=True,
+                                width='stretch',
                             )
 
                 # ── Cohort Retention Heatmap (Phase 18) ──────────────────────
@@ -3089,7 +3089,7 @@ if not _master_df.empty:
                 st.markdown("#### > COHORT RETENTION HEATMAP_")
                 heatmap_fig = _cached_retention_heatmap(_raw_df)
                 if heatmap_fig is not None:
-                    st.plotly_chart(heatmap_fig, use_container_width=True, config={"scrollZoom": False})
+                    st.plotly_chart(heatmap_fig, width='stretch', config={"scrollZoom": False})
                 else:
                     st.info("Not enough data to generate a retention heatmap.")
 
@@ -3100,7 +3100,7 @@ if not _master_df.empty:
                     st.markdown("*Insight: Evaluates the financial efficiency and house edge (Margin) across different marketing programs (ACQ, RET, WB).*")
                     st.dataframe(
                         program_summary,
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config={
                             "brand": st.column_config.TextColumn("Brand"),
@@ -3146,7 +3146,7 @@ if not _master_df.empty:
                             yaxis_title="% of Total GGR",
                             margin=dict(l=0, r=0, t=40, b=0)
                         )
-                        st.plotly_chart(fig_par, use_container_width=True)
+                        st.plotly_chart(fig_par, width='stretch')
                     else:
                         st.info("Not enough profitable players to calculate a distribution.")
                         
@@ -3170,7 +3170,7 @@ if not _master_df.empty:
                             margin=dict(l=0, r=0, t=40, b=0),
                             legend_title="Acquisition Cohort"
                         )
-                        st.plotly_chart(fig_ltv, use_container_width=True)
+                        st.plotly_chart(fig_ltv, width='stretch')
                     else:
                         st.info("Not enough data to generate LTV curves.")
 
@@ -3192,7 +3192,7 @@ if not _master_df.empty:
                 st.error(f"🚨 {len(churn_df)} VIPs are exhibiting severe flight risk behaviors in the latest month.")
                 st.dataframe(
                     churn_df[["id", "brand", "Prev_Month_NGR", "Curr_Month_NGR", "NGR_Drop_Value", "NGR_Drop_Pct"]],
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     column_config={
                         "id": st.column_config.TextColumn("VIP Player ID"),
@@ -3234,7 +3234,7 @@ if not _master_df.empty:
 
             cfg_vip = {"Tier": st.column_config.TextColumn("Tier"), combined_label: st.column_config.NumberColumn(combined_label, format="%d")}
             for brand in active_brands: cfg_vip[brand] = st.column_config.NumberColumn(brand, format="%d")
-            st.dataframe(pd.DataFrame(vip_data), use_container_width=True, hide_index=True, column_config=cfg_vip)
+            st.dataframe(pd.DataFrame(vip_data), width='stretch', hide_index=True, column_config=cfg_vip)
 
 
             # ── Cross-Brand Cannibalization ──────────────────────────────
@@ -3291,7 +3291,7 @@ if not _master_df.empty:
                     top50 = filtered_master.nlargest(50, "Lifetime_GGR")
                     st.dataframe(
                         top50,
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config=_lb_col_config,
                     )
@@ -3307,7 +3307,7 @@ if not _master_df.empty:
                     else:
                         st.dataframe(
                             abusers,
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True,
                             column_config=_lb_col_config,
                         )
@@ -3330,7 +3330,7 @@ if not _master_df.empty:
                     else:
                         st.dataframe(
                             promo_abusers[["id", "brand", "Lifetime_NGR", "Lifetime_Bonus", "Lifetime_Withdrawals", "Lifetime_Turnover", "Months_Active"]],
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True,
                             column_config={
                                 "id": st.column_config.TextColumn("Player ID"),
@@ -3362,7 +3362,7 @@ if not _master_df.empty:
                         st.warning(f"⚠️ {len(high_friction)} players flagged for high transaction fee bleed. (>=10 deposits, avg <= $25)")
                         st.dataframe(
                             high_friction[["id", "brand", "Lifetime_Deposit_Count", "Lifetime_Deposits", "Avg_Deposit_Value", "Lifetime_NGR"]],
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True,
                             column_config={
                                 "id": st.column_config.TextColumn("Player ID"),
@@ -3404,12 +3404,12 @@ if not _master_df.empty:
                                 xaxis_title="",
                                 yaxis_title="Player Count"
                             )
-                            st.plotly_chart(fig_vel, use_container_width=True)
+                            st.plotly_chart(fig_vel, width='stretch')
                         
                         with v2:
                             st.dataframe(
                                 vel_df,
-                                use_container_width=True,
+                                width='stretch',
                                 hide_index=True,
                                 column_config={
                                     "Velocity": st.column_config.TextColumn("Response Speed"),
@@ -3457,7 +3457,7 @@ if not _master_df.empty:
                     display_cols = ["id", "brand", "Last_Month", "Months_Inactive", "Lifetime_GGR", "Lifetime_Turnover", "Recommended_Campaign"]
                     st.dataframe(
                         target_df[display_cols],
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config={
                             "id": st.column_config.TextColumn("Player ID"),
@@ -3474,7 +3474,7 @@ if not _master_df.empty:
                         data=target_df[display_cols].to_csv(index=False).encode("utf-8"),
                         file_name="winback_targets.csv",
                         mime="text/csv",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 else:
                     st.info("No players match the current filters. Adjust the sliders above.")
@@ -3505,7 +3505,7 @@ if not _master_df.empty:
 
                 st.dataframe(
                     special_campaigns[["id", "brand", "Last_Month", "Months_Inactive", "Lifetime_GGR", "Recommended_Campaign"]].sort_values("Lifetime_GGR", ascending=False),
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                 )
 
@@ -3529,7 +3529,7 @@ if not _master_df.empty:
                     extract_cols = ["id", "brand", "First_Month", "Last_Month", "Months_Active", "Months_Inactive", "Lifetime_GGR", "Lifetime_Turnover", "Recommended_Campaign"]
                     st.dataframe(
                         campaign_extract_df[extract_cols],
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config={
                             "id": st.column_config.TextColumn("Player ID"),
@@ -3549,7 +3549,7 @@ if not _master_df.empty:
                         data=campaign_extract_df[extract_cols].to_csv(index=False).encode("utf-8"),
                         file_name=f"campaign_{safe_name}.csv",
                         mime="text/csv",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 else:
                     st.info(f"No players in {selected_campaign}.")
@@ -3589,12 +3589,12 @@ if not _master_df.empty:
                         coloraxis_showscale=False,
                         margin=dict(l=0, r=0, t=40, b=0)
                     )
-                    st.plotly_chart(fig_seg, use_container_width=True)
+                    st.plotly_chart(fig_seg, width='stretch')
                     
                 with s2:
                     st.dataframe(
                         segment_df,
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config={
                             "segment": st.column_config.TextColumn("Marketing Lifecycle"),
@@ -3855,7 +3855,7 @@ if "📞 Operations Command" in tab_map:
                     fig1 = px.pie(pie_df1, names='Outcome', values='Value', hole=0.4, color='Outcome', 
                                   color_discrete_map={'Deliveries': '#22c55e', 'No Answer': '#eab308', 'Issues': '#ef4444'})
                     fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
-                    st.plotly_chart(fig1, use_container_width=True)
+                    st.plotly_chart(fig1, width='stretch')
 
                 with pie_col2:
                     st.markdown("**Deliveries Breakdown**")
@@ -3863,7 +3863,7 @@ if "📞 Operations Command" in tab_map:
                     fig2 = px.pie(pie_df2, names='Outcome', values='Value', hole=0.4, color='Outcome',
                                   color_discrete_map={'D+': '#22c55e', 'D': '#16a34a', 'D-': '#86efac'})
                     fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
-                    st.plotly_chart(fig2, use_container_width=True)
+                    st.plotly_chart(fig2, width='stretch')
 
                 with pie_col3:
                     st.markdown("**Issues Breakdown**")
@@ -3874,7 +3874,7 @@ if "📞 Operations Command" in tab_map:
                     fig3 = px.pie(pie_df3, names='Outcome', values='Value', hole=0.4, color='Outcome',
                                   color_discrete_map={'WN': '#ef4444', 'DNC': '#dc2626', 'DX': '#b91c1c', 'T': '#991b1b', 'None': '#333333'})
                     fig3.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
-                    st.plotly_chart(fig3, use_container_width=True)
+                    st.plotly_chart(fig3, width='stretch')
 
             st.markdown("---")
             
@@ -3992,7 +3992,7 @@ if "📞 Operations Command" in tab_map:
                             if 'Average Volume' in trace.name:
                                 trace.line.color = 'rgba(255, 255, 255, 0.9)'
                                 
-                        st.plotly_chart(fig_trend_vol, use_container_width=True)
+                        st.plotly_chart(fig_trend_vol, width='stretch')
                         
                         # ---- Calculate efficiency percentages (vs New Data) ----
                         df_filtered['Conv%'] = ((df_filtered['KPI1-Conv.'] / df_filtered['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI1-Conv.' in df_filtered.columns else 0
@@ -4020,7 +4020,7 @@ if "📞 Operations Command" in tab_map:
                                 hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
                             fig_raw.update_yaxes(showgrid=False)
-                            st.plotly_chart(fig_raw, use_container_width=True)
+                            st.plotly_chart(fig_raw, width='stretch')
                         
                         # Chart 2: Login % Trend
                         with tc2:
@@ -4041,7 +4041,7 @@ if "📞 Operations Command" in tab_map:
                                 hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
                             fig_li.update_yaxes(showgrid=False)
-                            st.plotly_chart(fig_li, use_container_width=True)
+                            st.plotly_chart(fig_li, width='stretch')
                         
                         # Chart 3: Conversion % Trend
                         with tc3:
@@ -4061,7 +4061,7 @@ if "📞 Operations Command" in tab_map:
                                 hoverlabel=dict(bgcolor="rgba(20,20,20,0.9)", font_color="#FFFFFF")
                             )
                             fig_conv.update_yaxes(showgrid=False)
-                            st.plotly_chart(fig_conv, use_container_width=True)
+                            st.plotly_chart(fig_conv, width='stretch')
                     else:
                         st.info("Not enough data to display trend charts for the selected range.")
 
@@ -4160,7 +4160,7 @@ if "📞 Operations Command" in tab_map:
                 ).map(_style_delivery_rate, subset=['Email Delivered', 'SMS Delivered']
                 ).map(_style_engagement, subset=['Email Open', 'Email Clicked'])
 
-                st.dataframe(styled_sc, use_container_width=True, hide_index=True,
+                st.dataframe(styled_sc, width='stretch', hide_index=True,
                     column_config={
                         "Gross %": st.column_config.ProgressColumn("Gross %", format="%.1f%%", min_value=0, max_value=100),
                         "Net %": st.column_config.ProgressColumn("Net %", format="%.1f%%", min_value=0, max_value=100),
@@ -4236,7 +4236,7 @@ if "📞 Operations Command" in tab_map:
                     }).map(style_fulfillment, subset=["Fulfillment %"])
                     
                     # 6. Render
-                    st.dataframe(styled_sla_df, use_container_width=True, hide_index=True)
+                    st.dataframe(styled_sla_df, width='stretch', hide_index=True)
                 else:
                     st.info("No recognizable SLA lifecycles (WB, ACQ, RET, RND) found in the current dataset.")
 
@@ -4278,7 +4278,7 @@ if "📞 Operations Command" in tab_map:
                 
                 st.dataframe(
                     matrix.sort_values(by=pivot_cols),
-                    use_container_width=True, hide_index=True,
+                    width='stretch', hide_index=True,
                     column_config={
                         "Records": st.column_config.NumberColumn("Total Records", format="%d"),
                         "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend", format="$%.2f"),
@@ -4359,7 +4359,7 @@ if "📞 Operations Command" in tab_map:
                 
             st.dataframe(
                 styled_ledger,
-                use_container_width=True, hide_index=True,
+                width='stretch', hide_index=True,
                 column_config={
                     "Records": st.column_config.NumberColumn("New Data"),
                     "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend"),
