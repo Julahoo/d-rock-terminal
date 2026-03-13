@@ -1975,18 +1975,18 @@ if view_mode == "📊 Dashboard":
                     st.caption(f"Conv: {fmt_num(c['conversions'])} ({calc_delta(c['conversions'], p['conversions'])})")
                 with kc2:
                     st.markdown("##### ☎️ Call Efficiency")
-                    st.metric("D %", fmt_pct(c_d), calc_delta(c_d, p_d, True))
-                    st.caption(f"NA%: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
-                    st.caption(f"I%: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
+                    st.metric("Calls Delivered %", fmt_pct(c_d), calc_delta(c_d, p_d, True))
+                    st.caption(f"No Answer %: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
+                    st.caption(f"Invalid %: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
                 with kc3:
                     st.markdown("##### 📧 Email Health")
-                    st.metric("ED %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
-                    st.caption(f"EO%: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
-                    st.caption(f"EC%: {fmt_pct(c_ec)} ({calc_delta(c_ec, p_ec, True)})")
+                    st.metric("Email Delivered %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
+                    st.caption(f"Email Opened %: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
+                    st.caption(f"Email Clicked %: {fmt_pct(c_ec)} ({calc_delta(c_ec, p_ec, True)})")
                 with kc4:
                     st.markdown("##### 📱 SMS Health")
-                    st.metric("SD %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
-                    st.caption(f"SF%: {fmt_pct(c_sf)} ({calc_delta(c_sf, p_sf, True)})")
+                    st.metric("SMS Delivered %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
+                    st.caption(f"SMS Failed %: {fmt_pct(c_sf)} ({calc_delta(c_sf, p_sf, True)})")
                 
                 st.markdown("---")
                 
@@ -2000,18 +2000,18 @@ if view_mode == "📊 Dashboard":
                 
                 # Dispositions
                 rows.append(("☎️ **Dispositions**", "", "", ""))
-                rows.append(("D %", fmt_pct(p_d), fmt_pct(c_d), calc_delta(c_d, p_d, True)))
-                rows.append(("NA %", fmt_pct(p_na), fmt_pct(c_na), calc_delta(c_na, p_na, True)))
-                rows.append(("I %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
+                rows.append(("Calls Delivered %", fmt_pct(p_d), fmt_pct(c_d), calc_delta(c_d, p_d, True)))
+                rows.append(("No Answer %", fmt_pct(p_na), fmt_pct(c_na), calc_delta(c_na, p_na, True)))
+                rows.append(("Invalid %", fmt_pct(p_i), fmt_pct(c_i), calc_delta(c_i, p_i, True)))
                 
                 # Email (% of es)
                 rows.append(("📧 **Email**", "", "", ""))
-                for label, c_val, p_val in [("ED %", c_ed, p_ed), ("EO %", c_eo, p_eo), ("EC %", c_ec, p_ec), ("EF %", c_ef, p_ef)]:
+                for label, c_val, p_val in [("Email Delivered %", c_ed, p_ed), ("Email Opened %", c_eo, p_eo), ("Email Clicked %", c_ec, p_ec), ("Email Failed %", c_ef, p_ef)]:
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
                 # SMS (% of SS = sd + sf + sp)
                 rows.append(("📱 **SMS**", "", "", ""))
-                for label, c_val, p_val in [("SD %", c_sd, p_sd), ("SF %", c_sf, p_sf), ("SP %", safe_pct(c['sp'], c['ss']), safe_pct(p['sp'], p['ss']))]:
+                for label, c_val, p_val in [("SMS Delivered %", c_sd, p_sd), ("SMS Failed %", c_sf, p_sf), ("SMS Pending %", safe_pct(c['sp'], c['ss']), safe_pct(p['sp'], p['ss']))]:
                     rows.append((label, fmt_pct(p_val), fmt_pct(c_val), calc_delta(c_val, p_val, True)))
                 
                 bench_df = pd.DataFrame(rows, columns=["Metric", prior_label, curr_label, "Δ"])
@@ -2067,7 +2067,7 @@ if view_mode == "📊 Dashboard":
                         paper_bgcolor='rgba(0,0,0,0)',
                         plot_bgcolor='rgba(0,0,0,0)',
                         height=55 * n + 100,
-                        margin=dict(l=10, r=80, t=45, b=25),
+                        margin=dict(l=140, r=80, t=45, b=25),
                         font=dict(size=11),
                         yaxis=dict(autorange='reversed'),
                         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
@@ -2089,7 +2089,7 @@ if view_mode == "📊 Dashboard":
                     with rc2:
                         st.plotly_chart(_make_dumbbell(
                             "☎️ Call Dispositions",
-                            ['D%', 'NA%', 'I%'],
+                            ['Calls Delivered %', 'No Answer %', 'Invalid %'],
                             [p_d, p_na, p_i],
                             [c_d, c_na, c_i]
                         ), use_container_width=True)
@@ -2099,85 +2099,26 @@ if view_mode == "📊 Dashboard":
                     with rc3:
                         st.plotly_chart(_make_dumbbell(
                             "📧 Email Performance",
-                            ['ED%', 'EO%', 'EC%', 'EF%'],
+                            ['Email Delivered %', 'Email Opened %', 'Email Clicked %', 'Email Failed %'],
                             [p_ed, p_eo, p_ec, p_ef],
                             [c_ed, c_eo, c_ec, c_ef]
                         ), use_container_width=True)
                     with rc4:
                         st.plotly_chart(_make_dumbbell(
                             "📱 SMS Performance",
-                            ['SD%', 'SP%', 'SF%'],
+                            ['SMS Delivered %', 'SMS Pending %', 'SMS Failed %'],
                             [p_sd, safe_pct(p['sp'], p['ss']), p_sf],
                             [c_sd, safe_pct(c['sp'], c['ss']), c_sf]
                         ), use_container_width=True)
             
-            # Load benchmark data directly from snapshots (full history, sidebar-filtered)
-            try:
-                from src.database import engine as _bench_engine
-                _bench_df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _bench_engine)
-                if not _bench_df.empty:
-                    # Apply sidebar filters (same as global filter logic, minus date range)
-                    if selected_client != "All" and 'ops_client' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['ops_client'] == selected_client]
-                    if selected_brand != "All" and 'ops_brand' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['ops_brand'] == selected_brand]
-                    if selected_engagement != "All" and 'extracted_engagement' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['extracted_engagement'] == selected_engagement]
-                    if selected_lifecycle != "All" and 'extracted_lifecycle' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['extracted_lifecycle'] == selected_lifecycle]
-                    if selected_segment != "All" and 'extracted_segment' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['extracted_segment'] == selected_segment]
-                    if selected_country != "All" and 'country' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['country'].str.upper() == selected_country]
-                    if selected_category != "All" and 'campaign_name' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['campaign_name'].str.upper().str.contains(selected_category, na=False)]
-                    if selected_campaign != "All" and 'Core_Signature' in _bench_df.columns:
-                        _bench_df = _bench_df[_bench_df['Core_Signature'] == selected_campaign]
-                    
-                    # Build available half-year options from snapshot data
-                    _bench_df['ops_date'] = pd.to_datetime(_bench_df['ops_date'], errors='coerce')
-                    _bench_dates = _bench_df.dropna(subset=['ops_date'])
-                    _available_halves = []
-                    if not _bench_dates.empty:
-                        from datetime import datetime as _bdt
-                        _b_now = _bdt.now()
-                        _b_min_yr = _bench_dates['ops_date'].min().year
-                        _b_max_yr = _bench_dates['ops_date'].max().year
-                        for _yr in range(_b_min_yr, _b_max_yr + 1):
-                            h1_end = _bdt(_yr, 6, 30)
-                            if h1_end < _b_now and not _bench_dates[(_bench_dates['ops_date'] >= f"{_yr}-01-01") & (_bench_dates['ops_date'] <= f"{_yr}-06-30")].empty:
-                                _available_halves.append(f"H1 {_yr}")
-                            h2_end = _bdt(_yr, 12, 31)
-                            if h2_end < _b_now and not _bench_dates[(_bench_dates['ops_date'] >= f"{_yr}-07-01") & (_bench_dates['ops_date'] <= f"{_yr}-12-31")].empty:
-                                _available_halves.append(f"H2 {_yr}")
-                    
-                    # Default selection priority: H2 2025 → H1 2025 → first available
-                    _default_halves = ["H2 2025", "H1 2025"]
-                    _all_options = _default_halves + [h for h in _available_halves if h not in _default_halves]
-                    # Only keep options that exist in data
-                    _valid_options = [h for h in _all_options if h in _available_halves]
-                    if not _valid_options:
-                        _valid_options = _available_halves if _available_halves else ["H2 2025"]
-                    
-                    _hdr_col, _dd_col = st.columns([3, 2])
-                    with _hdr_col:
-                        st.markdown("#### > 📊 OPERATIONAL BASELINE_")
-                        st.markdown("*Compare current half-year YTD against a prior baseline.*")
-                    with _dd_col:
-                        _selected_prior = st.selectbox("Compare against:", _valid_options, key="bench_prior_half")
-                    
-                    _render_fixed_benchmark(_bench_df, prior_half=_selected_prior)
-                else:
-                    st.caption("No snapshot data available.")
-            except Exception as e:
-                st.caption(f"Could not load benchmark data: {e}")
+
             
         else:
             st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")
-    tabs = ["📞 Operations Command", "🕵️ CRM Intelligence", "📈 Campaigns", "🗄️ Operations Ingestion"]
+    tabs = ["📞 Operations Command", "📉 Historical Benchmarks", "🕵️ CRM Intelligence", "📈 Campaigns", "🗄️ Operations Ingestion"]
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
     st.info("Operations Reports and Uploads will be consolidated here.")
@@ -3732,6 +3673,72 @@ else:
         with tab_map["🏦 Financial Deep-Dive"]:
             st.warning("⚠️ **No Financial Data Loaded**. Please navigate to the **📥 Financial Ingestion** tab and upload your player reports to unlock the Financial Dashboard.")
 
+
+# ==========================================
+# 📞 TAB: HISTORICAL BENCHMARKS
+# ==========================================
+if "📉 Historical Benchmarks" in tab_map:
+    with tab_map["📉 Historical Benchmarks"]:
+        # Load benchmark data directly from snapshots (full history, sidebar-filtered)
+        try:
+            from src.database import engine as _bench_engine
+            _bench_df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _bench_engine)
+            if not _bench_df.empty:
+                # Apply sidebar filters (same as global filter logic, minus date range)
+                if selected_client != "All" and 'ops_client' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['ops_client'] == selected_client]
+                if selected_brand != "All" and 'ops_brand' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['ops_brand'] == selected_brand]
+                if selected_engagement != "All" and 'extracted_engagement' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['extracted_engagement'] == selected_engagement]
+                if selected_lifecycle != "All" and 'extracted_lifecycle' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['extracted_lifecycle'] == selected_lifecycle]
+                if selected_segment != "All" and 'extracted_segment' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['extracted_segment'] == selected_segment]
+                if selected_country != "All" and 'country' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['country'].str.upper() == selected_country]
+                if selected_category != "All" and 'campaign_name' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['campaign_name'].str.upper().str.contains(selected_category, na=False)]
+                if selected_campaign != "All" and 'Core_Signature' in _bench_df.columns:
+                    _bench_df = _bench_df[_bench_df['Core_Signature'] == selected_campaign]
+                
+                # Build available half-year options from snapshot data
+                _bench_df['ops_date'] = pd.to_datetime(_bench_df['ops_date'], errors='coerce')
+                _bench_dates = _bench_df.dropna(subset=['ops_date'])
+                _available_halves = []
+                if not _bench_dates.empty:
+                    from datetime import datetime as _bdt
+                    _b_now = _bdt.now()
+                    _b_min_yr = _bench_dates['ops_date'].min().year
+                    _b_max_yr = _bench_dates['ops_date'].max().year
+                    for _yr in range(_b_min_yr, _b_max_yr + 1):
+                        h1_end = _bdt(_yr, 6, 30)
+                        if h1_end < _b_now and not _bench_dates[(_bench_dates['ops_date'] >= f"{_yr}-01-01") & (_bench_dates['ops_date'] <= f"{_yr}-06-30")].empty:
+                            _available_halves.append(f"H1 {_yr}")
+                        h2_end = _bdt(_yr, 12, 31)
+                        if h2_end < _b_now and not _bench_dates[(_bench_dates['ops_date'] >= f"{_yr}-07-01") & (_bench_dates['ops_date'] <= f"{_yr}-12-31")].empty:
+                            _available_halves.append(f"H2 {_yr}")
+                
+                # Default selection priority: H2 2025 → H1 2025 → first available
+                _default_halves = ["H2 2025", "H1 2025"]
+                _all_options = _default_halves + [h for h in _available_halves if h not in _default_halves]
+                # Only keep options that exist in data
+                _valid_options = [h for h in _all_options if h in _available_halves]
+                if not _valid_options:
+                    _valid_options = _available_halves if _available_halves else ["H2 2025"]
+                
+                _hdr_col, _dd_col = st.columns([3, 2])
+                with _hdr_col:
+                    st.markdown("#### > 📊 COMPARATIVE BASELINE BENCHMARKS_")
+                    st.markdown("*Compare current half-year YTD telemetry against a prior baseline across active filtered traffic.*")
+                with _dd_col:
+                    _selected_prior = st.selectbox("Compare against:", _valid_options, key="bench_prior_half_tab")
+                
+                _render_fixed_benchmark(_bench_df, prior_half=_selected_prior)
+            else:
+                st.caption("No snapshot data available.")
+        except Exception as e:
+            st.caption(f"Could not load benchmark data: {e}")
 
 # ==========================================
 # 📞 TAB: OPERATIONS COMMAND (Phase 3 - Telemarketing)

@@ -4,6 +4,12 @@
 
 ## LOG ENTRIES
 
+### [UI Re-Architecture - Operational Benchmarks] - 2026-03-13 - COMPLETED
+- **Problem:** Operational benchmarks and standard abbreviations (`SD%`, `ED%`) were floating in the global Executive Dashboard which created context-switching friction for Operations personnel. The acronyms were also hard to rapidly decipher for non-technical managers.
+- **Solution:** Surgically extracted the `_render_fixed_benchmark` snapshot injection and embedded it directly inside a new `📉 Historical Benchmarks` tab within the `📞 Operations Command` tier. Expanded 10+ operational abbreviated keys (`Email Delivered %`, `SMS Pending %`, `No Answer %`) across all KPI cards, data frames, and interactive Plotly Dumbbell graphs.
+- **Polish:** Pushed Plotly's left-axis margin out to `140px` to naturally frame the 18+ character strings without responsive overlap.
+- **Result:** Contextual grouping for Operations is perfectly partitioned. The Master Dashboard is lighter.
+
 ### [Project Delivery - Architecture & RBAC Cleanup] - 2026-03-13 - COMPLETED
 - **Structure:** Relocated `main.py` to `scripts/` and `test_query.py` to `tests/`. Relocated original markdown plans (`DIRECTORY.md`, `MORROW.md`) into `docs/`.
 - **Docs:** Engineered new comprehensive `docs/USER_GUIDE.md` serving as the front-line manual for Directors and Managers. Updated `README.md` to reflect the clean v3.1 4-Tier structural definitions.
