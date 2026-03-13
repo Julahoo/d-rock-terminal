@@ -336,9 +336,9 @@ def fetch_config_tables(query):
         return pd.DataFrame()
 
 @st.cache_data(show_spinner=False)
-def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business, ops_df):
+def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
     from src.exporter import export_to_excel
-    buf = export_to_excel(summary_df, cohort_matrices=cohort_matrices, segmentation_df=segmentation, both_business_df=both_business, ops_df=ops_df)
+    buf = export_to_excel(summary_df, cohort_matrices=cohort_matrices, segmentation_df=segmentation, both_business_df=both_business)
     return buf.getvalue()
 
 # ── Config ───────────────────────────────────────────────────────────────
@@ -2581,8 +2581,8 @@ if not _master_df.empty:
                 st.markdown("*Insight: Tracks core revenue generation, operating margin safety, and top-line agency commissions across all entities.*")
 
                 if not df.empty:
-                    master_excel = _get_master_excel_bytes(financial_summary, cohort_matrices, segmentation, both_business, st.session_state.get("ops_df", pd.DataFrame()))
-                    st.download_button("📥 Download Master Report (Fin + Ops)", data=master_excel, file_name=f"Master_Report_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+                    master_excel = _get_master_excel_bytes(financial_summary, cohort_matrices, segmentation, both_business)
+                    st.download_button("📥 Download Master Report", data=master_excel, file_name=f"Master_Report_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
                 latest_month = both_business["month"].max()
 
@@ -3737,8 +3737,18 @@ if "📞 Operations Command" in tab_map:
             else:
                 selected_client = "All" # Or prompt user to select if multiple
 
-            ops_excel = _get_ops_excel_bytes(ops_df)
-            st.download_button("📥 Download Operations Ledger", data=ops_excel, file_name=f"Operations_Ledger_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+            @st.cache_data(show_spinner=False)
+            def _get_ops_csv_bytes(df):
+                return df.to_csv(index=False).encode('utf-8')
+
+            ops_csv = _get_ops_csv_bytes(ops_df)
+            st.download_button(
+                "📥 Download Operations Ledger (CSV)", 
+                data=ops_csv, 
+                file_name=f"Operations_Ledger_{selected_client}.csv", 
+                mime="text/csv", 
+                type="primary"
+            )
 
             st.markdown("---")
             st.markdown("##### ⚖️ SLA Fulfillment Tracker (Volume vs. Contract)")
