@@ -4,6 +4,14 @@
 
 ## LOG ENTRIES
 
+### [Data - LeoVegas Financial Ingestion] - 2026-03-13 - COMPLETED
+- **File:** `data/raw/leovegas/LeoVegas.xlsx` (48MB, 9 sheets: 2025-02 through 2026-01)
+- **Parser:** Existing `LEOVEGAS_COL_MAP` and `_normalise_player_columns` LeoVegas path handled all 6 brands (BET MGM, LeoVegas, Bet UK, Expekt, GoGoCasino, RoyalPanda) with zero nulls.
+- **Rows ingested:** 263,875 (23K–33K per month, growing as new player cohorts activate)
+- **Client:** All mapped to `LeoVegas Group`
+- **Production sync:** Used psycopg2 `COPY` method with sequence reset to bypass SQLAlchemy parameter limits.
+- **DB state:** Local: 315,182 total financial rows. Production: 315,182 total.
+
 ### [Security - RBAC Hardening] - 2026-03-13 - COMPLETED
 - **Password Hashing:** All passwords now stored as SHA-256 hex digests. Login compares hashes, never plaintext. `database.py` auto-migrates any remaining plaintext passwords on startup.
 - **Admin Role Fix:** `Admin` role now has access to both Operations and Financial nav sections (previously had dashboard-only access like a Viewer).
