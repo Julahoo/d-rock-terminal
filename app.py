@@ -300,62 +300,8 @@ def load_benchmarks():
 def fetch_ops_data():
     from src.database import engine
     import pandas as pd
-    import re as _re
     try:
-        df = pd.read_sql("SELECT * FROM ops_telemarketing_data", engine)
-        if not df.empty:
-            # Clean generic strings
-            if 'ops_client' in df.columns: df['ops_client'] = df['ops_client'].astype(str).str.strip()
-            if 'ops_brand' in df.columns: df['ops_brand'] = df['ops_brand'].astype(str).str.strip()
-            
-            # Map DB columns back to UI-expected names instantly in cache
-            df.rename(columns={
-                "campaign_name": "Campaign Name", "records": "Records", "total_cost": "Total_Campaign_Cost",
-                "conversions": "KPI1-Conv.", "kpi2_logins": "KPI2-Login", "li_pct": "LI%",
-                "true_cac": "True_CAC", "calls": "Calls", "d_total": "D", "d_plus": "D+",
-                "d_minus": "D-", "d_ratio": "D Ratio", "tech_issues": "T", "am": "AM",
-                "dnc": "DNC", "na": "NA", "dx": "DX", "wn": "WN"
-            }, inplace=True)
-            
-            # Extract Base Campaign via Regex
-            def _strip_date_suffix(name):
-                n = str(name)
-                n = _re.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', n)
-                n = _re.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', n)
-                n = _re.sub(r'[_-]\d{4}[_-]\d{2}$', '', n)
-                return n
-            
-            df['Core_Signature'] = df['Campaign Name'].apply(_strip_date_suffix)
-            df['Base Campaign'] = df['Core_Signature']
-            
-            # Extract Lifecycle manually
-            df['ops_lifecycle'] = df['Campaign Name'].apply(
-                lambda x: 'WB' if '-WB' in str(x).upper() or '_WB' in str(x).upper() or ' WB' in str(x).upper() else (
-                    'RND' if '-RND' in str(x).upper() or '_RND' in str(x).upper() or ' RND' in str(x).upper() else 'UNKNOWN'
-                )
-            )
-            
-            # Standard Strategy Signatures
-            df['Strategy_Signature'] = (
-                df['ops_brand'].fillna('UNKNOWN') + "-" +
-                df['country'].fillna('UNKNOWN') + "-" +
-                df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-                df['extracted_engagement'].fillna('UNKNOWN')
-            )
-            
-            # Granular Campaign Signature for Benchmarks
-            def get_sig(c):
-                c = str(c)
-                parts = c.replace("-", "_").split('_')
-                if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
-                    return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-                if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
-                    return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-                return c
-            
-            df['campaign_signature'] = df['Campaign Name'].apply(get_sig)
-            
-        return df
+        return pd.read_sql("SELECT * FROM ops_telemarketing_data_materialized", engine)
     except Exception:
         return pd.DataFrame()
 
@@ -364,14 +310,23 @@ def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
     try:
-        df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
-        if not df.empty:
-            df['Strategy_Signature'] = (
-                df['ops_brand'].fillna('UNKNOWN') + "-" +
-                df['country'].fillna('UNKNOWN') + "-" +
-                df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-                df['extracted_engagement'].fillna('UNKNOWN')
-            )
+        return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots_materialized", engine)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl="24h", show_spinner=False)
+def fetch_dashboard_pulse_data():
+    from src.database import engine
+    import pandas as pd
+    try:
+        df = pd.read_sql("SELECT * FROM dashboard_pulse_matrix", engine)
+        if not df.empty and 'ops_date' in df.columns:
+            df['ops_date'] = pd.to_datetime(df['ops_date'], errors='coerce')
+            df.rename(columns={
+                'total_records': 'Records',
+                'total_conversions': 'KPI1-Conv.',
+                'total_logins': 'KPI2-Login'
+            }, inplace=True)
         return df
     except Exception:
         return pd.DataFrame()
@@ -583,6 +538,7 @@ with st.sidebar:
         st.session_state["raw_ops_df"] = fetch_ops_data()
         st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
         st.session_state["raw_fin_df"] = fetch_financial_data()
+        st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
         
         # Also populate legacy global state pointers
         st.session_state["ops_df"] = st.session_state["raw_ops_df"]
@@ -2006,24 +1962,11 @@ if view_mode == "📊 Dashboard":
         st.markdown("#### > 📡 OPERATIONS PULSE_")
         st.markdown("*Rolling KPI windows — at a glance.*")
         
-        if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
-            _pulse_ops = st.session_state["ops_df"].copy()
-            # Ensure ops_date is datetime
-            _pulse_ops['ops_date'] = pd.to_datetime(_pulse_ops['ops_date'], errors='coerce')
-            
-            # Normalize column names for pulse calculations
-            _pulse_rename = {
-                "campaign_name": "Campaign Name", "records": "Records",
-                "conversions": "KPI1-Conv.", "kpi2_logins": "KPI2-Login",
-                "li_pct": "LI%", "extracted_engagement": "extracted_engagement"
-            }
-            for old_col, new_col in _pulse_rename.items():
-                if old_col in _pulse_ops.columns and new_col not in _pulse_ops.columns:
-                    _pulse_ops.rename(columns={old_col: new_col}, inplace=True)
+        if "raw_pulse_df" in st.session_state and not st.session_state["raw_pulse_df"].empty:
+            _pulse_ops = st.session_state["raw_pulse_df"]
             
             def _render_pulse_matrix(df, title, engagement_type):
                 """Render a 3-row x 4-col sparkline performance matrix for a given engagement type."""
-                # Filter by engagement
                 if 'extracted_engagement' in df.columns:
                     edf = df[df['extracted_engagement'].str.upper() == engagement_type.upper()].copy()
                 else:
@@ -2037,16 +1980,8 @@ if view_mode == "📊 Dashboard":
                 windows = [7, 14, 30, 90]
                 window_labels = ["7 Days", "14 Days", "30 Days", "90 Days"]
                 
-                # Aggregate daily totals
-                daily = edf.groupby('ops_date').agg({
-                    'Records': 'sum',
-                    'KPI1-Conv.': 'sum',
-                    'KPI2-Login': 'sum'
-                }).reset_index().sort_values('ops_date') if 'Records' in edf.columns and 'KPI1-Conv.' in edf.columns else pd.DataFrame()
-                
-                if daily.empty:
-                    st.caption(f"No {engagement_type} data available.")
-                    return
+                # Use daily right out of the precomputed matrix payload
+                daily = edf.sort_values('ops_date')
                 
                 # Calculate daily rates
                 daily['Conv%'] = ((daily['KPI1-Conv.'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100)
@@ -2110,7 +2045,7 @@ if view_mode == "📊 Dashboard":
                                     xaxis=dict(visible=False),
                                     yaxis=dict(visible=False)
                                 )
-                                # st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False}, key=f'spark_{title}_{metric_label}_{wlabel}')
+                                st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False}, key=f'spark_{title}_{metric_label}_{wlabel}')
             
             # Render side-by-side LI / NLI matrices
             col_li, col_nli = st.columns(2)
