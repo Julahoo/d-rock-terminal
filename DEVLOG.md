@@ -4,6 +4,13 @@
 
 ## LOG ENTRIES
 
+### [Security - RBAC Hardening] - 2026-03-13 - COMPLETED
+- **Password Hashing:** All passwords now stored as SHA-256 hex digests. Login compares hashes, never plaintext. `database.py` auto-migrates any remaining plaintext passwords on startup.
+- **Admin Role Fix:** `Admin` role now has access to both Operations and Financial nav sections (previously had dashboard-only access like a Viewer).
+- **Schema Cleanup:** Removed stale `DROP TABLE contractual_slas` from `init_db()`. Removed incorrect `UNIQUE` constraint on `campaign_name` in `CREATE TABLE` DDL.
+- **Password Validation:** Minimum 4-character password enforced on user creation. Edit mode allows blank (keeps existing hash).
+- **Production Migration:** Column renamed `password` → `password_hash`, existing superadmin password hashed. SPEC.md updated to v3.1 per SDD methodology.
+
 ### [Feature - Operations Command UI Overhaul] - 2026-03-12 - COMPLETED
 - **Pitch vs. List Scorecard:** Added color-coded Deliveries % / Issues %, renamed Email/SMS columns to funnel percentages (ED, EO, EC, SD), added progress bars for Gross % / Net %, reordered columns.
 - **Campaign True Cost Ledger:** Fixed "Total Records" → "New Data", "KPI1-Conv." → "Conv %" (as percentage), "Contact Rate" = D/(D+NA+I)×100 (always positive).
