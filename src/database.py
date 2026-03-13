@@ -216,10 +216,11 @@ def init_db():
         """))
 
         # Migration: rename legacy 'password' column to 'password_hash' if needed
-        try:
+        has_old_col = conn.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password'"
+        )).fetchone()
+        if has_old_col:
             conn.execute(text("ALTER TABLE users RENAME COLUMN password TO password_hash"))
-        except Exception:
-            pass  # Column already renamed or doesn't exist
 
         # Migration: hash any remaining plaintext passwords (< 64 hex chars = not SHA-256)
         import hashlib
