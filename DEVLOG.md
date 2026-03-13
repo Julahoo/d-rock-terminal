@@ -4,6 +4,12 @@
 
 ## LOG ENTRIES
 
+### [Hotfix - Cold-Start Cache Guard (Senary Audit)] - 2026-03-13 - COMPLETED
+- **Problem:** Upon fresh cloud deployments, Streamlit immediately queries cache tables (`cache_cohort_matrices`, `cache_tier_summaries`) before the background `etl_worker.py` cron job has a chance to generate them. This resulted in Python silently catching exceptions but Postgres spamming `ERROR: relation does not exist` into the server logs.
+- **Root Cause:** A raw synchronous `pd.read_sql` call against ephemeral cache tables was executing without verifying if the table schema existed first.
+- **Fix:** Implemented the "Cold-Start Inspector Guard" pattern. Added `sqlalchemy.inspect(engine).has_table(...)` to 4 key analytical wrappers in `app.py`. If the table is missing, Streamlit short-circuits to return early, cleanly bypassing Postgres and preventing query errors.
+- **SDD Compliance:** Updated `SPEC.md` §4.3 to document this architectural pattern globally.
+
 ### [Hotfix - Async Benchmark Query Caching] - 2026-03-13 - COMPLETED
 - **Problem:** Unacceptable UI lag (>3 seconds) when navigating the `📉 Historical Benchmarks` tab.
 - **Root Cause:** A raw synchronous `pd.read_sql` call against the `ops_telemarketing_snapshots` table was placed directly inside the tab rendering block, causing the massive database table to be downloaded on every single button press.

@@ -250,6 +250,8 @@ def _cached_tier_summary(raw_df, target_month):
     try:
         from src.database import engine as _db
         import pandas as pd
+        from sqlalchemy import inspect
+        if not inspect(_db).has_table("cache_tier_summaries"): return pd.DataFrame()
         res = pd.read_sql(f"SELECT tier_json FROM cache_tier_summaries WHERE brand = '{brand}'", _db)
         if not res.empty: return pd.read_json(res.iloc[0]["tier_json"], orient="split")
     except Exception: pass
@@ -264,6 +266,8 @@ def _cached_retention_heatmap(raw_df):
     try:
         from src.database import engine as _db
         import pandas as pd
+        from sqlalchemy import inspect
+        if not inspect(_db).has_table("cache_financial_figures"): return None
         res = pd.read_sql("SELECT figure_json FROM cache_financial_figures WHERE visualization = 'retention_heatmap'", _db)
         if not res.empty and res.iloc[0]["figure_json"]: return pio.from_json(res.iloc[0]["figure_json"])
     except Exception: pass
@@ -274,6 +278,8 @@ def _cached_ltv_curves(raw_df):
     try:
         from src.database import engine as _db
         import pandas as pd
+        from sqlalchemy import inspect
+        if not inspect(_db).has_table("cache_financial_figures"): return None
         res = pd.read_sql("SELECT figure_json FROM cache_financial_figures WHERE visualization = 'ltv_curves'", _db)
         if not res.empty and res.iloc[0]["figure_json"]: return pio.from_json(res.iloc[0]["figure_json"])
     except Exception: pass
@@ -288,6 +294,8 @@ def _cached_cohort_matrix(df):
     try:
         from src.database import engine as _db
         import pandas as pd
+        from sqlalchemy import inspect
+        if not inspect(_db).has_table("cache_cohort_matrices"): return {}
         res = pd.read_sql("SELECT brand, matrix_json FROM cache_cohort_matrices", _db)
         return {row["brand"]: pd.read_json(row["matrix_json"], orient="split") for _, row in res.iterrows()}
     except Exception: return {}
