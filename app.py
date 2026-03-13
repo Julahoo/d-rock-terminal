@@ -432,7 +432,7 @@ if not st.session_state["authenticated"]:
         with st.form("login_form"):
             username = st.text_input("Username").strip().lower()
             password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Authenticate", use_container_width=True)
+            submit = st.form_submit_button("Authenticate")
             
             if submit:
                 from src.database import engine
@@ -645,7 +645,7 @@ with st.sidebar:
 
         selected_campaign = st.text_input("🎯 Campaign", placeholder="Type to search campaigns...", help="Filter by campaign name (partial match)")
 
-        _filters_submitted = st.form_submit_button("🔍 Apply Filters", use_container_width=True, type="primary")
+        _filters_submitted = st.form_submit_button("🔍 Apply Filters", type="primary")
 
     # 5. Elite Date Range Quick-Select Helper
     import re
