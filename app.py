@@ -441,8 +441,10 @@ if not st.session_state["authenticated"]:
                 
                 with st.spinner("Authenticating and securely retrieving configuration..."):
                     try:
-                        query = "SELECT * FROM users WHERE username = %(u)s AND password = %(p)s"
-                        user_df = pd.read_sql(query, engine, params={"u": username, "p": password})
+                        import hashlib
+                        pw_hash = hashlib.sha256(password.encode()).hexdigest()
+                        query = "SELECT * FROM users WHERE username = %(u)s AND password_hash = %(p)s"
+                        user_df = pd.read_sql(query, engine, params={"u": username, "p": pw_hash})
                         
                         if not user_df.empty:
                             user_record = user_df.iloc[0]
@@ -473,9 +475,9 @@ with st.sidebar:
 
     st.markdown("### 🧭 NAVIGATION")
     nav_options = ["📊 Dashboard"]
-    if st.session_state.get("user_role") in ["Superadmin", "Operations"]:
+    if st.session_state.get("user_role") in ["Superadmin", "Admin", "Operations"]:
         nav_options.append("📞 Operations")
-    if st.session_state.get("user_role") in ["Superadmin", "Financial"]: 
+    if st.session_state.get("user_role") in ["Superadmin", "Admin", "Financial"]: 
         nav_options.append("🏦 Financial")
     if st.session_state.get("user_role") == "Superadmin":
         nav_options.append("⚙️ Admin")
@@ -1336,14 +1338,19 @@ if view_mode == "⚙️ Admin":
                             # Update without touching password
                             execute_query("""UPDATE users SET role = :r, name = :n, allowed_clients = :ac WHERE username = :u""",
                                           {"u": u_username, "r": u_role, "n": u_name, "ac": json.dumps(u_clients)})
+                        elif len(u_password) < 4:
+                            st.error("⚠️ Password must be at least 4 characters.")
+                            st.stop()
                         else:
+                            import hashlib
+                            pw_hash = hashlib.sha256(u_password.encode()).hexdigest()
                             # Full UPSERT
                             execute_query(
-                                """INSERT INTO users (username, password, role, name, allowed_clients) 
+                                """INSERT INTO users (username, password_hash, role, name, allowed_clients) 
                                    VALUES (:u, :p, :r, :n, :ac) 
                                    ON CONFLICT (username) DO UPDATE SET 
-                                   password = :p, role = :r, name = :n, allowed_clients = :ac""",
-                                {"u": u_username, "p": u_password, "r": u_role, "n": u_name, "ac": json.dumps(u_clients)}
+                                   password_hash = :p, role = :r, name = :n, allowed_clients = :ac""",
+                                {"u": u_username, "p": pw_hash, "r": u_role, "n": u_name, "ac": json.dumps(u_clients)}
                             )
                         st.success(f"User {u_username} saved!")
                         st.rerun()

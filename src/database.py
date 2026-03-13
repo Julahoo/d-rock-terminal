@@ -30,8 +30,6 @@ def init_db():
         conn.execute(text("ALTER TABLE client_mapping ADD COLUMN IF NOT EXISTS financial_format VARCHAR(50) DEFAULT 'Standard'"))
         
         # 2. Dual-Layer SLAs & Benchmarks
-        # Drop legacy single-table logic
-        conn.execute(text("DROP TABLE IF EXISTS contractual_slas CASCADE"))
         
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS contractual_volumes (
@@ -79,7 +77,7 @@ def init_db():
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS ops_telemarketing_data (
                 id SERIAL PRIMARY KEY,
-                campaign_name VARCHAR(255) UNIQUE,
+                campaign_name VARCHAR(255),
                 ops_client VARCHAR(100),
                 ops_brand VARCHAR(50),
                 ops_date VARCHAR(50),
@@ -210,20 +208,34 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
+                password_hash VARCHAR(64) NOT NULL,
                 role VARCHAR(50) NOT NULL,
                 name VARCHAR(100),
                 allowed_clients JSONB NOT NULL
             )
         """))
 
-        # Auto-Seed Default Superadmin
+        # Migration: rename legacy 'password' column to 'password_hash' if needed
+        try:
+            conn.execute(text("ALTER TABLE users RENAME COLUMN password TO password_hash"))
+        except Exception:
+            pass  # Column already renamed or doesn't exist
+
+        # Migration: hash any remaining plaintext passwords (< 64 hex chars = not SHA-256)
+        import hashlib
         import json
+        existing = conn.execute(text("SELECT username, password_hash FROM users WHERE LENGTH(password_hash) < 64")).fetchall()
+        for row in existing:
+            hashed = hashlib.sha256(row[1].encode()).hexdigest()
+            conn.execute(text("UPDATE users SET password_hash = :h WHERE username = :u"), {"h": hashed, "u": row[0]})
+
+        # Auto-Seed Default Superadmin (SHA-256 hashed password)
+        default_hash = hashlib.sha256('123'.encode()).hexdigest()
         conn.execute(text("""
-            INSERT INTO users (username, password, role, name, allowed_clients) 
-            VALUES ('superadmin', '123', 'Superadmin', 'Global Overlord', :ac)
+            INSERT INTO users (username, password_hash, role, name, allowed_clients) 
+            VALUES ('superadmin', :ph, 'Superadmin', 'Global Overlord', :ac)
             ON CONFLICT (username) DO NOTHING
-        """), {"ac": json.dumps(["All"])})
+        """), {"ph": default_hash, "ac": json.dumps(["All"])})
 
         conn.commit()
 

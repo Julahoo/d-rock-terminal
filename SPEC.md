@@ -16,9 +16,9 @@
 - **`ops_telemarketing_snapshots`:** Mirror of `ops_telemarketing_data` for daily snapshots used by Dashboard Pulse matrices and benchmarks. Same column schema.
 - **`raw_financial_data`:** Core financial records populated from ingestion. Columns: `player_id`, `client`, `brand`, `country`, `wb_tag`, `segment`, `bet`, `revenue`, `ngr`, casino/sports splits, `deposits`, `withdrawals`, `bonus_*`, `tax_total`, `report_month`, `reactivation_date`, `campaign_start_date`, `reactivation_days`.
 - **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`, `financial_format` (Enum: Standard, LeoVegas, Offside). Used to normalize incoming data and intercept/quarantine orphaned tags.
-- **`contractual_slas`:** Client-specific SLA thresholds. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`, `target_cac_usd`.
+- **`contractual_volumes`:** Client-specific SLA volume thresholds. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`. UNIQUE on `(client_name, brand_code, lifecycle)`.
 - **`ops_historical_benchmarks`:** Aggregated benchmark averages per brand/country/lifecycle/segment/engagement.
-- **`users`:** RBAC authentication registry. Columns: `username` (UNIQUE), `password`, `role` (Superadmin/Admin/Viewer), `name`, `allowed_clients` (JSONB array).
+- **`users`:** RBAC authentication registry. Columns: `username` (UNIQUE), `password_hash` (SHA-256 hex digest — never store plaintext), `role` (Enum: `Superadmin`, `Admin`, `Operations`, `Financial`), `name`, `allowed_clients` (JSONB array). Min password length: 4 characters.
 - **`ops_contact_events`:** Player-level journey events pulled from iWinBack contact APIs. Columns: `box_id`, `contact_id`, `account_number`, `campaign_id`, `brand_id`, `event_type` (login/register/deposit), `event_at`, `extra_data` (JSONB), `ingested_at`. Indexes on `campaign_id`, `account_number`, and `(event_type, event_at)`. Financial linkage via `account_number` → `raw_financial_data.player_id` for True ROI.
 
 ### 2.1.1 Deterministic UI-Driven Parsers
@@ -111,11 +111,13 @@ During ingestion, each component is extracted via token matching:
 ## 4. FRONTEND APPLICATION (`app.py`)
 
 ### 4.1 🧭 4-Tier Navigation Router & Global Filters
-- **Sidebar Router:** Role-based radio router (`view_mode`):
-  1. `📊 Dashboard`: Executive/CRM intelligence.
-  2. `📞 Operations`: Operations Command and Ingestion.
-  3. `🏦 Financial`: Financial Deep-Dive and Ingestion dropzones.
-  4. `⚙️ Admin`: Client Hub, User Management, Data Maintenance, and File Explorer.
+- **Sidebar Router:** Role-based radio router (`view_mode`). Role access matrix:
+  | Section | Superadmin | Admin | Operations | Financial |
+  |---|---|---|---|---|
+  | 📊 Dashboard | ✅ | ✅ | ✅ | ✅ |
+  | 📞 Operations | ✅ | ✅ | ✅ | ❌ |
+  | 🏦 Financial | ✅ | ✅ | ❌ | ✅ |
+  | ⚙️ Admin | ✅ | ❌ | ❌ | ❌ |
 - **🌍 GLOBAL INTELLIGENCE FILTERS (Form-Gated):**
   - All filters wrapped in `st.form("global_filters")` — page only re-renders on "🔍 Apply Filters" click.
   - **Filter Order** (matches campaign naming convention):
@@ -146,6 +148,8 @@ During ingestion, each component is extracted via token matching:
 
 #### 4.2.2 👥 User Management
 - CRUD interface for the `users` RBAC table.
+- **Password Security:** All passwords stored as SHA-256 hex digest via `hashlib.sha256(password.encode()).hexdigest()`. Login compares hashes, never plaintext.
+- **Validation:** Username required, minimum 4-character password on create. Edit mode allows blank password (keeps existing hash).
 
 #### 4.2.3 🧹 Data Maintenance
 - **State Metrics:** Local file count, folder size, `ops_telemarketing_data` rows, `ops_telemarketing_snapshots` rows.
