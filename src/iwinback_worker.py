@@ -309,3 +309,4 @@ def run_historical_pull(start_date, end_date):
             log_msg("\n🎉 All retries recovered!")
 
     log_msg("\n🏁 ALL REQUESTED PULLS COMPLETE!")
+    return True
