@@ -117,7 +117,7 @@ During ingestion, each component is extracted via token matching:
   | 📊 Dashboard | ✅ | ✅ | ✅ | ✅ |
   | 📞 Operations | ✅ | ✅ | ✅ | ❌ |
   | 🏦 Financial | ✅ | ✅ | ❌ | ✅ |
-  | ⚙️ Admin | ✅ | ❌ | ❌ | ❌ |
+  | ⚙️ Admin | ✅ | ✅ | ❌ | ❌ |
 - **🌍 GLOBAL INTELLIGENCE FILTERS (Form-Gated):**
   - All filters wrapped in `st.form("global_filters")` — page only re-renders on "🔍 Apply Filters" click.
   - **Filter Order** (matches campaign naming convention):

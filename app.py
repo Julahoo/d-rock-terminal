@@ -343,6 +343,18 @@ def fetch_ops_data():
                 df['extracted_engagement'].fillna('UNKNOWN')
             )
             
+            # Granular Campaign Signature for Benchmarks
+            def get_sig(c):
+                c = str(c)
+                parts = c.replace("-", "_").split('_')
+                if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
+                    return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
+                    return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
+                return c
+            
+            df['campaign_signature'] = df['Campaign Name'].apply(get_sig)
+            
         return df
     except Exception:
         return pd.DataFrame()
@@ -549,7 +561,7 @@ with st.sidebar:
         nav_options.append("📞 Operations")
     if st.session_state.get("user_role") in ["Superadmin", "Admin", "Financial"]: 
         nav_options.append("🏦 Financial")
-    if st.session_state.get("user_role") == "Superadmin":
+    if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
         nav_options.append("⚙️ Admin")
         
     view_mode = st.radio("Go to:", nav_options)
@@ -3956,17 +3968,7 @@ if "📞 Operations Command" in tab_map:
                 # Group by exact daily date directly from globally filtered ops_df
                 latest_snaps = ops_df.sort_values('snapshot_timestamp').drop_duplicates(subset=['Campaign Name', 'ops_date'], keep='last') if 'snapshot_timestamp' in ops_df.columns else ops_df
                 
-                # Identify granular campaign signature for benchmark targeting
-                def get_sig(c):
-                    parts = c.replace("-", "_").split('_')
-                    if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
-                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-                    if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
-                        return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-                    return c
-                
-                latest_snaps['campaign_signature'] = latest_snaps['Campaign Name'].apply(get_sig)
-                u_sigs = latest_snaps['campaign_signature'].unique()
+                u_sigs = latest_snaps['campaign_signature'].unique() if 'campaign_signature' in latest_snaps.columns else []
                 active_sig = u_sigs[0] if len(u_sigs) == 1 else None
                 
                 # Fetch Benchmark for active sig

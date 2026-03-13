@@ -23,6 +23,14 @@ A configuration workspace enabling Directors to define volume SLAs, manually syn
 
 ---
 
+## Directory Structure
+- **`/docs/`**: Contains the `USER_GUIDE.md`, architectural blueprints, and methodological handbooks.
+- **`/scripts/`**: Houses utility logic (`warmup_cache.py`, DB initiators, standard ingestion runbooks).
+- **`/tests/`**: Contains active isolated tests for querying the database securely.
+- **`/src/`**: The core ETL business logic and PostgreSQL `database.py` models.
+
+---
+
 ## Instructions for Directors & Managers
 
 ### How to Log In
@@ -37,5 +45,11 @@ A configuration workspace enabling Directors to define volume SLAs, manually syn
 4. **Click "Process"**. The system will scan, validate, and permanently sink the rows into PostgreSQL.
 5. You can immediately return to the main dashboard views; all charts, benchmark deltas, and SLA trackers will be instantly re-calculated.
 
+### Role-Based Access Control (RBAC)
+- **Superadmin & Admin**: Full system access.
+- **Financial**: Access to Dashboard & Financial tiers.
+- **Operations**: Access to Dashboard & Operations Command.
+
 ---
 *For system recovery or maintenance issues, please check the Railway metrics dashboard. In the case of severe failure, notify the deployment engineer.*
+*For standard usage, refer to the `docs/USER_GUIDE.md` handbook.*

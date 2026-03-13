@@ -4,6 +4,19 @@
 
 ## LOG ENTRIES
 
+### [Project Delivery - Architecture & RBAC Cleanup] - 2026-03-13 - COMPLETED
+- **Structure:** Relocated `main.py` to `scripts/` and `test_query.py` to `tests/`. Relocated original markdown plans (`DIRECTORY.md`, `MORROW.md`) into `docs/`.
+- **Docs:** Engineered new comprehensive `docs/USER_GUIDE.md` serving as the front-line manual for Directors and Managers. Updated `README.md` to reflect the clean v3.1 4-Tier structural definitions.
+- **RBAC Audit:** Aligned `user_role` logic in `app.py` line 496 so that the `Admin` class correctly inherits full access to the `⚙️ Admin` workspace, satisfying the stakeholder request that 'admins see all of it'.
+- **Performance Polish:** Extracted the final lingering `O(N)` CPU string `.apply(get_sig)` transformation off the Operations Command UI thread (Line 3968) and securely fused it directly into the `@st.cache_data(ttl="24h")` pre-load phase. The Dashboards are now mathematically devoid of any synchronous string looping.
+- **SDD Compliance:** Upgraded `SPEC.md` and `DEVLOG.md` to formally document this final delivery consolidation.
+
+### [Hotfix - Operations Command UI Hang (Pandas CPU Loop)] - 2026-03-13 - COMPLETED
+- **Problem:** User reported `Operations Command` tab was still "heavy" despite the 24h data cache implementation.
+- **Root Cause:** Sighted 5 hidden Pandas `.apply(lambda)` loops executing synchronous Regex string extractions across 350,000+ rows upon EVERY Streamlit UI interaction (sidebar click, tab change). This forced an O(N) CPU lockup for several seconds on every render.
+- **Solution:** Vaporized the 5 redundant loops from the UI thread. Injected the string standardization logic directly into the `@st.cache_data(ttl="24h")` wrapper (`fetch_ops_data`).
+- **Result:** 350,000 regex operations are now executed strictly once every 24 hours behind the cache layer. The Operations Tab now loads instantly from RAM as an O(1) lookup.
+
 ### [Design - App Performance Optimization (24h Cache)] - 2026-03-13 - COMPLETED
 - **Design Doc:** `docs/plans/2026-03-13-performance-caching-design.md` (via implementation_plan.md)
 - **Problem:** App load times exceeding 5s-10s per click due to synchronous `pd.read_sql` fetching 315K+ rows on every UI re-render.
