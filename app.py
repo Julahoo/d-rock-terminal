@@ -300,8 +300,50 @@ def load_benchmarks():
 def fetch_ops_data():
     from src.database import engine
     import pandas as pd
+    import re as _re
     try:
-        return pd.read_sql("SELECT * FROM ops_telemarketing_data", engine)
+        df = pd.read_sql("SELECT * FROM ops_telemarketing_data", engine)
+        if not df.empty:
+            # Clean generic strings
+            if 'ops_client' in df.columns: df['ops_client'] = df['ops_client'].astype(str).str.strip()
+            if 'ops_brand' in df.columns: df['ops_brand'] = df['ops_brand'].astype(str).str.strip()
+            
+            # Map DB columns back to UI-expected names instantly in cache
+            df.rename(columns={
+                "campaign_name": "Campaign Name", "records": "Records", "total_cost": "Total_Campaign_Cost",
+                "conversions": "KPI1-Conv.", "kpi2_logins": "KPI2-Login", "li_pct": "LI%",
+                "true_cac": "True_CAC", "calls": "Calls", "d_total": "D", "d_plus": "D+",
+                "d_minus": "D-", "d_ratio": "D Ratio", "tech_issues": "T", "am": "AM",
+                "dnc": "DNC", "na": "NA", "dx": "DX", "wn": "WN"
+            }, inplace=True)
+            
+            # Extract Base Campaign via Regex
+            def _strip_date_suffix(name):
+                n = str(name)
+                n = _re.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', n)
+                n = _re.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', n)
+                n = _re.sub(r'[_-]\d{4}[_-]\d{2}$', '', n)
+                return n
+            
+            df['Core_Signature'] = df['Campaign Name'].apply(_strip_date_suffix)
+            df['Base Campaign'] = df['Core_Signature']
+            
+            # Extract Lifecycle manually
+            df['ops_lifecycle'] = df['Campaign Name'].apply(
+                lambda x: 'WB' if '-WB' in str(x).upper() or '_WB' in str(x).upper() or ' WB' in str(x).upper() else (
+                    'RND' if '-RND' in str(x).upper() or '_RND' in str(x).upper() or ' RND' in str(x).upper() else 'UNKNOWN'
+                )
+            )
+            
+            # Standard Strategy Signatures
+            df['Strategy_Signature'] = (
+                df['ops_brand'].fillna('UNKNOWN') + "-" +
+                df['country'].fillna('UNKNOWN') + "-" +
+                df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+                df['extracted_engagement'].fillna('UNKNOWN')
+            )
+            
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -310,7 +352,15 @@ def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
     try:
-        return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
+        df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
+        if not df.empty:
+            df['Strategy_Signature'] = (
+                df['ops_brand'].fillna('UNKNOWN') + "-" +
+                df['country'].fillna('UNKNOWN') + "-" +
+                df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+                df['extracted_engagement'].fillna('UNKNOWN')
+            )
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -322,6 +372,8 @@ def fetch_financial_data():
         df = pd.read_sql("SELECT * FROM raw_financial_data", engine)
         if not df.empty:
             df.rename(columns={"player_id": "id"}, inplace=True)
+            if 'client' in df.columns: df['client'] = df['client'].astype(str).str.strip()
+            if 'brand' in df.columns: df['brand'] = df['brand'].astype(str).str.strip()
         return df
     except Exception:
         return pd.DataFrame()
@@ -521,34 +573,9 @@ with st.sidebar:
     raw_ops = st.session_state["raw_ops_df"]
     raw_fin = st.session_state["raw_fin_df"]
 
-    # --- Pre-calculate Core Strategy Signatures globally ---
-    if not raw_ops.empty:
-        raw_ops['Core_Signature'] = (
-            raw_ops['ops_brand'].fillna('UNKNOWN') + "-" +
-            raw_ops['country'].fillna('UNKNOWN') + "-" +
-            raw_ops['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-            raw_ops['extracted_engagement'].fillna('UNKNOWN')
-        )
-        
-    if "raw_ops_snapshots_df" in st.session_state and not st.session_state["raw_ops_snapshots_df"].empty:
-        st.session_state["raw_ops_snapshots_df"]['Core_Signature'] = (
-            st.session_state["raw_ops_snapshots_df"]['ops_brand'].fillna('UNKNOWN') + "-" +
-            st.session_state["raw_ops_snapshots_df"]['country'].fillna('UNKNOWN') + "-" +
-            st.session_state["raw_ops_snapshots_df"]['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-            st.session_state["raw_ops_snapshots_df"]['extracted_engagement'].fillna('UNKNOWN')
-        )
-
     # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🌍 GLOBAL FILTERS")
-    
-    # 1. Clean hidden whitespace to prevent Pandas filtering bugs
-    if not raw_ops.empty: 
-        raw_ops['ops_client'] = raw_ops['ops_client'].astype(str).str.strip()
-        raw_ops['ops_brand'] = raw_ops['ops_brand'].astype(str).str.strip()
-    if not raw_fin.empty and 'client' in raw_fin.columns:
-        raw_fin['client'] = raw_fin['client'].astype(str).str.strip()
-        raw_fin['brand'] = raw_fin['brand'].astype(str).str.strip()
 
     # 2. Extract Clients
     db_clients = set()
@@ -3704,28 +3731,6 @@ if "📞 Operations Command" in tab_map:
         
         if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
             ops_df = st.session_state["ops_df"].copy()
-            # Map DB column names back to UI-expected names
-            ops_df.rename(columns={
-                "campaign_name": "Campaign Name",
-                "records": "Records",
-                "total_cost": "Total_Campaign_Cost",
-                "conversions": "KPI1-Conv.",
-                "kpi2_logins": "KPI2-Login",
-                "li_pct": "LI%",
-                "true_cac": "True_CAC",
-                "calls": "Calls",
-                "d_total": "D",
-                "d_plus": "D+",
-                "d_minus": "D-",
-                "d_ratio": "D Ratio",
-                "tech_issues": "T",
-                "am": "AM",
-                "dnc": "DNC",
-                "na": "NA",
-                "dx": "DX",
-                "wn": "WN",
-            }, inplace=True)
-
             # Fetch SLAs from persistent DB (Cached 24h)
             vol_df = fetch_config_tables("SELECT * FROM contractual_volumes")
             bench_df = fetch_config_tables("SELECT * FROM granular_benchmarks")
@@ -3757,14 +3762,6 @@ if "📞 Operations Command" in tab_map:
                 # Calculate number of days in the current slice to scale the monthly SLA
                 num_days = ops_df['ops_date'].nunique() if 'ops_date' in ops_df.columns else 1
                 sla_scale_factor = num_days / 30.0
-
-                # Derive ops_lifecycle from Campaign Name (RND vs WB)
-                ops_df['ops_lifecycle'] = ops_df['Campaign Name'].apply(
-                    lambda x: 'WB' if '-WB' in str(x).upper() or '_WB' in str(x).upper() or ' WB' in str(x).upper() else (
-                        'RND' if '-RND' in str(x).upper() or '_RND' in str(x).upper() or ' RND' in str(x).upper() else 'UNKNOWN'
-                    )
-                )
-                
                 # Aggregate actuals to match Volume SLAs
                 actuals = ops_df.groupby(["ops_client", "ops_brand", "ops_lifecycle"]).agg(
                     Actual_Records=("Records", "sum")
@@ -4123,16 +4120,6 @@ if "📞 Operations Command" in tab_map:
                     if c not in ops_df.columns:
                         ops_df[c] = 0
 
-                # Build Core_Signature: strip the trailing date suffix from campaign names
-                import re as _re
-                def _strip_date_suffix(name):
-                    # Strip _YYYY-MM-DD or _DDMMMYYYY (e.g. _01MAR2026) from the end
-                    name = _re.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', str(name))
-                    name = _re.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', name)
-                    name = _re.sub(r'[_-]\d{4}[_-]\d{2}$', '', name)
-                    return name
-                ops_df['Core_Signature'] = ops_df['Campaign Name'].apply(_strip_date_suffix)
-
                 agg_dict = {c: 'sum' for c in req_cols}
                 scorecard_df = ops_df.groupby("Core_Signature").agg(agg_dict).reset_index()
                 # Net Records excludes HLRV & 2XRV
@@ -4298,17 +4285,7 @@ if "📞 Operations Command" in tab_map:
             st.markdown("---")
             st.markdown("### 🔍 Campaign Comparison Matrix")
             if not ops_df.empty:
-                # Strip date suffix: _YYYY-MM-DD, _DDMMMYYYY (e.g. 01MAR2026), _YYYY-MM
-                import re as _re2
-                def strip_campaign_date(c):
-                    c = str(c)
-                    c = _re2.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', c)
-                    c = _re2.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', c)
-                    c = _re2.sub(r'[_-]\d{4}[_-]\d{2}$', '', c)
-                    return c
-                
                 comp_df = ops_df.copy()
-                comp_df['Base Campaign'] = comp_df['Campaign Name'].apply(strip_campaign_date)
                 
                 if 'ops_date' in comp_df.columns:
                     try:
@@ -4355,11 +4332,6 @@ if "📞 Operations Command" in tab_map:
                 
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
-            # Group by campaign type (strip date suffix) for aggregated view
-            if 'Core_Signature' not in ops_df.columns:
-                import re as _re3
-                ops_df['Core_Signature'] = ops_df['Campaign Name'].apply(lambda n: _re3.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', _re3.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', str(n))))
-            
             ledger_agg_cols = {'Records': 'sum', 'Calls': 'sum', 'Total_Campaign_Cost': 'sum', 'KPI1-Conv.': 'sum'}
             # Add disposition columns for Contact Rate calc
             for c in ['D', 'NA', 'AM', 'DNC', 'DX', 'WN', 'T']:
