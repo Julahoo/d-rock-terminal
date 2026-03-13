@@ -504,14 +504,13 @@ with st.sidebar:
             st.session_state["raw_ops_df"] = pd.DataFrame()
             st.session_state["raw_ops_snapshots_df"] = pd.DataFrame()
                 
-        if "raw_fin_df" not in st.session_state:
-            try: 
-                raw_fin = pd.read_sql("SELECT * FROM raw_financial_data", _filter_engine)
-                if not raw_fin.empty:
-                    raw_fin.rename(columns={"player_id": "id"}, inplace=True)
-                st.session_state["raw_fin_df"] = raw_fin
-            except: 
-                st.session_state["raw_fin_df"] = pd.DataFrame()
+        try: 
+            raw_fin = pd.read_sql("SELECT * FROM raw_financial_data", _filter_engine)
+            if not raw_fin.empty:
+                raw_fin.rename(columns={"player_id": "id"}, inplace=True)
+            st.session_state["raw_fin_df"] = raw_fin
+        except: 
+            st.session_state["raw_fin_df"] = pd.DataFrame()
 
     raw_ops = st.session_state["raw_ops_df"]
     raw_fin = st.session_state["raw_fin_df"]
