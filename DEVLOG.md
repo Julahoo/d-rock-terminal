@@ -4,6 +4,11 @@
 
 ## LOG ENTRIES
 
+### [Hotfix - Async Benchmark Query Caching] - 2026-03-13 - COMPLETED
+- **Problem:** Unacceptable UI lag (>3 seconds) when navigating the `📉 Historical Benchmarks` tab.
+- **Root Cause:** A raw synchronous `pd.read_sql` call against the `ops_telemarketing_snapshots` table was placed directly inside the tab rendering block, causing the massive database table to be downloaded on every single button press.
+- **Fix:** Extracted the query into a new global `fetch_ops_snapshots()` function wrapped with `@st.cache_data(ttl="24h", show_spinner=False)`.
+
 ### [Hotfix - Benchmark Initialization] - 2026-03-13 - COMPLETED
 - **Problem:** Users experienced a `NameError: name '_render_fixed_benchmark' is not defined` when loading the new Historical Benchmarks tab.
 - **Root Cause:** The function `_render_fixed_benchmark` was defined locally inside the `if "📊 Dashboard" in tab_map:` scope. When the call was moved to the Operations tab, the function was never evaluated by the Python interpreter during a direct Operations view rendering.

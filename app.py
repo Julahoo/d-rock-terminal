@@ -399,6 +399,15 @@ def fetch_config_tables(query):
     except Exception:
         return pd.DataFrame()
 
+@st.cache_data(ttl="24h", show_spinner=False)
+def fetch_ops_snapshots():
+    from src.database import engine
+    import pandas as pd
+    try:
+        return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
+    except Exception:
+        return pd.DataFrame()
+
 @st.cache_data(show_spinner=False)
 def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
     from src.exporter import export_to_excel
@@ -3679,10 +3688,9 @@ else:
 # ==========================================
 if "📉 Historical Benchmarks" in tab_map:
     with tab_map["📉 Historical Benchmarks"]:
-        # Load benchmark data directly from snapshots (full history, sidebar-filtered)
+        # Load benchmark data using the globally cached function
         try:
-            from src.database import engine as _bench_engine
-            _bench_df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _bench_engine)
+            _bench_df = fetch_ops_snapshots()
             if not _bench_df.empty:
                 # Apply sidebar filters (same as global filter logic, minus date range)
                 if selected_client != "All" and 'ops_client' in _bench_df.columns:
