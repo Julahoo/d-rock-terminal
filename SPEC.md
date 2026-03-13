@@ -1,4 +1,4 @@
-# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.0)
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.1)
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
@@ -12,13 +12,14 @@
 ## 2. DATA MODELS (PostgreSQL Persistence Layer)
 
 ### 2.1 Database Tables (Single Source of Truth)
-- **`ops_telemarketing_data`:** Core telemarketing operational records. Key columns: `campaign_name` (UNIQUE), `ops_client`, `ops_brand`, `ops_date`, `records`, `calls`, `conversions`, `total_cost`, `true_cac`, dispositions (`d_plus`, `d_minus`, `d_neutral`, `am`, `dnc`, `na`, `dx`, `wn`, `t`), channel metrics (`sa`, `sd`, `sf`, `sp`, `ev`, `es`, `ed`, `eo`, `ec`, `ef`), optouts, and **8 campaign naming convention components:** `country`, `extracted_lifecycle`, `extracted_segment`, `extracted_engagement`, `extracted_product`, `extracted_language`, `extracted_sublifecycle`.
+- **`ops_telemarketing_data`:** Core telemarketing operational records. Key columns: `campaign_name`, `ops_client`, `ops_brand`, `ops_date`, `records`, `calls`, `conversions`, `total_cost`, `true_cac`, dispositions (`d_plus`, `d_minus`, `d_neutral`, `am`, `dnc`, `na`, `dx`, `wn`, `t`), channel metrics (`sa`, `sd`, `sf`, `sp`, `ev`, `es`, `ed`, `eo`, `ec`, `ef`), optouts, and **8 campaign naming convention components:** `country`, `extracted_lifecycle`, `extracted_segment`, `extracted_engagement`, `extracted_product`, `extracted_language`, `extracted_sublifecycle`. Note: `campaign_name` is NOT unique — multiple rows per campaign per date.
 - **`ops_telemarketing_snapshots`:** Mirror of `ops_telemarketing_data` for daily snapshots used by Dashboard Pulse matrices and benchmarks. Same column schema.
 - **`raw_financial_data`:** Core financial records populated from ingestion. Columns: `player_id`, `client`, `brand`, `country`, `wb_tag`, `segment`, `bet`, `revenue`, `ngr`, casino/sports splits, `deposits`, `withdrawals`, `bonus_*`, `tax_total`, `report_month`, `reactivation_date`, `campaign_start_date`, `reactivation_days`.
 - **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`, `financial_format` (Enum: Standard, LeoVegas, Offside). Used to normalize incoming data and intercept/quarantine orphaned tags.
 - **`contractual_slas`:** Client-specific SLA thresholds. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`, `target_cac_usd`.
 - **`ops_historical_benchmarks`:** Aggregated benchmark averages per brand/country/lifecycle/segment/engagement.
 - **`users`:** RBAC authentication registry. Columns: `username` (UNIQUE), `password`, `role` (Superadmin/Admin/Viewer), `name`, `allowed_clients` (JSONB array).
+- **`ops_contact_events`:** Player-level journey events pulled from iWinBack contact APIs. Columns: `box_id`, `contact_id`, `account_number`, `campaign_id`, `brand_id`, `event_type` (login/register/deposit), `event_at`, `extra_data` (JSONB), `ingested_at`. Indexes on `campaign_id`, `account_number`, and `(event_type, event_at)`. Financial linkage via `account_number` → `raw_financial_data.player_id` for True ROI.
 
 ### 2.1.1 Deterministic UI-Driven Parsers
 - The parser logic is now explicitly mapped in the database via the `financial_format` column, completely replacing the legacy "column sniffing" fallback.
@@ -220,6 +221,29 @@ During ingestion, each component is extracted via token matching:
 - **Hover Tooltips:** All charts use dark hoverlabel (`bgcolor: rgba(20,20,20,0.9)`, `font_color: #FFFFFF`) to ensure readability on light-colored traces.
 - **Data Integrity Guards:** Conv% and Login% calculations apply `.clip(upper=100)` to cap impossible values. Source data rows where `conversions > records` are zeroed at ingestion/patch level.
 
+### 4.8 📋 Pitch vs. List Scorecard
+- **Color-Coded Delivery/Issue Rates:** Deliveries % thresholds (>20% green, 15–19% yellow, 10–14% orange, <10% red). Issues >10% red.
+- **Email/SMS Funnel Metrics:** Renamed columns: ED (Email Delivered = `ed / (ed + ef)`), EO (Email Open = `eo / ed`), EC (Email Clicked = `ec / eo`), SD (SMS Delivered = `sd / (sd + sp + sf)`). Each displayed as percentage with color coding: ED/SD >90% green, 85–90% yellow, <85% red. EO/EC >10% green, 5–10% yellow, <5% red.
+- **Progress Bars:** Gross % and Net % rendered as `st.column_config.ProgressColumn`. Column order: Campaign, Gross %, Net %, Calls, then details.
+
+### 4.9 💰 Campaign True Cost Ledger
+- **"New Data"** replaces legacy "Total Records" label.
+- **Conv %** = `Conversions / New Data * 100` (displayed as percentage, not raw count).
+- **Contact Rate** = `D / (D + NA + Issues) * 100` (always positive percentage; raw disposition columns hidden from display).
+
+### 4.10 📊 SLA Fulfillment Tracker
+- **Compact Card Layout:** Data grouped by brand, displayed as compact `st.metric` cards (4 per row) instead of verbose lists.
+
+### 4.11 🔄 Conversion Funnel (Phase 20 — Planned)
+- **Data Source:** `ops_contact_events` table (daily cron pull from iWinBack contact APIs).
+- **Visual Funnel:** Per campaign/brand: Calls → Logins → Registrations → FTDs → GGR (linked via `account_number` to financial data).
+- **Metrics:** Call-to-Login %, Login-to-Reg %, Reg-to-FTD %, True ROI (GGR ÷ campaign cost).
+
+### 4.12 ⏱️ Time-to-Convert (Phase 20 — Planned)
+- **Per Campaign/Brand:** Median hours Call→Login, Login→Register, Register→FTD.
+- **Distribution Chart:** Histogram in 24h buckets showing conversion speed patterns.
+- **Insight:** Identifies fast-converting vs. slow-burn campaigns needing nurture sequences.
+
 ### 4.6 Report Generation Engine
 - **Financial Report:** Exported from the Financial Deep-Dive tab.
 - **Operations Report:** Exported from the Operations Command tab.
@@ -256,3 +280,16 @@ IWINBACK_BOXES=bhfs2,bxq4c,bb4p7,baj7f,bdka4
 IWINBACK_{box}_URL=https://{box}.iwinback-saas.com
 IWINBACK_{box}_TOKEN=<bearer_token>
 ```
+- Credentials set on **both** Railway services: `d-rock-terminal` (web app) and `cron-job`.
+
+### 5.6 Contact-Level Journey APIs (Phase 20)
+- **`GET /api/contact_campaign_association/client_reporting`** — Links `contact_id` to `campaign_id`, `brand_id`, `account_number`.
+- **`GET /api/contact_logins`** — Login events with `contact_id`, `login_at`, `type`, `domain`.
+- **`GET /api/contact_registers`** — Registration events with `contact_id`, `account_number`.
+- **`GET /api/contact_deposits`** — Deposit/FTD events (leading indicator before monthly financials arrive).
+- **Backfill:** Historical pull from 2025-01-01 to present, chunked by month.
+- **Daily Cron:** Alongside `campaign_summary_v3`, pulls yesterday's events and upserts into `ops_contact_events`.
+
+### 5.7 Historical Data Coverage
+- **Operations data (`campaign_summary_v3`):** Backfilled from 2025-01-01 → present across all 5 boxes.
+- **Benchmark periods:** H1 2025 (Jan–Jun 2025), H2 2025 (Jul–Dec 2025), H1 2026 (in progress).

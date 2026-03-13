@@ -1,8 +1,37 @@
 # DEVELOPMENT LOG
-**Status:** V3.0 SDD Refresh (Campaign Convention Alignment)
+**Status:** V3.1 Operations Expansion + Player Journey Tracking Design
 **Started:** 2026-03-01
 
 ## LOG ENTRIES
+
+### [Feature - Operations Command UI Overhaul] - 2026-03-12 - COMPLETED
+- **Pitch vs. List Scorecard:** Added color-coded Deliveries % / Issues %, renamed Email/SMS columns to funnel percentages (ED, EO, EC, SD), added progress bars for Gross % / Net %, reordered columns.
+- **Campaign True Cost Ledger:** Fixed "Total Records" → "New Data", "KPI1-Conv." → "Conv %" (as percentage), "Contact Rate" = D/(D+NA+I)×100 (always positive).
+- **SLA Fulfillment Tracker:** Refactored to compact brand-grouped card layout.
+- **VIP Tiering:** Wrapped incomplete RFM segmentation block in try-except to prevent NameError crash.
+
+### [Infra - Production Deployment & Database Sync] - 2026-03-12 - COMPLETED
+- **Code:** Committed `970f87b`, merged `dev → master`, pushed to `origin/master` triggering Railway auto-deploy.
+- **Database Sync:** Purged + synced 3 tables to production: `ops_telemarketing_data` (13,945 rows), `ops_telemarketing_snapshots` (16,465 rows), `contractual_volumes` (25 rows).
+- **Schema Fix:** Dropped stale `UNIQUE(campaign_name)` constraint on production — local schema correctly allows multiple daily rows per campaign.
+
+### [Infra - iWinBack API Configuration] - 2026-03-13 - COMPLETED
+- **Railway Cron-Job Service:** Set 11 `IWINBACK_*` env vars + `DATABASE_URL`. Fixed `IWINBACK_BOXES` (Railway CLI had stripped commas to spaces).
+- **Railway Web Service (`d-rock-terminal`):** Set same 11 `IWINBACK_*` vars — web app needs them for Operations Ingestion UI.
+- **Local `.env`:** Created with Postgres + iWinBack credentials (already in `.gitignore`).
+- **Verified:** `railway run` test confirmed all 5 boxes connecting, dedup guard working.
+
+### [Infra - Operations Backfill to Jan 2025] - 2026-03-13 - IN PROGRESS
+- Triggered historical pull via `run_historical_pull()` from 2025-01-01 to present (15 monthly chunks × 5 boxes).
+- Purpose: Create H1 2025 + H2 2025 benchmarks for operational baseline comparison.
+
+### [Design - Player-Level Journey Tracking (Phase 20)] - 2026-03-13 - APPROVED
+- **Design Doc:** `docs/plans/2026-03-13-player-journey-tracking-design.md`
+- **New Table:** `ops_contact_events` (single table with `event_type` column for login/register/deposit).
+- **New Tabs:** 🔄 Conversion Funnel + ⏱️ Time-to-Convert in Operations Command.
+- **Financial Linkage:** `account_number` bridges iWinBack contacts to monthly financial GGR for True ROI.
+- **SPEC.md:** Updated to v3.1 with all session changes + Phase 20 spec.
+
 
 ### [Feature - Data Maintenance & Duplicate Guard] - 2026-03-12 - COMPLETED
 - **`app.py`:** Added `🧹 Data Maintenance` as 3rd Admin module with 4 state metrics (file count, folder size, ops rows, snapshot rows) and two purge buttons:
