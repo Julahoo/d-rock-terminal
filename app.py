@@ -597,6 +597,7 @@ with st.sidebar:
     selected_segment = "All"
     selected_sublifecycle = "All"
     selected_engagement = "All"
+    selected_campaign = ""
 
     # ── FORM: Prevents reloads until Submit is clicked ──
     # Order matches campaign naming convention: Client-Brand-Country-Language-Product-Segment-Lifecycle-Sublifecycle-Engagement
@@ -642,6 +643,8 @@ with st.sidebar:
             if selected_engagement_display != "All":
                 inv_eng_map = {v: k for k, v in ENGAGEMENT_MAP.items()}
                 selected_engagement = inv_eng_map.get(selected_engagement_display, selected_engagement_display)
+
+        selected_campaign = st.text_input("🎯 Campaign", placeholder="Type to search campaigns...", help="Filter by campaign name (partial match)")
 
         _filters_submitted = st.form_submit_button("🔍 Apply Filters", use_container_width=True, type="primary")
 
@@ -779,7 +782,12 @@ with st.sidebar:
     if selected_engagement != "All":
         if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
             filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
-            
+
+    if selected_campaign:
+        if not filtered_ops.empty and 'campaign_name' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
+        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
 
     # Apply Time Frame Filter
     if start_date_val and end_date_val:
@@ -4013,6 +4021,8 @@ if "📞 Operations Command" in tab_map:
                             fig_li = go.Figure()
                             if 'KPI2-Login' in df_filtered.columns:
                                 fig_li.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login: %{y:.2f}%<extra></extra>'))
+                                avg_login = df_filtered['Logins%'].mean()
+                                fig_li.add_hline(y=avg_login, line_dash="dot", line_color="#fbbf24", opacity=0.5, annotation_text=f"Avg: {avg_login:.2f}%", annotation_position="bottom right", annotation_font_color="#fbbf24")
                             if target_li is not None:
                                 fig_li.add_hline(y=target_li, line_dash="dash", line_color="#eab308", opacity=0.6, annotation_text=f"Benchmark: {target_li:.1f}%", annotation_position="top left", annotation_font_color="#eab308")
                             fig_li.update_layout(
@@ -4031,6 +4041,8 @@ if "📞 Operations Command" in tab_map:
                         with tc3:
                             fig_conv = go.Figure()
                             fig_conv.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conv %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conv: %{y:.2f}%<extra></extra>'))
+                            avg_conv = df_filtered['Conv%'].mean()
+                            fig_conv.add_hline(y=avg_conv, line_dash="dot", line_color="#4ade80", opacity=0.5, annotation_text=f"Avg: {avg_conv:.2f}%", annotation_position="bottom right", annotation_font_color="#4ade80")
                             if target_conv is not None:
                                 fig_conv.add_hline(y=target_conv, line_dash="dash", line_color="#22c55e", opacity=0.6, annotation_text=f"Benchmark: {target_conv:.1f}%", annotation_position="top left", annotation_font_color="#22c55e")
                             fig_conv.update_layout(
