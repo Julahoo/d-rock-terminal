@@ -4,6 +4,14 @@
 
 ## LOG ENTRIES
 
+### [Design - App Performance Optimization (24h Cache)] - 2026-03-13 - COMPLETED
+- **Design Doc:** `docs/plans/2026-03-13-performance-caching-design.md` (via implementation_plan.md)
+- **Problem:** App load times exceeding 5s-10s per click due to synchronous `pd.read_sql` fetching 315K+ rows on every UI re-render.
+- **SDD Solution:** Replaced scattershot queries with a Centralized Data Access Layer using `@st.cache_data(ttl="24h")`.
+- **Pre-warming:** Designed `scripts/warmup_cache.py` to run at 4:30 AM daily on Railway to fetch and cache data before human login.
+- **Invalidation:** Wired `.clear()` into ingestion success paths and manual "Force Refresh" buttons.
+- **SPEC.md:** Updated §4.3 to reflect the new caching and cron architecture per SDD rules.
+
 ### [Data - LeoVegas Financial Ingestion] - 2026-03-13 - COMPLETED
 - **File:** `data/raw/leovegas/LeoVegas.xlsx` (48MB, 9 sheets: 2025-02 through 2026-01)
 - **Parser:** Existing `LEOVEGAS_COL_MAP` and `_normalise_player_columns` LeoVegas path handled all 6 brands (BET MGM, LeoVegas, Bet UK, Expekt, GoGoCasino, RoyalPanda) with zero nulls.

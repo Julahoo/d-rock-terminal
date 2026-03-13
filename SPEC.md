@@ -164,9 +164,10 @@ During ingestion, each component is extracted via token matching:
 - **Online Viewer:** CSV/XLSX render full scrollable dataframe (500px height). `.md` renders as formatted markdown. `.py`, `.json`, `.yaml` etc. render as syntax-highlighted code (50K char limit).
 - **Download:** `st.download_button` for `.csv`, `.xlsx`, `.md`, `.txt`, `.json`, `.log`, `.py` files.
 
-### 4.3 Cache Invalidation Strategy
-- Rather than persisting RAM-Csvs, all upload handlers save directly to PostgreSQL using `to_sql`. 
-- Post-upload, the application explicitly triggers `del st.session_state["raw_fin_df"]` / `raw_ops_df`, forcing `app.py` to seamlessly re-hydrate `pd.read_sql` on the next `st.rerun()`.
+### 4.3 24h Caching & Pre-warming Architecture
+- **Centralized Data Access Layer:** All heavy `pd.read_sql` database queries are wrapped in dedicated functions (e.g., `fetch_ops_data`, `fetch_financial_data`) decorated with `@st.cache_data(ttl="24h")`. This eliminates redundant synchronous fetches, reducing page load times from seconds to < 0.1s.
+- **Smart Programmatic Invalidation:** Rather than persisting RAM-Csvs, all upload handlers save directly to PostgreSQL using `to_sql`. Post-upload, the application explicitly triggers `.clear()` on the specific cache function (e.g., `fetch_ops_data.clear()`), forcing `app.py` to seamlessly re-hydrate the RAM cache on the next `st.rerun()`. A manual "🔄 Force Refresh Cache" button is also provided for admins.
+- **Synthetic Pre-warming Cron Job:** A lightweight Python script (`scripts/warmup_cache.py`) runs as a Railway Cron Job at 4:30 AM daily (after the 3:30 AM automated import). It executes a headless HTTP GET request to the Streamlit app URL, triggering the app's startup sequence, forcing it to fetch the latest PostgreSQL data and lock it into the 24-hour RAM cache before human users arrive.
 
 ### 4.4 Tab 1: 📊 Executive Summary
 - **Master Insight:** `> SYSTEM DIAGNOSTIC_` text box generating dynamic AI narrative.

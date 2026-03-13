@@ -286,12 +286,52 @@ def _get_ops_excel_bytes(ops_df):
     buf = export_ops_to_excel(ops_df)
     return buf.getvalue()
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl="24h", show_spinner=False)
 def load_benchmarks():
     from src.database import engine as _bench_engine
     import pandas as pd
     try:
         return pd.read_sql("SELECT * FROM ops_historical_benchmarks", _bench_engine)
+    except Exception:
+        return pd.DataFrame()
+
+# --- 24H CACHED DATA ACCESS LAYER ---
+@st.cache_data(ttl="24h", show_spinner=False)
+def fetch_ops_data():
+    from src.database import engine
+    import pandas as pd
+    try:
+        return pd.read_sql("SELECT * FROM ops_telemarketing_data", engine)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl="24h", show_spinner=False)
+def fetch_ops_snapshots_data():
+    from src.database import engine
+    import pandas as pd
+    try:
+        return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl="24h", show_spinner=False)
+def fetch_financial_data():
+    from src.database import engine
+    import pandas as pd
+    try:
+        df = pd.read_sql("SELECT * FROM raw_financial_data", engine)
+        if not df.empty:
+            df.rename(columns={"player_id": "id"}, inplace=True)
+        return df
+    except Exception:
+        return pd.DataFrame()
+        
+@st.cache_data(ttl="24h", show_spinner=False)
+def fetch_config_tables(query):
+    from src.database import engine
+    import pandas as pd
+    try:
+        return pd.read_sql(query, engine)
     except Exception:
         return pd.DataFrame()
 
@@ -353,42 +393,20 @@ st.markdown("""
 init_db()
 
 # --- GLOBAL STATE HYDRATION (DB to RAM) ---
-# This ensures all global dropdowns and legacy tabs populate instantly from the persistent database
+# This ensures all global dropdowns and legacy tabs populate instantly from the persistent RAM cache
 try:
-    import pandas as pd
-    from src.database import engine as _hydrate_engine
-    
-    # Hydrate Operations Data
-    try:
-        ops_query = "SELECT * FROM ops_telemarketing_data"
-        global_ops_df = pd.read_sql(ops_query, _hydrate_engine)
-        if not global_ops_df.empty:
-            st.session_state["ops_df"] = global_ops_df
-    except Exception as e:
-        pass # Handle gracefully if table is empty
-
     # Hydrate Brand Mapping
-    try:
-        mapping_df = pd.read_sql("SELECT brand_code, brand_name FROM client_mapping", _hydrate_engine)
+    mapping_df = fetch_config_tables("SELECT brand_code, brand_name FROM client_mapping")
+    if not mapping_df.empty:
         st.session_state["brand_mapping_dict"] = dict(zip(mapping_df["brand_code"], mapping_df["brand_name"]))
-    except Exception:
+    else:
         st.session_state["brand_mapping_dict"] = {}
 
     # Hydrate Benchmarks
     st.session_state["benchmarks_df"] = load_benchmarks()
 
-    # Hydrate Financial Data
-    try:
-        fin_query = "SELECT * FROM raw_financial_data"
-        global_fin_df = pd.read_sql(fin_query, _hydrate_engine)
-        if not global_fin_df.empty:
-            global_fin_df.rename(columns={"player_id": "id"}, inplace=True)
-            st.session_state["financial_df"] = global_fin_df
-    except Exception as e:
-        pass # Handle gracefully if table is empty
-
 except Exception as e:
-    st.sidebar.warning(f"Could not sync database to RAM: {e}")
+    st.sidebar.warning(f"Could not sync configuration to RAM: {e}")
 # ------------------------------------------
 
 # ── Matrix theme: neon glow CSS ──────────────────────────────────────────
@@ -484,33 +502,21 @@ with st.sidebar:
         
     view_mode = st.radio("Go to:", nav_options)
 
-    # --- 1. HYDRATE RAW DATA FROM DATABASE ---
+    # --- 1. HYDRATE RAW DATA FROM CACHE ---
     import pandas as pd
-    from src.database import engine as _filter_engine
     
-    # Always force-sync from the DB on load to prevent stale session states
-    # especially after a successful Phase 23 injection bypassing the UI
-    with st.spinner("Hydrating data from cluster..."):
-        try: 
-            st.session_state["raw_ops_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_data", _filter_engine)
-            st.session_state["raw_ops_snapshots_df"] = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", _filter_engine)
-        except ProgrammingError as e:
-            st.session_state["raw_ops_df"] = pd.DataFrame()
-            st.session_state["raw_ops_snapshots_df"] = pd.DataFrame()
+    # Load from the 24h RAM cache instead of hitting PostgreSQL directly
+    with st.spinner("Hydrating data from RAM cache..."):
+        st.session_state["raw_ops_df"] = fetch_ops_data()
+        st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
+        st.session_state["raw_fin_df"] = fetch_financial_data()
+        
+        # Also populate legacy global state pointers
+        st.session_state["ops_df"] = st.session_state["raw_ops_df"]
+        st.session_state["financial_df"] = st.session_state["raw_fin_df"]
+
+        if st.session_state["raw_ops_df"].empty and st.session_state["raw_fin_df"].empty:
             st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
-        except Exception as e:
-            st.error(f"FATAL: Could not read operations data from DB: {e}")
-            print(f"FATAL READ_SQL ERROR: {e}")
-            st.session_state["raw_ops_df"] = pd.DataFrame()
-            st.session_state["raw_ops_snapshots_df"] = pd.DataFrame()
-                
-        try: 
-            raw_fin = pd.read_sql("SELECT * FROM raw_financial_data", _filter_engine)
-            if not raw_fin.empty:
-                raw_fin.rename(columns={"player_id": "id"}, inplace=True)
-            st.session_state["raw_fin_df"] = raw_fin
-        except: 
-            st.session_state["raw_fin_df"] = pd.DataFrame()
 
     raw_ops = st.session_state["raw_ops_df"]
     raw_fin = st.session_state["raw_fin_df"]
@@ -1143,13 +1149,26 @@ if view_mode == "⚙️ Admin":
                 st.markdown("---")
                 st.markdown(f"#### 📥 Upload {client} Financials")
                 st.markdown("*Upload the NGR/Deposits file directly for this client.*")
-                fin_files = st.file_uploader("Upload Financial Files", accept_multiple_files=True, type=["csv", "xlsx"], key="client_fin_upload")
-                if st.button("Run Financial Ingestion") and fin_files:
+                
+                col_fin1, col_fin2 = st.columns([3, 1])
+                with col_fin1:
+                    fin_files = st.file_uploader("Upload Financial Files", accept_multiple_files=True, type=["csv", "xlsx"], key="client_fin_upload")
+                with col_fin2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🔄 Force Refresh Cache", key="refresh_fin"):
+                        fetch_financial_data.clear()
+                        fetch_config_tables.clear()
+                        st.rerun()
+
+                if st.button("Run Financial Ingestion", use_container_width=True) and fin_files:
                     from src.ingestion import load_all_data_from_uploads
                     with st.spinner("Processing..."):
                         df, reg = load_all_data_from_uploads(fin_files)
                         if not df.empty:
                             st.session_state["registry"] = reg
+                            # Invalidate the global cache before rerunning
+                            fetch_financial_data.clear()
+                            fetch_config_tables.clear()
                             if "raw_fin_df" in st.session_state: del st.session_state["raw_fin_df"]
                             st.success(f"Successfully saved financials for {client}!")
                             st.rerun()
@@ -2154,12 +2173,27 @@ if "📥 Financial Ingestion" in tab_map:
         # --- UPLOADERS ---
         st.markdown("---")
         st.markdown("#### 📁 File Dropzones")
-        fin_files = st.file_uploader("Upload Financial Files (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
+        col_gfin1, col_gfin2 = st.columns([3, 1])
+        with col_gfin1:
+            fin_files = st.file_uploader("Upload Financial Files (CSV/XLSX)", type=["csv", "xlsx"], key="global_fin_upload", accept_multiple_files=True)
+        with col_gfin2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🔄 Force Refresh Cache", key="global_refresh_fin"):
+                fetch_financial_data.clear()
+                fetch_config_tables.clear()
+                st.rerun()
+
         if st.button("Process Financial Data", use_container_width=True) and fin_files:
             with st.spinner("Saving securely to PostgreSQL..."):
                 from src.ingestion import load_all_data_from_uploads
                 df, reg = load_all_data_from_uploads(fin_files)
                 st.session_state["registry"] = reg
+                
+                # Invalidate RAM cache since new data was appended to DB
+                fetch_financial_data.clear()
+                fetch_config_tables.clear()
+                if "raw_fin_df" in st.session_state: del st.session_state["raw_fin_df"]
+                
                 st.success("Successfully ingested to PostgreSQL!")
                 st.rerun()
 
@@ -2213,11 +2247,25 @@ if "🗄️ Operations Ingestion" in tab_map:
             st.rerun()
         st.markdown("---")
 
-        ops_files = st.file_uploader("Upload Ops Files (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
+        col_ops1, col_ops2 = st.columns([3, 1])
+        with col_ops1:
+            ops_files = st.file_uploader("Upload Ops Files (CSV/XLSX)", type=["csv", "xlsx"], key="ops_upload", accept_multiple_files=True)
+        with col_ops2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🔄 Force Refresh Cache", key="refresh_ops"):
+                fetch_ops_data.clear()
+                fetch_ops_snapshots_data.clear()
+                st.rerun()
+
         if st.button("Process Operations Data", use_container_width=True) and ops_files:
             with st.spinner("Saving securely to PostgreSQL..."):
                 from src.ingestion import load_operations_data_from_uploads
                 load_operations_data_from_uploads(ops_files)
+                
+                # Invalidate the RAM cache since new data was appended to the database
+                fetch_ops_data.clear()
+                fetch_ops_snapshots_data.clear()
+                
                 st.success("Successfully ingested to PostgreSQL!")
                 st.rerun()
 
@@ -3678,17 +3726,9 @@ if "📞 Operations Command" in tab_map:
                 "wn": "WN",
             }, inplace=True)
 
-            # Fetch SLAs from persistent DB
-            from src.database import engine as _db_engine
-            try:
-                vol_df = pd.read_sql("SELECT * FROM contractual_volumes", _db_engine)
-            except:
-                vol_df = pd.DataFrame()
-                
-            try:
-                bench_df = pd.read_sql("SELECT * FROM granular_benchmarks", _db_engine)
-            except:
-                bench_df = pd.DataFrame()
+            # Fetch SLAs from persistent DB (Cached 24h)
+            vol_df = fetch_config_tables("SELECT * FROM contractual_volumes")
+            bench_df = fetch_config_tables("SELECT * FROM granular_benchmarks")
             
             # Determine selected_client for the filename
             unique_clients = ops_df["ops_client"].unique()
@@ -3868,8 +3908,8 @@ if "📞 Operations Command" in tab_map:
                 try:
                     timeframe_days = (end_date_val - start_date_val).days + 1
                     
-                    # 1. Fetch Contractual SLAs from DB & Aggregate by Client/Lifecycle
-                    slas_df = pd.read_sql("SELECT client_name, lifecycle, SUM(monthly_minimum_records) as monthly_minimum_records FROM contractual_volumes WHERE monthly_minimum_records > 0 GROUP BY client_name, lifecycle", _db_engine)
+                    # 1. Fetch Contractual SLAs from DB & Aggregate by Client/Lifecycle (Cached)
+                    slas_df = fetch_config_tables("SELECT client_name, lifecycle, SUM(monthly_minimum_records) as monthly_minimum_records FROM contractual_volumes WHERE monthly_minimum_records > 0 GROUP BY client_name, lifecycle")
                     
                     breaches = []
                     # 2. Check active clients in the current filtered view
@@ -3954,7 +3994,7 @@ if "📞 Operations Command" in tab_map:
                         if len(active_b) == 1:
                             sla_min = 0
                             try:
-                                slas_df = pd.read_sql(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE brand_code = '{active_b[0]}'", _db_engine)
+                                slas_df = fetch_config_tables(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE brand_code = '{active_b[0]}'")
                                 if not slas_df.empty: 
                                     sla_min = slas_df['monthly_minimum_records'].sum()
                             except: pass
