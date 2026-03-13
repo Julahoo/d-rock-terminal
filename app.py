@@ -535,10 +535,14 @@ with st.sidebar:
     
     # Load from the 24h RAM cache instead of hitting PostgreSQL directly
     with st.spinner("Hydrating data from RAM cache..."):
-        st.session_state["raw_ops_df"] = fetch_ops_data()
-        st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
-        st.session_state["raw_fin_df"] = fetch_financial_data()
-        st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
+        if "raw_ops_df" not in st.session_state or st.session_state["raw_ops_df"].empty:
+            st.session_state["raw_ops_df"] = fetch_ops_data()
+        if "raw_ops_snapshots_df" not in st.session_state or st.session_state["raw_ops_snapshots_df"].empty:
+            st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
+        if "raw_fin_df" not in st.session_state or st.session_state["raw_fin_df"].empty:
+            st.session_state["raw_fin_df"] = fetch_financial_data()
+        if "raw_pulse_df" not in st.session_state or st.session_state["raw_pulse_df"].empty:
+            st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
         
         # Also populate legacy global state pointers
         st.session_state["ops_df"] = st.session_state["raw_ops_df"]
@@ -2179,6 +2183,8 @@ if "🗄️ Operations Ingestion" in tab_map:
             if st.button("🔄 Force Refresh Cache", key="refresh_ops"):
                 fetch_ops_data.clear()
                 fetch_ops_snapshots_data.clear()
+                for k in ["raw_ops_df", "raw_ops_snapshots_df", "raw_pulse_df", "ops_df", "ops_snapshots_df"]:
+                    if k in st.session_state: del st.session_state[k]
                 st.rerun()
 
         if st.button("Process Operations Data", use_container_width=True) and ops_files:
@@ -2189,6 +2195,8 @@ if "🗄️ Operations Ingestion" in tab_map:
                 # Invalidate the RAM cache since new data was appended to the database
                 fetch_ops_data.clear()
                 fetch_ops_snapshots_data.clear()
+                for k in ["raw_ops_df", "raw_ops_snapshots_df", "raw_pulse_df", "ops_df", "ops_snapshots_df"]:
+                    if k in st.session_state: del st.session_state[k]
                 
                 st.success("Successfully ingested to PostgreSQL!")
                 st.rerun()
