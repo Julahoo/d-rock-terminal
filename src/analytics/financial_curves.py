@@ -50,17 +50,11 @@ def generate_ltv_curves(fin_df):
     
     df = pd.merge(df, first_months, on='id', how='left')
 
-    # Calculate difference in months for month_index
-    def diff_month(d1_str, d2_str):
-        try:
-            d1 = pd.to_datetime(d1_str)
-            d2 = pd.to_datetime(d2_str)
-            return (d1.year - d2.year) * 12 + d1.month - d2.month
-        except:
-            return 0
-            
-    # 2. Calculate the month_index (months since their cohort_month)
-    df['month_index'] = df.apply(lambda row: diff_month(row['report_month'], row['cohort_month']), axis=1)
+    # 2. Calculate the month_index (months since their cohort_month) natively
+    rm = pd.to_datetime(df['report_month'])
+    cm = pd.to_datetime(df['cohort_month'])
+    df['month_index'] = (rm.dt.year - cm.dt.year) * 12 + (rm.dt.month - cm.dt.month)
+    df['month_index'] = df['month_index'].fillna(0).astype(int)
     
     # Keep only valid non-negative indices
     df = df[df['month_index'] >= 0]

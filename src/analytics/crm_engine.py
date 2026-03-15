@@ -44,18 +44,13 @@ def generate_rfm_summary(fin_df):
 
     # Recency: Months Inactive calculation
     # We find the max report_month across the entire dataset to determine the "Current Month"
-    current_month_global = fin_df['report_month'].max()
+    current_month_global = pd.to_datetime(fin_df['report_month'].max())
     
     # Calculate difference in months between the global max month and the player's last active month
-    def diff_month(d1_str, d2_str):
-        try:
-            d1 = pd.to_datetime(d1_str)
-            d2 = pd.to_datetime(d2_str)
-            return (d1.year - d2.year) * 12 + d1.month - d2.month
-        except:
-            return 0
-            
-    rfm_df['Months_Inactive'] = rfm_df['Last_Month'].apply(lambda x: diff_month(current_month_global, x))
+    # Vectorized computation
+    lm = pd.to_datetime(rfm_df['Last_Month'])
+    rfm_df['Months_Inactive'] = (current_month_global.year - lm.dt.year) * 12 + (current_month_global.month - lm.dt.month)
+    rfm_df['Months_Inactive'] = rfm_df['Months_Inactive'].fillna(0).astype(int)
     
     # Compute average monthly turnover
     rfm_df['Avg_Monthly_Turnover'] = np.where(rfm_df['Months_Active'] > 0, rfm_df['Lifetime_Turnover'] / rfm_df['Months_Active'], 0)
@@ -71,8 +66,10 @@ def generate_rfm_summary(fin_df):
     last_month_map = dict(zip(last_month_records['id'], last_month_records['bet']))
     rfm_df['Last_Month_Turnover'] = rfm_df['id'].map(last_month_map).fillna(0)
 
-    # Calculate Tenure_Months
-    rfm_df['Tenure_Months'] = rfm_df.apply(lambda row: diff_month(row['Last_Month'], row['First_Month']) + 1, axis=1)
+    # Calculate Tenure_Months (vectorized)
+    fm = pd.to_datetime(rfm_df['First_Month'])
+    rfm_df['Tenure_Months'] = (lm.dt.year - fm.dt.year) * 12 + (lm.dt.month - fm.dt.month) + 1
+    rfm_df['Tenure_Months'] = rfm_df['Tenure_Months'].fillna(1).astype(int)
 
     # Flag True VIP
     rfm_df['Is_VIP'] = rfm_df['Lifetime_GGR'] >= 500
@@ -93,39 +90,36 @@ def generate_smart_profiles(rfm_df):
     """
     if rfm_df.empty:
         return pd.DataFrame()
-        
-    def determine_profile(row):
-        # 1. Ironman Legend Evaluate BEFORE Active Crown Jewel
-        if row['Months_Active'] >= 6 and row['Months_Inactive'] == 0 and row['Months_Active'] == row['Tenure_Months']:
-            return "🏆 Ironman Legend"
-            
-        # 2. Active Crown Jewel
-        if row['Lifetime_GGR'] >= 1000 and row['Months_Inactive'] == 0:
-            return "👑 Active Crown Jewel"
-            
-        # 3. Cooling Down (Velocity Risk)
-        if row['Months_Inactive'] == 0 and row['Last_Month_Turnover'] < (row['Avg_Monthly_Turnover'] * 0.5) and row['Lifetime_Turnover'] >= 1000:
-            return "📉 Cooling Down (Velocity Risk)"
-            
-        # 4. Promo Exclusion (Risk)
-        if row['Lifetime_GGR'] < 0 and row['Lifetime_Turnover'] > 5000:
-            return "🛑 Promo Exclusion (Risk)"
-            
-        # 5. Early Churn VIP
-        if row['Months_Inactive'] == 1 and row['Lifetime_GGR'] > 500:
-            return "🚨 Early Churn VIP"
-            
-        # 6. Rising Star
-        if row['Months_Active'] <= 2 and row['Lifetime_Turnover'] > 1000 and row['Months_Inactive'] == 0:
-            return "🌟 Rising Star"
-            
-        # 7. Cold Crown Jewel
-        if row['Months_Inactive'] >= 3 and row['Lifetime_GGR'] > 1000:
-            return "🎯 Cold Crown Jewel"
-            
-        # 8. Standard Lifecycle
-        return "✉️ Standard Lifecycle"
 
     profiles = rfm_df.copy()
-    profiles['Smart_Profile'] = profiles.apply(determine_profile, axis=1)
+    
+    conditions = [
+        # 1. Ironman Legend Evaluate BEFORE Active Crown Jewel
+        (profiles['Months_Active'] >= 6) & (profiles['Months_Inactive'] == 0) & (profiles['Months_Active'] == profiles['Tenure_Months']),
+        # 2. Active Crown Jewel
+        (profiles['Lifetime_GGR'] >= 1000) & (profiles['Months_Inactive'] == 0),
+        # 3. Cooling Down (Velocity Risk)
+        (profiles['Months_Inactive'] == 0) & (profiles['Last_Month_Turnover'] < (profiles['Avg_Monthly_Turnover'] * 0.5)) & (profiles['Lifetime_Turnover'] >= 1000),
+        # 4. Promo Exclusion (Risk)
+        (profiles['Lifetime_GGR'] < 0) & (profiles['Lifetime_Turnover'] > 5000),
+        # 5. Early Churn VIP
+        (profiles['Months_Inactive'] == 1) & (profiles['Lifetime_GGR'] > 500),
+        # 6. Rising Star
+        (profiles['Months_Active'] <= 2) & (profiles['Lifetime_Turnover'] > 1000) & (profiles['Months_Inactive'] == 0),
+        # 7. Cold Crown Jewel
+        (profiles['Months_Inactive'] >= 3) & (profiles['Lifetime_GGR'] > 1000)
+    ]
+    
+    choices = [
+        "🏆 Ironman Legend",
+        "👑 Active Crown Jewel",
+        "📉 Cooling Down (Velocity Risk)",
+        "🛑 Promo Exclusion (Risk)",
+        "🚨 Early Churn VIP",
+        "🌟 Rising Star",
+        "🎯 Cold Crown Jewel"
+    ]
+    
+    profiles['Smart_Profile'] = np.select(conditions, choices, default="✉️ Standard Lifecycle")
+    
     return profiles

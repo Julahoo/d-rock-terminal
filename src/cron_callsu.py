@@ -74,9 +74,9 @@ def process_ops_files(input_dir: str, dry_run: bool = False):
             else:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-        # Calculate True CAC
+        # Calculate True CAC using vectorized numpy logic instead of apply
         df["Total_Campaign_Cost"] = df["Cost Caller"] + df["Cost SIP"] + df["Cost SMS"] + df["Cost Email"]
-        df["True_CAC"] = df.apply(lambda x: x["Total_Campaign_Cost"] / x["KPI1-Conv."] if x["KPI1-Conv."] > 0 else 0, axis=1)
+        df["True_CAC"] = np.where(df["KPI1-Conv."] > 0, df["Total_Campaign_Cost"] / df["KPI1-Conv."], 0)
 
         # Build records for upsert
         records_to_insert = []

@@ -2827,8 +2827,8 @@ if not _master_df.empty:
                     v_sports = "ggr_sports" if revenue_mode == "GGR" else "ngr_sports"
                 
                     if v_casino in filtered_both.columns and v_sports in filtered_both.columns:
-                        vert_df = filtered_both[["month", v_casino, v_sports]].copy()
-                        vert_df.rename(columns={"month": "Month", v_casino: "Casino", v_sports: "Sportsbook"}, inplace=True)
+                        vert_df = filtered_both[["month", v_casino, v_sports]]
+                        vert_df = vert_df.rename(columns={"month": "Month", v_casino: "Casino", v_sports: "Sportsbook"})
                         st.bar_chart(vert_df, x="Month", y=["Casino", "Sportsbook"], color=["#00FF41", "#1E90FF"])
 
                 # --- 3.5 GROSS TO NET WATERFALL (TAX & BONUS) ---
@@ -3024,8 +3024,9 @@ if not _master_df.empty:
 
                 # Revenue Composition chart
                 st.markdown("##### 📊 Revenue Composition: New vs Returning Player GGR")
-                rev_comp = filtered_both[["month", "new_player_ggr", "returning_player_ggr"]].copy()
-                rev_comp = rev_comp.rename(columns={"month": "Month", "new_player_ggr": "New_Player_GGR", "returning_player_ggr": "Returning_Player_GGR"})
+                rev_comp = filtered_both[["month", "new_player_ggr", "returning_player_ggr"]].rename(
+                    columns={"month": "Month", "new_player_ggr": "New_Player_GGR", "returning_player_ggr": "Returning_Player_GGR"}
+                )
                 rev_comp["New (Profit)"] = rev_comp["New_Player_GGR"].clip(lower=0)
                 rev_comp["New (Loss)"] = rev_comp["New_Player_GGR"].clip(upper=0)
                 rev_comp["Returning (Profit)"] = rev_comp["Returning_Player_GGR"].clip(lower=0)
@@ -4119,7 +4120,7 @@ if "📞 Operations Command" in tab_map:
                 scorecard_df["Issues"] = scorecard_df["AM"] + scorecard_df["DNC"] + scorecard_df["DX"] + scorecard_df["WN"] + scorecard_df["T"]
 
                 # Render All Campaigns by Calls
-                rendered_scorecard = scorecard_df.sort_values(by="Calls", ascending=False).copy()
+                rendered_scorecard = scorecard_df.sort_values(by="Calls", ascending=False)
 
                 # Calculate percentages for rendering
                 rendered_scorecard["Gross_Completion_%"] = rendered_scorecard["Gross_Completion"] * 100
@@ -4159,15 +4160,16 @@ if "📞 Operations Command" in tab_map:
                 rendered_scorecard['Email Clicked'] = (rendered_scorecard['ec'] / rendered_scorecard['eo'].replace(0, float('nan')) * 100).fillna(0)
                 rendered_scorecard['SMS Delivered'] = (rendered_scorecard['sd'] / (rendered_scorecard['sd'] + rendered_scorecard['sp'] + rendered_scorecard['sf']).replace(0, float('nan')) * 100).fillna(0)
 
-                display_sc = rendered_scorecard[['Core_Signature', 'Gross_Completion_%', 'Net_Completion_%', 'Calls', 'Deliveries_%', 'NA_%', 'Issues_%', 'Email Delivered', 'Email Open', 'Email Clicked', 'SMS Delivered']].copy()
-                display_sc.rename(columns={
+                display_sc = rendered_scorecard[['Core_Signature', 'Gross_Completion_%', 'Net_Completion_%', 'Calls', 'Deliveries_%', 'NA_%', 'Issues_%', 'Email Delivered', 'Email Open', 'Email Clicked', 'SMS Delivered']].rename(
+                    columns={
                     'Core_Signature': 'Campaign',
                     'Gross_Completion_%': 'Gross %',
                     'Net_Completion_%': 'Net %',
                     'Deliveries_%': 'Deliveries %',
                     'NA_%': 'No Answers %',
                     'Issues_%': 'Issues %',
-                }, inplace=True)
+                    }
+                )
 
                 styled_sc = display_sc.style.format({
                     'Calls': '{:,.0f}',

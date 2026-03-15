@@ -643,16 +643,15 @@ def generate_tier_summary(
         )
         .reset_index()
     )
-    player["recent"] = player["months"].apply(lambda s: target_month in s)
+    player["recent"] = ["%s" % target_month in ms for ms in player["months"]]
 
-    def _tier(row):
-        if row["frequency"] >= 3 and row["monetary"] > 0 and row["recent"]:
-            return "True VIP"
-        if row["frequency"] >= 3 and row["monetary"] > 0 and not row["recent"]:
-            return "Churn Risk"
-        return "Casual"
-
-    player["tier"] = player.apply(_tier, axis=1)
+    # Vectorized Tier Logic
+    conds = [
+        (player["frequency"] >= 3) & (player["monetary"] > 0) & player["recent"],
+        (player["frequency"] >= 3) & (player["monetary"] > 0) & ~player["recent"]
+    ]
+    choices = ["True VIP", "Churn Risk"]
+    player["tier"] = np.select(conds, choices, default="Casual")
 
     summary = (
         player.groupby("tier")
@@ -1403,18 +1402,14 @@ def generate_affinity_matrix(df: pd.DataFrame) -> pd.DataFrame:
         ngr=("ngr", "sum")
     ).reset_index()
 
-    # Apply strictly defined categorization logic
-    def get_affinity(row):
-        if row["bet_casino"] > 0 and row["bet_sports"] > 0:
-            return "Omnichannel"
-        elif row["bet_casino"] > 0:
-            return "Casino Only"
-        elif row["bet_sports"] > 0:
-            return "Sportsbook Only"
-        else:
-            return "Inactive"
-
-    pl["Affinity"] = pl.apply(get_affinity, axis=1)
+    # Apply strictly defined categorization logic using vectorization
+    conds = [
+        (pl["bet_casino"] > 0) & (pl["bet_sports"] > 0),
+        (pl["bet_casino"] > 0) & (pl["bet_sports"] <= 0),
+        (pl["bet_casino"] <= 0) & (pl["bet_sports"] > 0)
+    ]
+    choices = ["Omnichannel", "Casino Only", "Sportsbook Only"]
+    pl["Affinity"] = np.select(conds, choices, default="Inactive")
 
     # Summarize segments
     summary = pl.groupby("Affinity", sort=False).agg(
@@ -1439,14 +1434,15 @@ def generate_reactivation_velocity(df: pd.DataFrame) -> pd.DataFrame:
     if react_df.empty:
         return pd.DataFrame()
 
-    def bucket_velocity(days):
-        if days <= 1: return "1. Immediate (0-1 Days)"
-        elif days <= 7: return "2. Fast (2-7 Days)"
-        elif days <= 14: return "3. Warm (8-14 Days)"
-        elif days <= 30: return "4. Slow (15-30 Days)"
-        else: return "5. Delayed (31+ Days)"
-
-    react_df["Velocity"] = react_df["reactivation_days"].apply(bucket_velocity)
+    bins = [-1, 1, 7, 14, 30, float('inf')]
+    labels = [
+        "1. Immediate (0-1 Days)",
+        "2. Fast (2-7 Days)",
+        "3. Warm (8-14 Days)",
+        "4. Slow (15-30 Days)",
+        "5. Delayed (31+ Days)"
+    ]
+    react_df["Velocity"] = pd.cut(react_df["reactivation_days"], bins=bins, labels=labels)
 
     summary = react_df.groupby("Velocity", sort=True).agg(
         Reactivated_Players=("id", "nunique"),
