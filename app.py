@@ -435,6 +435,86 @@ def _cached_sidebar_filters():
         avail_engagements
     )
 
+@st.cache_data(ttl="15m", show_spinner=False)
+def _apply_global_filters(
+    selected_client, selected_brand, selected_category, selected_country, 
+    selected_language, selected_lifecycle, selected_segment, 
+    selected_sublifecycle, selected_engagement, selected_campaign, 
+    start_date_str, end_date_str, start_month, end_month
+):
+    import pandas as pd
+    # Fetch directly from sub-cache to bypass MD5 Hash Serialization Penalty on Streamlit backend
+    raw_ops = fetch_ops_data()
+    raw_ops_snapshots = fetch_ops_snapshots_data()
+    raw_fin = fetch_financial_data()
+    
+    filtered_ops = raw_ops.copy() if not raw_ops.empty else pd.DataFrame()
+    filtered_ops_snapshots = raw_ops_snapshots.copy() if not raw_ops_snapshots.empty else pd.DataFrame()
+    filtered_fin = raw_fin.copy() if not raw_fin.empty else pd.DataFrame()
+
+    if selected_client != "All":
+        if not filtered_ops.empty and 'ops_client' in filtered_ops.columns: 
+            filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
+        if not filtered_ops_snapshots.empty and 'ops_client' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == selected_client]
+        if not filtered_fin.empty and 'client' in filtered_fin.columns: 
+            filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
+
+    if selected_brand != "All":
+        if not filtered_ops.empty and 'ops_brand' in filtered_ops.columns: 
+            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
+        if not filtered_ops_snapshots.empty and 'ops_brand' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == selected_brand]
+        if not filtered_fin.empty and 'brand' in filtered_fin.columns: 
+            filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
+            
+    if selected_category != "All":
+        if not filtered_ops.empty and 'extracted_product' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_product'] == selected_category]
+        if not filtered_ops_snapshots.empty and 'extracted_product' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['extracted_product'] == selected_category]
+            
+    if selected_country != "All":
+        if not filtered_ops.empty and 'country' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
+    
+    if selected_language != "All":
+        if not filtered_ops.empty and 'extracted_language' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_language'] == selected_language]
+            
+    if selected_lifecycle != "All":
+        if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == selected_lifecycle]
+            
+    if selected_segment != "All":
+        if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
+
+    if selected_sublifecycle != "All":
+        if not filtered_ops.empty and 'extracted_sublifecycle' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_sublifecycle'] == selected_sublifecycle]
+            
+    if selected_engagement != "All":
+        if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
+
+    if selected_campaign:
+        if not filtered_ops.empty and 'campaign_name' in filtered_ops.columns:
+            filtered_ops = filtered_ops[filtered_ops['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
+        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
+
+    if start_date_str and end_date_str:
+        if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
+            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
+        if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
+            filtered_ops_snapshots['ops_date'] = filtered_ops_snapshots['ops_date'].astype(str)
+            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
+        if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
+            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= start_month) & (filtered_fin['report_month'] <= end_month)]
+
+    return filtered_ops, filtered_ops_snapshots, filtered_fin
+
 @st.cache_data(show_spinner=False)
 def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
     from src.exporter import export_to_excel
@@ -797,72 +877,15 @@ with st.sidebar:
     end_month = end_date_val.strftime("%Y-%m")
 
     # --- 3. APPLY FILTERS TO TABS ---
-    filtered_ops = raw_ops.copy() if not raw_ops.empty else pd.DataFrame()
-    filtered_ops_snapshots = raw_ops_snapshots.copy() if not raw_ops_snapshots.empty else pd.DataFrame()
-    filtered_fin = raw_fin.copy() if not raw_fin.empty else pd.DataFrame()
-
-    if selected_client != "All":
-        if not filtered_ops.empty and 'ops_client' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
-        if not filtered_ops_snapshots.empty and 'ops_client' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == selected_client]
-        if not filtered_fin.empty and 'client' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
-
-    if selected_brand != "All":
-        if not filtered_ops.empty and 'ops_brand' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
-        if not filtered_ops_snapshots.empty and 'ops_brand' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == selected_brand]
-        if not filtered_fin.empty and 'brand' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
-            
-    if selected_category != "All":
-        if not filtered_ops.empty and 'extracted_product' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_product'] == selected_category]
-        if not filtered_ops_snapshots.empty and 'extracted_product' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['extracted_product'] == selected_category]
-            
-    if selected_country != "All":
-        if not filtered_ops.empty and 'country' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
-    
-    if selected_language != "All":
-        if not filtered_ops.empty and 'extracted_language' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_language'] == selected_language]
-            
-    if selected_lifecycle != "All":
-        if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == selected_lifecycle]
-            
-    if selected_segment != "All":
-        if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
-
-    if selected_sublifecycle != "All":
-        if not filtered_ops.empty and 'extracted_sublifecycle' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_sublifecycle'] == selected_sublifecycle]
-            
-    if selected_engagement != "All":
-        if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
-
-    if selected_campaign:
-        if not filtered_ops.empty and 'campaign_name' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
-        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
-
-    # Apply Time Frame Filter
-    if start_date_val and end_date_val:
-        if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
-            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
-        if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots['ops_date'] = filtered_ops_snapshots['ops_date'].astype(str)
-            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
-            
-        if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
-            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= start_month) & (filtered_fin['report_month'] <= end_month)]
+    # MASSIVE PERFORMANCE BOOST: Only iterate 350k rows IF the sidebar actually changed. 
+    # If the user just clicked a new Tab, Streamlit hits this function cache execution key 
+    # natively (in nanoseconds) and retrieves the subset dataframes directly from memory.
+    filtered_ops, filtered_ops_snapshots, filtered_fin = _apply_global_filters(
+        selected_client, selected_brand, selected_category, selected_country, 
+        selected_language, selected_lifecycle, selected_segment, 
+        selected_sublifecycle, selected_engagement, selected_campaign, 
+        start_date_str, end_date_str, start_month, end_month
+    )
 
     st.session_state["ops_df"] = filtered_ops
     st.session_state["ops_snapshots_df"] = filtered_ops_snapshots

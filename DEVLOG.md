@@ -4,7 +4,11 @@
 
 ## LOG ENTRIES
 
-### [Hotfix - Streamlit Hashing & Computation Bypass (Quattuordecenary Audit)] - 2026-03-15 - COMPLETED
+### [Hotfix - Synchronous Dataframe Filtering Trap (Quindecenary Audit)] - 2026-03-15 - COMPLETED
+- **Problem:** The dashboard still presented 1-3 seconds of rigid latency on *every* UI interaction, including visually switching tabs.
+- **Root Cause:** In lines 800-870, `app.py` globally executes `raw_ops.copy()` (350,000 rows) and sequentially applies ~10 boolean masks using the current state of the Sidebar String selectors. Because Streamlit physically re-executes `app.py` from top to bottom on *any* client interaction, Streamlit was forcing Pandas to natively mask 3,500,000 array elements synchronously in the foreground rendering thread *even when the filter arguments had not changed*.
+- **Fix:** Removed the inline Pandas masks from the Streamlit rendering loop. Packaged the entire sequence into an isolated `_apply_global_filters` handler wrapped in `@st.cache_data(ttl="15m")`. The variables passed to this wrapper are exclusively the Sidebar strings (e.g. `selected_client`, `start_date_str`). The 350k `raw_ops` frame is fetched *internally* to avoid MD5 hashing penalties. 
+- **Velocity Impact:** If a user clicks a native Streamlit Tab, the sidebar arguments remain identical. Streamlit instantly hits the dictionary cache key and successfully bypasses executing the 10 data masks, pulling the previously filtered 350k dataset directly from memory in ~0 seconds. Tab switching is now essentially instantaneous.
 - **Problem:** The primary Operations dashboard was experiencing a massive 15-30 second initial rendering delay, severely punishing User Experience (UX) metrics.
 - **Root Cause (Factor A - The MD5 Hashing Trap):** Several legacy `@st.cache_data` analytics wrappers (e.g. `_cached_retention_heatmap(raw_df)`) accepted the 350,000-row `ops_telemarketing_data` payload as a function query parameter. Although the functions completely ignored `raw_df` internally (instead querying the database cleanly), Streamlit's caching engine is strictly deterministic. It cryptographically MD5-hashed the entire 200MB memory block *every single rendering cycle* to calculate the cache key, halting the execution thread.
 - **Root Cause (Factor B - High-Density UI Loop):** The global sidebar filters executed eight Pandas `.dropna().unique()` filters synchronously on every user UI click. Running 8 deduplication sorts on 350,000 un-indexed strings consecutively burns 3-5 seconds of hard CPU loop.
