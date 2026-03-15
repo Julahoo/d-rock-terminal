@@ -245,8 +245,7 @@ def _cached_time_series(data):
     return generate_time_series(data)
 
 @st.cache_data(ttl="15m", show_spinner=False)
-def _cached_tier_summary(raw_df, target_month):
-    brand = raw_df["brand"].iloc[0] if "brand" in raw_df.columns and raw_df["brand"].nunique() == 1 else "Combined"
+def _cached_tier_summary(brand, target_month):
     try:
         from src.database import engine as _db
         import pandas as pd
@@ -263,7 +262,7 @@ def _cached_player_master_list(raw_df):
     return generate_player_master_list(raw_df)
 
 @st.cache_data(ttl="15m", show_spinner=False)
-def _cached_retention_heatmap(raw_df):
+def _cached_retention_heatmap():
     try:
         from src.database import engine as _db
         import pandas as pd
@@ -275,7 +274,7 @@ def _cached_retention_heatmap(raw_df):
     return None
 
 @st.cache_data(ttl="15m", show_spinner=False)
-def _cached_ltv_curves(raw_df):
+def _cached_ltv_curves():
     try:
         from src.database import engine as _db
         import pandas as pd
@@ -291,7 +290,7 @@ def _cached_monthly_summaries(df, start=None, end=None):
     return generate_monthly_summaries(df, force_start=start, force_end=end)
 
 @st.cache_data(ttl="15m", show_spinner=False)
-def _cached_cohort_matrix(df): 
+def _cached_cohort_matrix(): 
     try:
         from src.database import engine as _db
         import pandas as pd
@@ -399,6 +398,42 @@ def fetch_ops_snapshots():
         return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
     except Exception:
         return pd.DataFrame()
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_sidebar_filters():
+    raw_ops = fetch_ops_data()
+    raw_fin = fetch_financial_data()
+    
+    db_clients = set()
+    if not raw_ops.empty and 'ops_client' in raw_ops.columns: db_clients.update(raw_ops['ops_client'].unique())
+    if not raw_fin.empty and 'client' in raw_fin.columns: db_clients.update(raw_fin['client'].unique())
+    
+    db_brands = set()
+    if not raw_ops.empty and 'ops_brand' in raw_ops.columns: db_brands.update(raw_ops['ops_brand'].unique())
+    if not raw_fin.empty and 'brand' in raw_fin.columns: db_brands.update(raw_fin['brand'].unique())
+    
+    avail_countries_raw = []
+    if not raw_ops.empty and 'country' in raw_ops.columns:
+        avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
+        
+    avail_products = sorted([str(c) for c in raw_ops['extracted_product'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_product' in raw_ops.columns else []
+    avail_languages = sorted([str(c) for c in raw_ops['extracted_language'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_language' in raw_ops.columns else []
+    avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
+    avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
+    avail_sublifecycles = sorted([str(c) for c in raw_ops['extracted_sublifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_sublifecycle' in raw_ops.columns else []
+    avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
+
+    return (
+        sorted(list(db_clients)),
+        sorted(list(db_brands)),
+        avail_countries_raw,
+        avail_products,
+        avail_languages,
+        avail_lifecycles,
+        avail_segments,
+        avail_sublifecycles,
+        avail_engagements
+    )
 
 @st.cache_data(show_spinner=False)
 def _get_master_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
@@ -591,26 +626,21 @@ with st.sidebar:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🌍 GLOBAL FILTERS")
 
-    # 2. Extract Clients
-    db_clients = set()
-    if not raw_ops.empty: db_clients.update(raw_ops['ops_client'].unique())
-    if not raw_fin.empty and 'client' in raw_fin.columns: db_clients.update(raw_fin['client'].unique())
-    db_clients = sorted(list(db_clients))
+    # --- MASSIVE PERFORMANCE BOOST ---
+    # Fetch unique categories directly from the isolated memory cache instead of making Pandas 
+    # extract distinct rows from 350,000+ string arrays on every generic UI button click.
+    (
+        db_clients, sorted_brands, avail_countries_raw, avail_products, 
+        avail_languages, avail_lifecycles, avail_segments, avail_sublifecycles, avail_engagements
+    ) = _cached_sidebar_filters()
 
     allowed = st.session_state.get("allowed_clients", ["All"])
     if "All" not in allowed:
         db_clients = [c for c in db_clients if c in allowed]
 
-    # 3. Extract all brand options (unfiltered — form doesn't allow cascading)
-    db_brands = set()
-    if not raw_ops.empty: db_brands.update(raw_ops['ops_brand'].unique())
-    if not raw_fin.empty and 'brand' in raw_fin.columns: db_brands.update(raw_fin['brand'].unique())
-    sorted_brands = sorted(list(db_brands))
-
     # Pre-compute all dropdown options BEFORE the form
     b_map = st.session_state.get("brand_mapping_dict", {})
     
-    avail_countries_raw = []
     country_map = {
         'PE': 'Peru', 'CL': 'Chile', 'EC': 'Ecuador', 'MX': 'Mexico', 'BR': 'Brazil',
         'AR': 'Argentina', 'CO': 'Colombia', 'ES': 'Spain', 'NZ': 'New Zealand', 
@@ -619,21 +649,9 @@ with st.sidebar:
         'UK': 'United Kingdom', 'GB': 'United Kingdom', 'IT': 'Italy', 'FR': 'France',
         'GLOBAL': 'Global', 'JP': 'Japan', 'TR': 'Turkey', 'ONT': 'Canada-Ontario'
     }
-    if not raw_ops.empty and 'country' in raw_ops.columns:
-        avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
     
     PRODUCT_MAP = {'SPO': 'Sportsbook', 'CAS': 'Casino', 'LIVE': 'Live', 'ALL': 'All Products'}
-    avail_products = sorted([str(c) for c in raw_ops['extracted_product'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_product' in raw_ops.columns else []
-    
-    avail_languages = sorted([str(c) for c in raw_ops['extracted_language'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_language' in raw_ops.columns else []
-
-    avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
-    avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
-    
-    avail_sublifecycles = sorted([str(c) for c in raw_ops['extracted_sublifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_sublifecycle' in raw_ops.columns else []
-
     ENGAGEMENT_MAP = {'LI': 'Log In', 'NLI': 'Not Logged In'}
-    avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
     
     # Default values — overridden inside the form if the dropdown renders
     selected_country = "All"
@@ -2241,7 +2259,7 @@ if not _master_df.empty:
     df = _master_df
     # Auto-compute analytics using cached wrappers (instantaneous!)
     financial_summary = _cached_monthly_summaries(df, start=start_month, end=end_month)
-    cohort_matrices = _cached_cohort_matrix(df)
+    cohort_matrices = _cached_cohort_matrix()
     segmentation = _cached_segmentation(df)
     both_business = _cached_both_business(financial_summary)
     program_summary = _cached_program_summary(df)
@@ -2466,7 +2484,7 @@ if not _master_df.empty:
         st.markdown("---")
         st.markdown("#### > COHORT RETENTION HEATMAP_")
         brand_raw = df[df["brand"] == brand_key]
-        heatmap_fig = _cached_retention_heatmap(brand_raw)
+        heatmap_fig = _cached_retention_heatmap()
         if heatmap_fig is not None:
             st.plotly_chart(heatmap_fig, width='stretch', config={"scrollZoom": False})
         else:
@@ -2476,7 +2494,7 @@ if not _master_df.empty:
         st.markdown("---")
         st.markdown("#### > CUMULATIVE LTV TRAJECTORY_")
         st.markdown("*Insight: Tracks the cumulative revenue generation of player cohorts over time to determine break-even points and long-term value.*")
-        ltv_fig = _cached_ltv_curves(brand_raw)
+        ltv_fig = _cached_ltv_curves()
         if ltv_fig is not None:
             st.plotly_chart(ltv_fig, width='stretch', config={"scrollZoom": False})
         else:
@@ -3120,7 +3138,7 @@ if not _master_df.empty:
                 # ── Cohort Retention Heatmap (Phase 18) ──────────────────────
                 st.markdown("---")
                 st.markdown("#### > COHORT RETENTION HEATMAP_")
-                heatmap_fig = _cached_retention_heatmap(_raw_df)
+                heatmap_fig = _cached_retention_heatmap()
                 if heatmap_fig is not None:
                     st.plotly_chart(heatmap_fig, width='stretch', config={"scrollZoom": False})
                 else:
@@ -3256,7 +3274,8 @@ if not _master_df.empty:
 
             def _vip_snap(raw_subset):
                 b_latest = raw_subset["month"].max() if "month" in raw_subset.columns and not raw_subset.empty else latest_month
-                rfm = _cached_tier_summary(raw_subset, b_latest)
+                b_name = raw_subset["brand"].iloc[0] if "brand" in raw_subset.columns and not raw_subset.empty else "Combined"
+                rfm = _cached_tier_summary(b_name, b_latest)
                 if rfm.empty: return [0] * len(tier_labels)
                 return [int(rfm.loc[rfm.iloc[:, 0].str.contains(s, na=False, case=False), rfm.columns[1]].sum()) if rfm.iloc[:, 0].str.contains(s, na=False, case=False).any() else 0 for s in tier_search]
 
