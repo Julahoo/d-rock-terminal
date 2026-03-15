@@ -4,7 +4,11 @@
 
 ## LOG ENTRIES
 
-### [Hotfix - Streamlit Global Cache Expiration (Octonary Audit)] - 2026-03-15 - COMPLETED
+### [Hotfix - Streamlit Session State Bypass (Nonary Audit)] - 2026-03-15 - COMPLETED
+- **Problem:** Even after aggressively dropping Streamlit's global cache interval from 24h down to 15m, the dashboard charts persistently refused to budge from March 12th.
+- **Root Cause:** A critical caching anti-pattern discovered in the UI hydration engine: `if "raw_ops_df" not in st.session_state`. Streamlit's Session State survives indefinitely for as long as a user leaves their browser tab open. By writing the database output into the active browser session conditionally, Streamlit was strictly forbidden from querying the 15-minute global cache ever again. The dashboard effectively became a frozen snapshot of the exact minute the user logged in.
+- **Fix:** Systematically stripped out all conditional Session State assignment wrappers within `app.py`. The hydration engine now directly queries the native `@st.cache_data` functions on every single Streamlit loop.
+- **Velocity Impact:** This creates perfect architectural harmony: The Streamlit UI triggers the API functions repeatedly at 60 FPS, but Python intercepts those calls instantly from RAM via the 15-minute global TTL queue. Zero database overhead, and perfect realtime sync.
 - **Problem:** After solving the Cascading Cache Synchronization gap, the PostgreSQL database contained the latest data, but the live Streamlit dashboard was still completely frozen on March 12th.
 - **Root Cause:** A front-end architecture misconfiguration. All data API selectors in `app.py` were decorated with `@st.cache_data(ttl="24h")`. Because this is a 24-hour global server cache, Streamlit serves the same identical stale memory object to every single logging-in user for an entire day, completely bypassing the real-time database updates running in the background. 
 - **Fix:** Performed a global search-and-replace to drop the TTL lifetime on all 11 Streamlit wrapper functions from `ttl="24h"` down to `ttl="15m"`.

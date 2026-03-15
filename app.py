@@ -568,16 +568,12 @@ with st.sidebar:
     # --- 1. HYDRATE RAW DATA FROM CACHE ---
     import pandas as pd
     
-    # Load from the 24h RAM cache instead of hitting PostgreSQL directly
+    # Load from the 15m RAM cache instead of hitting PostgreSQL directly
     with st.spinner("Hydrating data from RAM cache..."):
-        if "raw_ops_df" not in st.session_state or st.session_state["raw_ops_df"].empty:
-            st.session_state["raw_ops_df"] = fetch_ops_data()
-        if "raw_ops_snapshots_df" not in st.session_state or st.session_state["raw_ops_snapshots_df"].empty:
-            st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
-        if "raw_fin_df" not in st.session_state or st.session_state["raw_fin_df"].empty:
-            st.session_state["raw_fin_df"] = fetch_financial_data()
-        if "raw_pulse_df" not in st.session_state or st.session_state["raw_pulse_df"].empty:
-            st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
+        st.session_state["raw_ops_df"] = fetch_ops_data()
+        st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
+        st.session_state["raw_fin_df"] = fetch_financial_data()
+        st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
         
         # Also populate legacy global state pointers
         st.session_state["ops_df"] = st.session_state["raw_ops_df"]
