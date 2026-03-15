@@ -251,9 +251,10 @@ def _cached_tier_summary(raw_df, target_month):
         from src.database import engine as _db
         import pandas as pd
         from sqlalchemy import inspect
+        import io
         if not inspect(_db).has_table("cache_tier_summaries"): return pd.DataFrame()
         res = pd.read_sql(f"SELECT tier_json FROM cache_tier_summaries WHERE brand = '{brand}'", _db)
-        if not res.empty: return pd.read_json(res.iloc[0]["tier_json"], orient="split")
+        if not res.empty: return pd.read_json(io.StringIO(res.iloc[0]["tier_json"]), orient="split")
     except Exception: pass
     return pd.DataFrame()
 
@@ -295,9 +296,10 @@ def _cached_cohort_matrix(df):
         from src.database import engine as _db
         import pandas as pd
         from sqlalchemy import inspect
+        import io
         if not inspect(_db).has_table("cache_cohort_matrices"): return {}
         res = pd.read_sql("SELECT brand, matrix_json FROM cache_cohort_matrices", _db)
-        return {row["brand"]: pd.read_json(row["matrix_json"], orient="split") for _, row in res.iterrows()}
+        return {row["brand"]: pd.read_json(io.StringIO(row["matrix_json"]), orient="split") for _, row in res.iterrows()}
     except Exception: return {}
 
 @st.cache_data(show_spinner=False)
