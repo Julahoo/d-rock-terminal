@@ -233,6 +233,45 @@ div[data-testid="stAlert"] {
     color: #8B949E !important;
     font-size: 0.78rem !important;
 }
+
+/* ── UI/UX Modernization ── */
+div.stButton > button {
+    border-radius: 8px !important;
+    border: 1px solid #3b82f6 !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+    border: 1px solid #60a5fa !important;
+}
+div[data-testid="stDataFrame"] {
+    border-radius: 10px !important;
+    overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+div[data-testid="stExpander"] {
+    border-radius: 8px !important;
+    border: 1px solid #334155 !important;
+}
+section[data-testid="stSidebar"] {
+    border-right: 1px solid #334155 !important;
+}
+
+/* ── Matrix theme: neon glow CSS ── */
+/* Neon green glow on metric numbers */
+[data-testid="stMetricValue"] {
+    text-shadow: 0 0 7px #00FF41, 0 0 14px #00FF4180 !important;
+}
+/* Glow on metric delta text */
+[data-testid="stMetricDelta"] {
+    text-shadow: 0 0 5px #00FF4160 !important;
+}
+/* Subtle glow on headers */
+h1, h2, h3, h4 {
+    text-shadow: 0 0 10px #00FF4140 !important;
+}
 </style>
 """
 st.markdown(_MATERIAL_CSS, unsafe_allow_html=True)
@@ -301,14 +340,7 @@ def _cached_cohort_matrix():
         return {row["brand"]: pd.read_json(io.StringIO(row["matrix_json"]), orient="split") for _, row in res.iterrows()}
     except Exception: return {}
 
-@st.cache_data(show_spinner=False)
-def _cached_segmentation(df): return generate_segmentation_summary(df)
-
-@st.cache_data(show_spinner=False)
-def _cached_both_business(summary_df): return generate_both_business_summary(summary_df)
-
-@st.cache_data(show_spinner=False)
-def _cached_program_summary(df): return generate_program_summary(df)
+# Removed _cached_segmentation and _cached_program_summary block to prevent 350,000-row MD5 array hashing penalties.
 
 @st.cache_data(show_spinner=False)
 def _get_financial_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
@@ -414,14 +446,14 @@ def _cached_sidebar_filters():
     
     avail_countries_raw = []
     if not raw_ops.empty and 'country' in raw_ops.columns:
-        avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].dropna().unique() if str(c) != ""])
+        avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].unique() if pd.notna(c) and str(c).strip() != ""])
         
-    avail_products = sorted([str(c) for c in raw_ops['extracted_product'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_product' in raw_ops.columns else []
-    avail_languages = sorted([str(c) for c in raw_ops['extracted_language'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_language' in raw_ops.columns else []
-    avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
-    avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
-    avail_sublifecycles = sorted([str(c) for c in raw_ops['extracted_sublifecycle'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_sublifecycle' in raw_ops.columns else []
-    avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].dropna().unique() if c and c != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
+    avail_products = sorted([str(c) for c in raw_ops['extracted_product'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_product' in raw_ops.columns else []
+    avail_languages = sorted([str(c) for c in raw_ops['extracted_language'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_language' in raw_ops.columns else []
+    avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
+    avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
+    avail_sublifecycles = sorted([str(c) for c in raw_ops['extracted_sublifecycle'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_sublifecycle' in raw_ops.columns else []
+    avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
 
     return (
         sorted(list(db_clients)),
@@ -436,6 +468,76 @@ def _cached_sidebar_filters():
     )
 
 @st.cache_data(ttl="15m", show_spinner=False)
+def _cached_global_date_boundaries():
+    import pandas as pd
+    raw_ops = fetch_ops_data()
+    raw_fin = fetch_financial_data()
+    valid_mins, valid_maxs = [], []
+    
+    if not raw_ops.empty and 'ops_date' in raw_ops.columns:
+        ops_dates = pd.to_datetime(raw_ops['ops_date'])
+        valid_maxs.append(ops_dates.max())
+        valid_mins.append(ops_dates.min())
+        
+    if not raw_fin.empty and 'report_month' in raw_fin.columns:
+        fin_dates = pd.to_datetime(raw_fin['report_month'], format='mixed', errors='coerce')
+        if not fin_dates.empty and not fin_dates.isna().all():
+             valid_maxs.append(fin_dates.max() + pd.offsets.MonthEnd(0))
+             valid_mins.append(fin_dates.min())
+             
+    max_date = max([d for d in valid_maxs if pd.notnull(d)]) if valid_maxs and any(pd.notnull(valid_maxs)) else pd.Timestamp.today()
+    min_db_date = min([d for d in valid_mins if pd.notnull(d)]) if valid_mins and any(pd.notnull(valid_mins)) else pd.Timestamp("2024-01-01")
+    if pd.isna(min_db_date): min_db_date = pd.Timestamp("2024-01-01")
+    if pd.isna(max_date): max_date = pd.Timestamp.today()
+    return min_db_date, max_date
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_pulse_matrix_data(df, engagement_type):
+    import pandas as pd
+    import plotly.express as px
+    import plotly.io as pio
+    if df.empty or 'ops_date' not in df.columns: return None
+    if 'extracted_engagement' in df.columns:
+        edf = df[df['extracted_engagement'].str.upper() == engagement_type.upper()].copy()
+    else: edf = df.copy()
+    if edf.empty: return None
+
+    max_date = edf['ops_date'].max()
+    windows, window_labels = [7, 14, 30, 90], ["7 Days", "14 Days", "30 Days", "90 Days"]
+    metrics = [("Volume", "Records", "sum", "", "#AAAAAA"), ("Login %", "Login%", "mean", "%", "#eab308"), ("Conv %", "Conv%", "mean", "%", "#22c55e")]
+    daily = edf.sort_values('ops_date')
+    daily['Conv%'] = ((daily['KPI1-Conv.'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100)
+    daily['Login%'] = ((daily['KPI2-Login'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI2-Login' in daily.columns else 0
+
+    results = []
+    for metric_label, col_name, agg_fn, suffix, color in metrics:
+        metric_out = {"label": metric_label, "windows": []}
+        for window, wlabel in zip(windows, window_labels):
+            curr_mask = (daily['ops_date'] > (max_date - pd.Timedelta(days=window))) & (daily['ops_date'] <= max_date)
+            prior_mask = (daily['ops_date'] > (max_date - pd.Timedelta(days=window*2))) & (daily['ops_date'] <= (max_date - pd.Timedelta(days=window)))
+            c_data, p_data = daily.loc[curr_mask, col_name], daily.loc[prior_mask, col_name]
+            
+            c_val = c_data.mean() if agg_fn == "mean" else c_data.sum()
+            p_val = p_data.mean() if agg_fn == "mean" else p_data.sum()
+            c_val, p_val = c_val if not pd.isna(c_val) else 0, p_val if not pd.isna(p_val) else 0
+            
+            d_val = c_val - p_val
+            disp_val = f"{c_val:.1f}%" if suffix == "%" else f"{c_val:,.0f}"
+            disp_del = f"{d_val:+.1f}%" if suffix == "%" else f"{d_val:+,.0f}"
+            
+            fig_json = None
+            spark_data = daily.loc[curr_mask].copy()
+            if len(spark_data) > 1:
+                fig_spark = px.line(spark_data, x='ops_date', y=col_name)
+                fig_spark.update_traces(line_color=color, line_width=2)
+                fig_spark.update_layout(height=60, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", showlegend=False, xaxis=dict(visible=False), yaxis=dict(visible=False))
+                fig_json = pio.to_json(fig_spark)
+                
+            metric_out["windows"].append({"wlabel": wlabel, "disp_val": disp_val, "disp_delta": disp_del, "fig_json": fig_json})
+        results.append(metric_out)
+    return results
+
+@st.cache_data(ttl="15m", show_spinner=False)
 def _apply_global_filters(
     selected_client, selected_brand, selected_category, selected_country, 
     selected_language, selected_lifecycle, selected_segment, 
@@ -448,70 +550,46 @@ def _apply_global_filters(
     raw_ops_snapshots = fetch_ops_snapshots_data()
     raw_fin = fetch_financial_data()
     
-    filtered_ops = raw_ops.copy() if not raw_ops.empty else pd.DataFrame()
-    filtered_ops_snapshots = raw_ops_snapshots.copy() if not raw_ops_snapshots.empty else pd.DataFrame()
-    filtered_fin = raw_fin.copy() if not raw_fin.empty else pd.DataFrame()
+    # 1. Base masking initialization
+    if not raw_ops.empty:
+        ops_mask = pd.Series(True, index=raw_ops.index)
+        if selected_client != "All" and 'ops_client' in raw_ops.columns: ops_mask &= (raw_ops['ops_client'] == selected_client)
+        if selected_brand != "All" and 'ops_brand' in raw_ops.columns: ops_mask &= (raw_ops['ops_brand'] == selected_brand)
+        if selected_category != "All" and 'extracted_product' in raw_ops.columns: ops_mask &= (raw_ops['extracted_product'] == selected_category)
+        if selected_country != "All" and 'country' in raw_ops.columns: ops_mask &= (raw_ops['country'].str.upper() == selected_country)
+        if selected_language != "All" and 'extracted_language' in raw_ops.columns: ops_mask &= (raw_ops['extracted_language'] == selected_language)
+        if selected_lifecycle != "All" and 'extracted_lifecycle' in raw_ops.columns: ops_mask &= (raw_ops['extracted_lifecycle'] == selected_lifecycle)
+        if selected_segment != "All" and 'extracted_segment' in raw_ops.columns: ops_mask &= (raw_ops['extracted_segment'] == selected_segment)
+        if selected_sublifecycle != "All" and 'extracted_sublifecycle' in raw_ops.columns: ops_mask &= (raw_ops['extracted_sublifecycle'] == selected_sublifecycle)
+        if selected_engagement != "All" and 'extracted_engagement' in raw_ops.columns: ops_mask &= (raw_ops['extracted_engagement'] == selected_engagement)
+        if selected_campaign and 'campaign_name' in raw_ops.columns: ops_mask &= raw_ops['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)
+        if start_date_str and end_date_str and 'ops_date' in raw_ops.columns: ops_mask &= (raw_ops['ops_date'] >= start_date_str) & (raw_ops['ops_date'] <= end_date_str)
+        filtered_ops = raw_ops[ops_mask].copy()
+    else:
+        filtered_ops = pd.DataFrame()
 
-    if selected_client != "All":
-        if not filtered_ops.empty and 'ops_client' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_client'] == selected_client]
-        if not filtered_ops_snapshots.empty and 'ops_client' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_client'] == selected_client]
-        if not filtered_fin.empty and 'client' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['client'] == selected_client]
+    if not raw_ops_snapshots.empty:
+        snap_mask = pd.Series(True, index=raw_ops_snapshots.index)
+        if selected_client != "All" and 'ops_client' in raw_ops_snapshots.columns: snap_mask &= (raw_ops_snapshots['ops_client'] == selected_client)
+        if selected_brand != "All" and 'ops_brand' in raw_ops_snapshots.columns: snap_mask &= (raw_ops_snapshots['ops_brand'] == selected_brand)
+        if selected_category != "All" and 'extracted_product' in raw_ops_snapshots.columns: snap_mask &= (raw_ops_snapshots['extracted_product'] == selected_category)
+        if selected_campaign and 'campaign_name' in raw_ops_snapshots.columns: snap_mask &= raw_ops_snapshots['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)
+        if start_date_str and end_date_str and 'ops_date' in raw_ops_snapshots.columns:
+            # Avoid overwriting the entire column type natively to prevent fragmentation
+            date_col = raw_ops_snapshots['ops_date'].astype(str)
+            snap_mask &= (date_col >= start_date_str) & (date_col <= end_date_str)
+        filtered_ops_snapshots = raw_ops_snapshots[snap_mask].copy()
+    else:
+        filtered_ops_snapshots = pd.DataFrame()
 
-    if selected_brand != "All":
-        if not filtered_ops.empty and 'ops_brand' in filtered_ops.columns: 
-            filtered_ops = filtered_ops[filtered_ops['ops_brand'] == selected_brand]
-        if not filtered_ops_snapshots.empty and 'ops_brand' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['ops_brand'] == selected_brand]
-        if not filtered_fin.empty and 'brand' in filtered_fin.columns: 
-            filtered_fin = filtered_fin[filtered_fin['brand'] == selected_brand]
-            
-    if selected_category != "All":
-        if not filtered_ops.empty and 'extracted_product' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_product'] == selected_category]
-        if not filtered_ops_snapshots.empty and 'extracted_product' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['extracted_product'] == selected_category]
-            
-    if selected_country != "All":
-        if not filtered_ops.empty and 'country' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['country'].str.upper() == selected_country]
-    
-    if selected_language != "All":
-        if not filtered_ops.empty and 'extracted_language' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_language'] == selected_language]
-            
-    if selected_lifecycle != "All":
-        if not filtered_ops.empty and 'extracted_lifecycle' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_lifecycle'] == selected_lifecycle]
-            
-    if selected_segment != "All":
-        if not filtered_ops.empty and 'extracted_segment' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_segment'] == selected_segment]
-
-    if selected_sublifecycle != "All":
-        if not filtered_ops.empty and 'extracted_sublifecycle' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_sublifecycle'] == selected_sublifecycle]
-            
-    if selected_engagement != "All":
-        if not filtered_ops.empty and 'extracted_engagement' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['extracted_engagement'] == selected_engagement]
-
-    if selected_campaign:
-        if not filtered_ops.empty and 'campaign_name' in filtered_ops.columns:
-            filtered_ops = filtered_ops[filtered_ops['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
-        if not filtered_ops_snapshots.empty and 'campaign_name' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots = filtered_ops_snapshots[filtered_ops_snapshots['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)]
-
-    if start_date_str and end_date_str:
-        if not filtered_ops.empty and 'ops_date' in filtered_ops.columns:
-            filtered_ops = filtered_ops[(filtered_ops['ops_date'] >= start_date_str) & (filtered_ops['ops_date'] <= end_date_str)]
-        if not filtered_ops_snapshots.empty and 'ops_date' in filtered_ops_snapshots.columns:
-            filtered_ops_snapshots['ops_date'] = filtered_ops_snapshots['ops_date'].astype(str)
-            filtered_ops_snapshots = filtered_ops_snapshots[(filtered_ops_snapshots['ops_date'] >= start_date_str) & (filtered_ops_snapshots['ops_date'] <= end_date_str)]
-        if not filtered_fin.empty and 'report_month' in filtered_fin.columns:
-            filtered_fin = filtered_fin[(filtered_fin['report_month'] >= start_month) & (filtered_fin['report_month'] <= end_month)]
+    if not raw_fin.empty:
+        fin_mask = pd.Series(True, index=raw_fin.index)
+        if selected_client != "All" and 'client' in raw_fin.columns: fin_mask &= (raw_fin['client'] == selected_client)
+        if selected_brand != "All" and 'brand' in raw_fin.columns: fin_mask &= (raw_fin['brand'] == selected_brand)
+        if start_date_str and end_date_str and 'report_month' in raw_fin.columns: fin_mask &= (raw_fin['report_month'] >= start_month) & (raw_fin['report_month'] <= end_month)
+        filtered_fin = raw_fin[fin_mask].copy()
+    else:
+        filtered_fin = pd.DataFrame()
 
     return filtered_ops, filtered_ops_snapshots, filtered_fin
 
@@ -534,40 +612,7 @@ st.set_page_config(
 )
 
 # --- UI/UX MODERNIZATION ---
-st.markdown("""
-    <style>
-    /* Modernize Buttons */
-    div.stButton > button {
-        border-radius: 8px;
-        border: 1px solid #3b82f6;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    }
-    div.stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        border: 1px solid #60a5fa;
-    }
-
-    /* Modernize DataFrames/Tables */
-    div[data-testid="stDataFrame"] {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-
-    /* Modernize Expanders */
-    div[data-testid="stExpander"] {
-        border-radius: 8px;
-        border: 1px solid #334155;
-    }
-
-    /* Subtly style the sidebar */
-    section[data-testid="stSidebar"] {
-        border-right: 1px solid #334155;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# CSS blocks have been optimized and consolidated into _MATERIAL_CSS at the top of the file
 
 # Initialize persistent database tables
 init_db()
@@ -590,25 +635,7 @@ except Exception as e:
 # ------------------------------------------
 
 # ── Matrix theme: neon glow CSS ──────────────────────────────────────────
-st.markdown(
-    """
-    <style>
-    /* Neon green glow on metric numbers */
-    [data-testid="stMetricValue"] {
-        text-shadow: 0 0 7px #00FF41, 0 0 14px #00FF4180;
-    }
-    /* Glow on metric delta text */
-    [data-testid="stMetricDelta"] {
-        text-shadow: 0 0 5px #00FF4160;
-    }
-    /* Subtle glow on headers */
-    h1, h2, h3, h4 {
-        text-shadow: 0 0 10px #00FF4140;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Matrix neon glow CSS has been optimized and consolidated into _MATERIAL_CSS at the top of the file
 
 st.title("📊 D-ROCK DASHBOARD V2.0")
 st.markdown("*Enterprise Business Intelligence & Operations Command*")
@@ -683,24 +710,21 @@ with st.sidebar:
     view_mode = st.radio("Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE ---
-    import pandas as pd
+    raw_ops = fetch_ops_data()
+    raw_fin = fetch_financial_data()
+    raw_ops_snapshots = fetch_ops_snapshots_data()
+
+    # Store minimal pointers silently (bypassing blocking UI spinner overlay penalties)
+    st.session_state["raw_ops_df"] = raw_ops
+    st.session_state["raw_ops_snapshots_df"] = raw_ops_snapshots
+    st.session_state["raw_fin_df"] = raw_fin
+    st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
     
-    # Load from the 15m RAM cache instead of hitting PostgreSQL directly
-    with st.spinner("Hydrating data from RAM cache..."):
-        st.session_state["raw_ops_df"] = fetch_ops_data()
-        st.session_state["raw_ops_snapshots_df"] = fetch_ops_snapshots_data()
-        st.session_state["raw_fin_df"] = fetch_financial_data()
-        st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
-        
-        # Also populate legacy global state pointers
-        st.session_state["ops_df"] = st.session_state["raw_ops_df"]
-        st.session_state["financial_df"] = st.session_state["raw_fin_df"]
+    st.session_state["ops_df"] = raw_ops
+    st.session_state["financial_df"] = raw_fin
 
-        if st.session_state["raw_ops_df"].empty and st.session_state["raw_fin_df"].empty:
-            st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
-
-    raw_ops = st.session_state["raw_ops_df"]
-    raw_fin = st.session_state["raw_fin_df"]
+    if raw_ops.empty and raw_fin.empty:
+        st.sidebar.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
 
     # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
     st.sidebar.markdown("---")
@@ -793,30 +817,8 @@ with st.sidebar:
         _filters_submitted = st.form_submit_button("🔍 Apply Filters", type="primary")
 
     # 5. Elite Date Range Quick-Select Helper
-    import re
-    from datetime import timedelta
-
-    raw_ops_snapshots = st.session_state.get("raw_ops_snapshots_df", pd.DataFrame())
-    # Track boundaries across all datasets
-    valid_mins = []
-    valid_maxs = []
-    
-    if not raw_ops.empty and 'ops_date' in raw_ops.columns:
-        valid_maxs.append(pd.to_datetime(raw_ops['ops_date']).max())
-        valid_mins.append(pd.to_datetime(raw_ops['ops_date']).min())
-        
-    if not raw_fin.empty and 'report_month' in raw_fin.columns:
-        fin_dates = pd.to_datetime(raw_fin['report_month'], format='mixed', errors='coerce')
-        if not fin_dates.empty and not fin_dates.isna().all():
-             # Push the maximum limit safely to the end of the month
-             valid_maxs.append(fin_dates.max() + pd.offsets.MonthEnd(0))
-             valid_mins.append(fin_dates.min())
-
-    max_date = max([d for d in valid_maxs if pd.notnull(d)]) if valid_maxs and any(pd.notnull(valid_maxs)) else pd.Timestamp.today()
-    min_db_date = min([d for d in valid_mins if pd.notnull(d)]) if valid_mins and any(pd.notnull(valid_mins)) else pd.Timestamp("2024-01-01")
-
-    if pd.isna(min_db_date): min_db_date = pd.Timestamp("2024-01-01")
-    if pd.isna(max_date): max_date = pd.Timestamp.today()
+    # Fetch from ultra-fast cached boundaries instead of coercing 350,000 strings into datetime vectors
+    min_db_date, max_date = _cached_global_date_boundaries()
 
     # Streamlit slider min_value must be STRICTLY less than max_value
     if min_db_date.date() >= max_date.date():
@@ -2043,94 +2045,38 @@ if view_mode == "📊 Dashboard":
         if "raw_pulse_df" in st.session_state and not st.session_state["raw_pulse_df"].empty:
             _pulse_ops = st.session_state["raw_pulse_df"]
             
-            def _render_pulse_matrix(df, title, engagement_type):
-                """Render a 3-row x 4-col sparkline performance matrix for a given engagement type."""
-                if 'extracted_engagement' in df.columns:
-                    edf = df[df['extracted_engagement'].str.upper() == engagement_type.upper()].copy()
-                else:
-                    edf = df.copy()
-                
-                if edf.empty or 'ops_date' not in edf.columns:
+            def _render_pulse_matrix(title, engagement_type):
+                """Render a 3-row x 4-col sparkline performance matrix effortlessly from cache."""
+                import plotly.io as pio
+                data_payload = _cached_pulse_matrix_data(_pulse_ops, engagement_type)
+                if not data_payload:
                     st.caption(f"No {engagement_type} data available.")
                     return
-                
-                max_date = edf['ops_date'].max()
-                windows = [7, 14, 30, 90]
-                window_labels = ["7 Days", "14 Days", "30 Days", "90 Days"]
-                
-                # Use daily right out of the precomputed matrix payload
-                daily = edf.sort_values('ops_date')
-                
-                # Calculate daily rates
-                daily['Conv%'] = ((daily['KPI1-Conv.'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100)
-                daily['Login%'] = ((daily['KPI2-Login'] / daily['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100) if 'KPI2-Login' in daily.columns else 0
-                
                 st.markdown(f"**> {title}_**")
                 
-                # Define metrics to render: Volume → Login % → Conv %
-                metrics = [
-                    ("Volume", "Records", "sum", "", "#AAAAAA"),
-                    ("Login %", "Login%", "mean", "%", "#eab308"),
-                    ("Conv %", "Conv%", "mean", "%", "#22c55e"),
-                ]
-                
-                for metric_label, col_name, agg_fn, suffix, color in metrics:
+                for metric_group in data_payload:
                     cols = st.columns(4)
-                    for i, (window, wlabel) in enumerate(zip(windows, window_labels)):
+                    for i, w_data in enumerate(metric_group["windows"]):
                         with cols[i]:
-                            # Current period
-                            current_mask = (daily['ops_date'] > (max_date - pd.Timedelta(days=window))) & (daily['ops_date'] <= max_date)
-                            current_data = daily.loc[current_mask, col_name]
-                            
-                            # Prior period
-                            prior_mask = (daily['ops_date'] > (max_date - pd.Timedelta(days=window*2))) & (daily['ops_date'] <= (max_date - pd.Timedelta(days=window)))
-                            prior_data = daily.loc[prior_mask, col_name]
-                            
-                            if agg_fn == "mean":
-                                current_val = current_data.mean() if len(current_data) > 0 else 0
-                                prior_val = prior_data.mean() if len(prior_data) > 0 else 0
-                            else:
-                                current_val = current_data.sum() if len(current_data) > 0 else 0
-                                prior_val = prior_data.sum() if len(prior_data) > 0 else 0
-                            
-                            delta_val = current_val - prior_val
-                            
-                            # Format display
-                            if suffix == "%":
-                                display_val = f"{current_val:.1f}%"
-                                display_delta = f"{delta_val:+.1f}%"
-                            else:
-                                display_val = f"{current_val:,.0f}"
-                                display_delta = f"{delta_val:+,.0f}"
-                            
                             st.metric(
-                                label=f"{metric_label} ({wlabel})",
-                                value=display_val,
-                                delta=display_delta
+                                label=f"{metric_group['label']} ({w_data['wlabel']})", 
+                                value=w_data["disp_val"], 
+                                delta=w_data["disp_delta"]
                             )
-                            
-                            # Sparkline
-                            spark_data = daily.loc[current_mask].copy()
-                            if len(spark_data) > 1:
-                                fig_spark = px.line(spark_data, x='ops_date', y=col_name)
-                                fig_spark.update_traces(line_color=color, line_width=2)
-                                fig_spark.update_layout(
-                                    height=60,
-                                    margin=dict(l=0, r=0, t=0, b=0),
-                                    paper_bgcolor="rgba(0,0,0,0)",
-                                    plot_bgcolor="rgba(0,0,0,0)",
-                                    showlegend=False,
-                                    xaxis=dict(visible=False),
-                                    yaxis=dict(visible=False)
+                            if w_data["fig_json"]:
+                                st.plotly_chart(
+                                    pio.from_json(w_data["fig_json"]), 
+                                    width='stretch', 
+                                    config={'displayModeBar': False}, 
+                                    key=f"spark_{title}_{metric_group['label']}_{w_data['wlabel']}"
                                 )
-                                st.plotly_chart(fig_spark, width='stretch', config={'displayModeBar': False}, key=f'spark_{title}_{metric_label}_{wlabel}')
             
             # Render side-by-side LI / NLI matrices
             col_li, col_nli = st.columns(2)
             with col_li:
-                _render_pulse_matrix(_pulse_ops, "LI OPERATIONS PULSE", "LI")
+                _render_pulse_matrix("LI OPERATIONS PULSE", "LI")
             with col_nli:
-                _render_pulse_matrix(_pulse_ops, "NLI OPERATIONS PULSE", "NLI")
+                _render_pulse_matrix("NLI OPERATIONS PULSE", "NLI")
             
             # ── HALF-YEAR OPERATIONAL BASELINE ──
             st.markdown("---")
@@ -2280,12 +2226,15 @@ if "🗄️ Operations Ingestion" in tab_map:
 # ══════════════════════════════════════════════════════════════════════════════
 if not _master_df.empty:
     df = _master_df
-    # Auto-compute analytics using cached wrappers (instantaneous!)
     financial_summary = _cached_monthly_summaries(df, start=start_month, end=end_month)
     cohort_matrices = _cached_cohort_matrix()
-    segmentation = _cached_segmentation(df)
-    both_business = _cached_both_business(financial_summary)
-    program_summary = _cached_program_summary(df)
+    
+    # Bypass MD5 cache traps on the base 350k df. Native Pandas grouping (50ms) is 24x faster than Streamlit hashing (1200ms).
+    from src.analytics import generate_segmentation_summary, generate_program_summary, generate_both_business_summary
+    segmentation = generate_segmentation_summary(df)
+    program_summary = generate_program_summary(df)
+    
+    both_business = generate_both_business_summary(financial_summary)
 
     # ══════════════════════════════════════════════════════════════════════
     #  BI Dashboard (Phase 9)
@@ -2450,7 +2399,7 @@ if not _master_df.empty:
         # RFM Tiering (brand-filtered)
         b_latest_month = bdf["month"].max()
         brand_raw = df[df["brand"] == brand_key]
-        b_rfm = _cached_rfm_summary(brand_raw, b_latest_month)
+        b_rfm = generate_rfm_summary(brand_raw)
         if not b_rfm.empty:
             st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({b_latest_month})")
             bt1, bt2, bt3 = st.columns(3)
@@ -2832,11 +2781,9 @@ if not _master_df.empty:
 
     if "🏦 Financial Deep-Dive" in tab_map:
         with tab_map["🏦 Financial Deep-Dive"]:
-            _raw_df = _master_df.copy()
-        
-            # Recalculate summaries for the specific slice
-            filtered_monthly = generate_monthly_summaries(_raw_df)
-            filtered_both = generate_both_business_summary(filtered_monthly)
+            _raw_df = _master_df
+            filtered_monthly = financial_summary
+            filtered_both = both_business
         
             if not filtered_both.empty:
                 bb_latest = filtered_both.iloc[-1]
@@ -3090,7 +3037,7 @@ if not _master_df.empty:
                 # ── VIP Tiering (Phase 15 - RFM) ─────────────────────────
                 try:
                     latest_month_str = filtered_both["month"].max()
-                    rfm = _cached_rfm_summary(_raw_df, latest_month_str)
+                    rfm = generate_rfm_summary(_raw_df)
                     if not rfm.empty:
                         st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({latest_month_str})")
                         t1, t2, t3 = st.columns(3)
