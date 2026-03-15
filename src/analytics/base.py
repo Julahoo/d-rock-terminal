@@ -174,17 +174,18 @@ def _compute_financial_metrics(df: pd.DataFrame) -> pd.DataFrame:
     # hold_pct = (ggr / total_handle) * 100
     agg["hold_pct"] = _safe_pct(agg["ggr"], agg["total_handle"])
 
-    # top_10_pct_ggr_share: whale analysis (vectorised per brand×month)
-    def _whale_share(group):
-        profitable = group[group["revenue"] > 0].nlargest(max(1, int(len(group[group["revenue"] > 0]) * 0.10)), "revenue")
-        return profitable["revenue"].sum()
+    # top_10_pct_ggr_share: whale analysis (pure vectorized natively)
+    prof = df[df["revenue"] > 0].copy()
+    if not prof.empty:
+        group_counts = prof.groupby(["brand", "report_month"]).size()
+        top_n = np.maximum(1, (group_counts * 0.10).astype(int)).reset_index(name="top_n")
+        prof["rank"] = prof.groupby(["brand", "report_month"])["revenue"].rank(method="first", ascending=False)
+        prof = prof.merge(top_n, on=["brand", "report_month"])
+        whale = prof[prof["rank"] <= prof["top_n"]].groupby(["brand", "report_month"])["revenue"].sum().reset_index(name="_top_rev")
+        whale.rename(columns={"report_month": "month"}, inplace=True)
+    else:
+        whale = pd.DataFrame(columns=["brand", "month", "_top_rev"])
 
-    whale = (
-        df.groupby(["brand", "report_month"])
-        .apply(_whale_share, include_groups=False)
-        .reset_index(name="_top_rev")
-        .rename(columns={"report_month": "month"})
-    )
     agg = agg.merge(whale, on=["brand", "month"], how="left")
     agg["top_10_pct_ggr_share"] = np.where(
         agg["ggr"] != 0,
@@ -310,17 +311,18 @@ def _build_combined_financial(
         0.0
     )
 
-    # Whale analysis for Combined (vectorised across all brands)
-    def _whale_share_combined(group):
-        profitable = group[group["revenue"] > 0].nlargest(max(1, int(len(group[group["revenue"] > 0]) * 0.10)), "revenue")
-        return profitable["revenue"].sum()
+    # Whale analysis for Combined (pure vectorized natively)
+    prof_c = raw_df[raw_df["revenue"] > 0].copy()
+    if not prof_c.empty:
+        group_counts_c = prof_c.groupby("report_month").size()
+        top_n_c = np.maximum(1, (group_counts_c * 0.10).astype(int)).reset_index(name="top_n")
+        prof_c["rank"] = prof_c.groupby("report_month")["revenue"].rank(method="first", ascending=False)
+        prof_c = prof_c.merge(top_n_c, on="report_month")
+        whale_c = prof_c[prof_c["rank"] <= prof_c["top_n"]].groupby("report_month")["revenue"].sum().reset_index(name="_top_rev")
+        whale_c.rename(columns={"report_month": "month"}, inplace=True)
+    else:
+        whale_c = pd.DataFrame(columns=["month", "_top_rev"])
 
-    whale_c = (
-        raw_df.groupby("report_month")
-        .apply(_whale_share_combined, include_groups=False)
-        .reset_index(name="_top_rev")
-        .rename(columns={"report_month": "month"})
-    )
     combined = combined.merge(whale_c, on="month", how="left")
     combined["top_10_pct_ggr_share"] = np.where(
         combined["ggr"] != 0,

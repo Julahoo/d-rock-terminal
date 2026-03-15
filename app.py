@@ -337,7 +337,7 @@ def _cached_cohort_matrix():
         import io
         if not inspect(_db).has_table("cache_cohort_matrices"): return {}
         res = pd.read_sql("SELECT brand, matrix_json FROM cache_cohort_matrices", _db)
-        return {row["brand"]: pd.read_json(io.StringIO(row["matrix_json"]), orient="split") for _, row in res.iterrows()}
+        return {b: pd.read_json(io.StringIO(mj), orient="split") for b, mj in zip(res["brand"], res["matrix_json"])}
     except Exception: return {}
 
 # Removed _cached_segmentation and _cached_program_summary block to prevent 350,000-row MD5 array hashing penalties.
@@ -364,12 +364,24 @@ def load_benchmarks():
         return pd.DataFrame()
 
 # --- 24H CACHED DATA ACCESS LAYER ---
+
+def _optimize_memory(df):
+    if df.empty: return df
+    for col in df.select_dtypes(include=['object']).columns:
+        if len(df) > 0 and df[col].nunique() / len(df) <= 0.5:
+            df[col] = df[col].astype('category')
+    for col in df.select_dtypes(include=['float64']).columns:
+        df[col] = pd.to_numeric(df[col], downcast='float')
+    for col in df.select_dtypes(include=['int64']).columns:
+        df[col] = pd.to_numeric(df[col], downcast='integer')
+    return df
+
 @st.cache_data(ttl="15m", show_spinner=False)
 def fetch_ops_data():
     from src.database import engine
     import pandas as pd
     try:
-        return pd.read_sql("SELECT * FROM ops_telemarketing_data_materialized", engine)
+        return _optimize_memory(pd.read_sql("SELECT * FROM ops_telemarketing_data_materialized", engine))
     except Exception:
         return pd.DataFrame()
 
@@ -378,7 +390,7 @@ def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
     try:
-        return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots_materialized", engine)
+        return _optimize_memory(pd.read_sql("SELECT * FROM ops_telemarketing_snapshots_materialized", engine))
     except Exception:
         return pd.DataFrame()
 
@@ -395,6 +407,7 @@ def fetch_dashboard_pulse_data():
                 'total_conversions': 'KPI1-Conv.',
                 'total_logins': 'KPI2-Login'
             }, inplace=True)
+            df = _optimize_memory(df)
         return df
     except Exception:
         return pd.DataFrame()
@@ -409,6 +422,7 @@ def fetch_financial_data():
             df.rename(columns={"player_id": "id"}, inplace=True)
             if 'client' in df.columns: df['client'] = df['client'].astype(str).str.strip()
             if 'brand' in df.columns: df['brand'] = df['brand'].astype(str).str.strip()
+            df = _optimize_memory(df)
         return df
     except Exception:
         return pd.DataFrame()
@@ -418,7 +432,7 @@ def fetch_config_tables(query):
     from src.database import engine
     import pandas as pd
     try:
-        return pd.read_sql(query, engine)
+        return _optimize_memory(pd.read_sql(query, engine))
     except Exception:
         return pd.DataFrame()
 
@@ -427,7 +441,7 @@ def fetch_ops_snapshots():
     from src.database import engine
     import pandas as pd
     try:
-        return pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine)
+        return _optimize_memory(pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", engine))
     except Exception:
         return pd.DataFrame()
 

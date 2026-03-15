@@ -31,23 +31,20 @@ def materialize_ops_base_view():
             "dnc": "DNC", "na": "NA", "dx": "DX", "wn": "WN"
         }, inplace=True)
         
-        # Regex logic
-        def _strip_date_suffix(name):
-            n = str(name)
-            n = _re.sub(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', n)
-            n = _re.sub(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', n)
-            n = _re.sub(r'[_-]\d{4}[_-]\d{2}$', '', n)
-            return n
+        # Vectorized Date Suffix Stripping
+        core_sig = df['Campaign Name'].astype(str)
+        core_sig = core_sig.str.replace(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', regex=True)
+        core_sig = core_sig.str.replace(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', regex=True)
+        core_sig = core_sig.str.replace(r'[_-]\d{4}[_-]\d{2}$', '', regex=True)
         
-        df['Core_Signature'] = df['Campaign Name'].apply(_strip_date_suffix)
+        df['Core_Signature'] = core_sig
         df['Base Campaign'] = df['Core_Signature']
         
-        # Lifecycle
-        df['ops_lifecycle'] = df['Campaign Name'].apply(
-            lambda x: 'WB' if '-WB' in str(x).upper() or '_WB' in str(x).upper() or ' WB' in str(x).upper() else (
-                'RND' if '-RND' in str(x).upper() or '_RND' in str(x).upper() or ' RND' in str(x).upper() else 'UNKNOWN'
-            )
-        )
+        # Vectorized Lifecycle Extraction
+        camp_upper = core_sig.str.upper()
+        df['ops_lifecycle'] = 'UNKNOWN'
+        df.loc[camp_upper.str.contains(r'[-_ ]WB', regex=True, na=False), 'ops_lifecycle'] = 'WB'
+        df.loc[camp_upper.str.contains(r'[-_ ]RND', regex=True, na=False), 'ops_lifecycle'] = 'RND'
         
         # Standard Strategy Signatures
         df['Strategy_Signature'] = (
@@ -57,17 +54,15 @@ def materialize_ops_base_view():
             df['extracted_engagement'].fillna('UNKNOWN')
         )
         
-        # Granular Campaign Signature
-        def get_sig(c):
-            c = str(c)
-            parts = c.replace("-", "_").split('_')
-            if len(parts) >= 3 and parts[-3].isdigit() and parts[-2].isdigit() and parts[-1].isdigit():
-                return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-            if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
-                return "_".join(c.split('_')[:-1]) if len(c.split('_')) > 1 else c
-            return c
+        # Vectorized Granular Campaign Signature
+        camp_str = df['Campaign Name'].astype(str)
+        norm_camp = camp_str.str.replace("-", "_")
+        mask_3 = norm_camp.str.contains(r'_\d+_\d+_\d+$', regex=True)
+        mask_2 = norm_camp.str.contains(r'_\d+_\d+$', regex=True)
         
-        df['campaign_signature'] = df['Campaign Name'].apply(get_sig)
+        sig = camp_str.copy()
+        sig.loc[(mask_3 | mask_2) & camp_str.str.contains('_')] = camp_str.str.rsplit('_', n=1).str[0]
+        df['campaign_signature'] = sig
 
         df.to_sql('ops_telemarketing_data_materialized', db_engine, if_exists='replace', index=False)
         print(f"[{datetime.now().isoformat()}] Successfully materialized ops_telemarketing_data_materialized ({len(df)} rows).")
