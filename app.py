@@ -244,7 +244,7 @@ import plotly.io as pio
 def _cached_time_series(data):
     return generate_time_series(data)
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def _cached_tier_summary(raw_df, target_month):
     brand = raw_df["brand"].iloc[0] if "brand" in raw_df.columns and raw_df["brand"].nunique() == 1 else "Combined"
     try:
@@ -261,7 +261,7 @@ def _cached_tier_summary(raw_df, target_month):
 def _cached_player_master_list(raw_df):
     return generate_player_master_list(raw_df)
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def _cached_retention_heatmap(raw_df):
     try:
         from src.database import engine as _db
@@ -273,7 +273,7 @@ def _cached_retention_heatmap(raw_df):
     except Exception: pass
     return None
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def _cached_ltv_curves(raw_df):
     try:
         from src.database import engine as _db
@@ -289,7 +289,7 @@ def _cached_ltv_curves(raw_df):
 def _cached_monthly_summaries(df, start=None, end=None): 
     return generate_monthly_summaries(df, force_start=start, force_end=end)
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def _cached_cohort_matrix(df): 
     try:
         from src.database import engine as _db
@@ -321,7 +321,7 @@ def _get_ops_excel_bytes(ops_df):
     buf = export_ops_to_excel(ops_df)
     return buf.getvalue()
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def load_benchmarks():
     from src.database import engine as _bench_engine
     import pandas as pd
@@ -331,7 +331,7 @@ def load_benchmarks():
         return pd.DataFrame()
 
 # --- 24H CACHED DATA ACCESS LAYER ---
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def fetch_ops_data():
     from src.database import engine
     import pandas as pd
@@ -340,7 +340,7 @@ def fetch_ops_data():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
@@ -349,7 +349,7 @@ def fetch_ops_snapshots_data():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def fetch_dashboard_pulse_data():
     from src.database import engine
     import pandas as pd
@@ -366,7 +366,7 @@ def fetch_dashboard_pulse_data():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def fetch_financial_data():
     from src.database import engine
     import pandas as pd
@@ -380,7 +380,7 @@ def fetch_financial_data():
     except Exception:
         return pd.DataFrame()
         
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def fetch_config_tables(query):
     from src.database import engine
     import pandas as pd
@@ -389,7 +389,7 @@ def fetch_config_tables(query):
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl="24h", show_spinner=False)
+@st.cache_data(ttl="15m", show_spinner=False)
 def fetch_ops_snapshots():
     from src.database import engine
     import pandas as pd

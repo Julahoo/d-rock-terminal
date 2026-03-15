@@ -4,7 +4,11 @@
 
 ## LOG ENTRIES
 
-### [Hotfix - Cascading Cache Synchronization (Septenary Audit)] - 2026-03-15 - COMPLETED
+### [Hotfix - Streamlit Global Cache Expiration (Octonary Audit)] - 2026-03-15 - COMPLETED
+- **Problem:** After solving the Cascading Cache Synchronization gap, the PostgreSQL database contained the latest data, but the live Streamlit dashboard was still completely frozen on March 12th.
+- **Root Cause:** A front-end architecture misconfiguration. All data API selectors in `app.py` were decorated with `@st.cache_data(ttl="24h")`. Because this is a 24-hour global server cache, Streamlit serves the same identical stale memory object to every single logging-in user for an entire day, completely bypassing the real-time database updates running in the background. 
+- **Fix:** Performed a global search-and-replace to drop the TTL lifetime on all 11 Streamlit wrapper functions from `ttl="24h"` down to `ttl="15m"`.
+- **Velocity Impact:** This correctly forces the server to drop the in-memory payload every 15 minutes and fetch the latest rows from the lightning-fast Postgres materialized cache, instantly surfacing the missing data arrays to the user.
 - **Problem:** The daily operations cron job executed successfully on March 13 and 14, populating the raw database (`ops_telemarketing_data`). However, the Streamlit Dashboard continued to show March 12 as the maximum date.
 - **Root Cause:** A data propagation gap in the new ETL Cache Architecture. `scripts/jobs/daily_operations_sync.py` pulled raw data but called `sys.exit(0)` without triggering the newly built `etl_worker.py`. Because the UI strictly reads from the precomputed cache tables for performance, the backend database was effectively disconnected from the frontend views during automated runs.
 - **Fix:** Refactored `daily_operations_sync.py` to natively import and trigger `src.etl_worker.main()` instantly after a successful API pull, chaining the two pipelines into a unified "Extract, Load, Materialize" workflow.
