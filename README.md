@@ -3,7 +3,7 @@
 ## Overview
 This is a production-grade internal analytics application built for Directors and Floor Managers. The system operates on a highly resilient 4-Tier architecture that ingests raw telemarketing and financial CSV data into a centralized PostgreSQL database, then processes it into high-level business intelligence.
 
-**Important Note:** The application runs automatically in the cloud on Railway, utilizing a fully managed PostgreSQL database endpoint. All operational and financial data is securely backed up and stored persistently.
+**Important Note:** The application runs automatically in the cloud on Railway, utilizing a fully managed PostgreSQL database endpoint. All operational and financial data is securely backed up and stored persistently. At the frontend streaming layer, a 24H Global Downcasting engine forces 64-bit floats and Python objects into 32-bit categories, safeguarding the 500MB RAM roof.
 
 ---
 
