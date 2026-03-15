@@ -368,6 +368,9 @@ def load_benchmarks():
 def _optimize_memory(df):
     if df.empty: return df
     for col in df.select_dtypes(include=['object']).columns:
+        c_lower = str(col).lower()
+        if 'date' in c_lower or 'month' in c_lower or 'time' in c_lower:
+            continue
         if len(df) > 0 and df[col].nunique() / len(df) <= 0.5:
             df[col] = df[col].astype('category')
     for col in df.select_dtypes(include=['float64']).columns:
