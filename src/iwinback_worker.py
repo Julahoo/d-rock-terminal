@@ -25,7 +25,7 @@ os.makedirs("data", exist_ok=True)
 
 logger = logging.getLogger("iwinback_worker")
 logger.setLevel(logging.INFO)
-file_handler = logging.FileHandler(LOG_FILE, mode='w')
+file_handler = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', "%H:%M:%S"))
 logger.addHandler(file_handler)
 

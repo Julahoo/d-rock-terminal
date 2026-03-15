@@ -26,8 +26,16 @@ def run_daily_sync():
         success = run_historical_pull(start_date=yesterday_str, end_date=yesterday_str)
         
         if success:
-            log_msg("✅ DAILY AUTOMATION COMPLETED SUCCESSFULLY.")
-            sys.exit(0)  # Signals success to Railway Cron scheduler
+            log_msg("✅ DAILY API PULL COMPLETED SUCCESSFULLY.")
+            try:
+                log_msg("⚡ TRIGGERING CASCADING ETL MATERIALIZATION...")
+                import src.etl_worker as etl_worker
+                etl_worker.main()
+                log_msg("✅ CASCADING ETL MATERIALIZATION COMPLETED SUCCESSFULLY.")
+                sys.exit(0)  # Signals success to Railway Cron scheduler
+            except Exception as etl_err:
+                log_msg(f"❌ ETL MATERIALIZATION FAILED: {str(etl_err)}")
+                sys.exit(1)
         else:
             log_msg("❌ DAILY AUTOMATION FAILED DURING EXECUTION.")
             sys.exit(1)  # Signals failure to Railway Cron scheduler

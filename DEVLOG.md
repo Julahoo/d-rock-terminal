@@ -4,7 +4,11 @@
 
 ## LOG ENTRIES
 
-### [Hotfix - Cold-Start Cache Guard (Senary Audit)] - 2026-03-13 - COMPLETED
+### [Hotfix - Cascading Cache Synchronization (Septenary Audit)] - 2026-03-15 - COMPLETED
+- **Problem:** The daily operations cron job executed successfully on March 13 and 14, populating the raw database (`ops_telemarketing_data`). However, the Streamlit Dashboard continued to show March 12 as the maximum date.
+- **Root Cause:** A data propagation gap in the new ETL Cache Architecture. `scripts/jobs/daily_operations_sync.py` pulled raw data but called `sys.exit(0)` without triggering the newly built `etl_worker.py`. Because the UI strictly reads from the precomputed cache tables for performance, the backend database was effectively disconnected from the frontend views during automated runs.
+- **Fix:** Refactored `daily_operations_sync.py` to natively import and trigger `src.etl_worker.main()` instantly after a successful API pull, chaining the two pipelines into a unified "Extract, Load, Materialize" workflow.
+- **Verification:** Ran the ETL worker locally, instantly pushing the previously hidden 13th and 14th data payload into the materialized tables for the UI.
 - **Problem:** Upon fresh cloud deployments, Streamlit immediately queries cache tables (`cache_cohort_matrices`, `cache_tier_summaries`) before the background `etl_worker.py` cron job has a chance to generate them. This resulted in Python silently catching exceptions but Postgres spamming `ERROR: relation does not exist` into the server logs.
 - **Root Cause:** A raw synchronous `pd.read_sql` call against ephemeral cache tables was executing without verifying if the table schema existed first.
 - **Fix:** Implemented the "Cold-Start Inspector Guard" pattern. Added `sqlalchemy.inspect(engine).has_table(...)` to 4 key analytical wrappers in `app.py`. If the table is missing, Streamlit short-circuits to return early, cleanly bypassing Postgres and preventing query errors.
