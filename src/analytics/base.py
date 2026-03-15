@@ -97,10 +97,10 @@ def generate_monthly_summaries(df: pd.DataFrame, force_start: str = None, force_
     )
 
     # turnover_per_player (Phase 12)
-    summary["turnover_per_player"] = summary.apply(
-        lambda r: round(r["total_handle"] / r["total_players"], 2)
-        if r["total_players"] > 0 else 0.0,
-        axis=1,
+    summary["turnover_per_player"] = np.where(
+        summary["total_players"] > 0,
+        (summary["total_handle"] / summary["total_players"]).round(2),
+        0.0
     )
 
     # revenue_share_deduction (15% of GGR) for individual brands
@@ -165,11 +165,10 @@ def _compute_financial_metrics(df: pd.DataFrame) -> pd.DataFrame:
     agg["profitable_pct"] = _safe_pct(agg["profitable_players"], agg["total_players"])
 
     # ggr_per_player = ggr / total_players
-    agg["ggr_per_player"] = agg.apply(
-        lambda r: round(r["ggr"] / r["total_players"], 6)
-        if r["total_players"] > 0
-        else 0.0,
-        axis=1,
+    agg["ggr_per_player"] = np.where(
+        agg["total_players"] > 0,
+        (agg["ggr"] / agg["total_players"]).round(6),
+        0.0
     )
 
     # hold_pct = (ggr / total_handle) * 100
@@ -294,18 +293,21 @@ def _build_combined_financial(
         combined["profitable_players"], combined["total_players"]
     )
     combined["hold_pct"] = _safe_pct(combined["ggr"], combined["total_handle"])
-    combined["ggr_per_player"] = combined.apply(
-        lambda r: round(r["ggr"] / r["total_players"], 6)
-        if r["total_players"] > 0 else 0.0,
-        axis=1,
+    
+    combined["ggr_per_player"] = np.where(
+        combined["total_players"] > 0,
+        (combined["ggr"] / combined["total_players"]).round(6),
+        0.0
     )
+    
     combined["retention_pct"] = _safe_pct(
         combined["returning_players"], combined["total_players"]
     )
-    combined["turnover_per_player"] = combined.apply(
-        lambda r: round(r["total_handle"] / r["total_players"], 2)
-        if r["total_players"] > 0 else 0.0,
-        axis=1,
+    
+    combined["turnover_per_player"] = np.where(
+        combined["total_players"] > 0,
+        (combined["total_handle"] / combined["total_players"]).round(2),
+        0.0
     )
 
     # Whale analysis for Combined (vectorised across all brands)
@@ -448,20 +450,20 @@ def generate_both_business_summary(
     bb["returning_players_pct"] = _safe_pct(
         bb["returning_players"], bb["total_players"]
     )
-    bb["ggr_per_player"] = bb.apply(
-        lambda r: round(r["ggr"] / r["total_players"], 2)
-        if r["total_players"] > 0 else 0.0,
-        axis=1,
+    bb["ggr_per_player"] = np.where(
+        bb["total_players"] > 0,
+        (bb["ggr"] / bb["total_players"]).round(2),
+        0.0
     )
-    bb["income_per_player"] = bb.apply(
-        lambda r: round(r["net_income"] / r["total_players"], 2)
-        if r["total_players"] > 0 else 0.0,
-        axis=1,
+    bb["income_per_player"] = np.where(
+        bb["total_players"] > 0,
+        (bb["net_income"] / bb["total_players"]).round(2),
+        0.0
     )
-    bb["turnover_per_player"] = bb.apply(
-        lambda r: round(r["turnover"] / r["total_players"], 2)
-        if r["total_players"] > 0 else 0.0,
-        axis=1,
+    bb["turnover_per_player"] = np.where(
+        bb["total_players"] > 0,
+        (bb["turnover"] / bb["total_players"]).round(2),
+        0.0
     )
 
     # Round all float columns to eliminate precision artifacts
@@ -786,17 +788,16 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
     master["Lifetime_Withdrawals"] = master["Lifetime_Withdrawals"].round(2)
     master["Lifetime_Bonus"] = master["Lifetime_Bonus"].round(2)
 
-    master["Avg_Deposit_Value"] = master.apply(
-        lambda x: x["Lifetime_Deposits"] / x["Lifetime_Deposit_Count"] if x.get("Lifetime_Deposit_Count", 0) > 0 else 0, 
-        axis=1
+    master["Avg_Deposit_Value"] = np.where(
+        master.get("Lifetime_Deposit_Count", 0) > 0,
+        (master["Lifetime_Deposits"] / master.get("Lifetime_Deposit_Count", 1)).round(2),
+        0.0
     )
 
     # Months_Inactive: how many months since they last played
     global_max = raw_df["report_month"].max()
     global_max_period = pd.Period(global_max, freq="M")
-    master["Months_Inactive"] = master["Last_Month"].apply(
-        lambda lm: (global_max_period - pd.Period(lm, freq="M")).n
-    )
+    master["Months_Inactive"] = (global_max_period - pd.PeriodIndex(master["Last_Month"], freq="M")).n
 
     # Velocity metrics: Last_Month_Turnover & Avg_Monthly_Turnover
     last_bet = (
@@ -812,10 +813,7 @@ def generate_player_master_list(raw_df: pd.DataFrame) -> pd.DataFrame:
     ).round(2)
 
     # Tenure: total months from first to last activity (inclusive)
-    master["Tenure_Months"] = master.apply(
-        lambda r: (pd.Period(r["Last_Month"], freq="M") - pd.Period(r["First_Month"], freq="M")).n + 1,
-        axis=1,
-    )
+    master["Tenure_Months"] = (pd.PeriodIndex(master["Last_Month"], freq="M") - pd.PeriodIndex(master["First_Month"], freq="M")).n + 1
 
     # Recommended Campaign classification (Phase 17.4)
     conditions = [
@@ -1526,7 +1524,11 @@ def generate_vip_churn_radar(df: pd.DataFrame) -> pd.DataFrame:
     
     # Calculate the drop
     vips["NGR_Drop_Value"] = vips[prev_ngr_col] - vips[curr_ngr_col]
-    vips["NGR_Drop_Pct"] = vips.apply(lambda x: (x["NGR_Drop_Value"] / x[prev_ngr_col]) * 100 if x[prev_ngr_col] > 0 else 0, axis=1)
+    vips["NGR_Drop_Pct"] = np.where(
+        vips[prev_ngr_col] > 0,
+        (vips["NGR_Drop_Value"] / vips[prev_ngr_col]) * 100,
+        0.0
+    )
     
     # Flag Churn Risk: Dropped by >= 30% AND lost at least $200 in absolute NGR value
     churn_risk = vips[(vips["NGR_Drop_Pct"] >= 30) & (vips["NGR_Drop_Value"] >= 200)].copy()
@@ -1556,8 +1558,16 @@ def generate_segment_roi_matrix(df: pd.DataFrame) -> pd.DataFrame:
     if "bonus_total" not in df.columns:
         seg["Total_Bonus"] = 0.0
         
-    seg["Avg_NGR_per_Player"] = seg.apply(lambda x: x["Total_NGR"] / x["Total_Players"] if x["Total_Players"] > 0 else 0, axis=1)
-    seg["Margin_%"] = seg.apply(lambda x: (x["Total_GGR"] / x["Total_Turnover"] * 100) if x["Total_Turnover"] > 0 else 0, axis=1)
+    seg["Avg_NGR_per_Player"] = np.where(
+        seg["Total_Players"] > 0,
+        seg["Total_NGR"] / seg["Total_Players"],
+        0.0
+    )
+    seg["Margin_%"] = np.where(
+        seg["Total_Turnover"] > 0,
+        (seg["Total_GGR"] / seg["Total_Turnover"]) * 100,
+        0.0
+    )
     
     # Calculate true net profit after 15% revenue share deduction
     seg["Rev_Share_15"] = (seg["Total_NGR"] * 0.15).round(2)
