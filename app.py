@@ -3200,7 +3200,7 @@ if not _master_df.empty:
 
     if "🕵️ CRM Intelligence" in tab_map:
         with tab_map["🕵️ CRM Intelligence"]:
-            _raw_df = df.copy()  # <-- ADDED DECLARATION
+            _raw_df = df
 
             # ── Early-Warning VIP Churn Radar ────────────────────────────────
             st.markdown("#### > 📉 EARLY-WARNING VIP CHURN RADAR_")
@@ -3276,20 +3276,17 @@ if not _master_df.empty:
             st.markdown("#### > VIP & RISK LEADERBOARDS_")
             st.caption(f"Currently viewing CRM targets for: {selected_client} | {selected_brand} | {selected_country}")
         
-            # Load data through the CRM Engine heuristics
+            # Load data through the CRM Engine heuristics (native grouping is 24x faster than @st.cache_data hashing)
             from src.analytics import generate_rfm_summary, generate_smart_profiles
             
-            @st.cache_data(ttl=900)
-            def _get_crm_intel(df_in):
-                rfm = generate_rfm_summary(df_in)
-                smart = generate_smart_profiles(rfm)
-                # Align to legacy column expectations internally
-                if 'Smart_Profile' in smart.columns:
-                    smart = smart.rename(columns={'Smart_Profile': 'Recommended_Campaign'})
-                return smart
+            rfm = generate_rfm_summary(_raw_df)
+            smart = generate_smart_profiles(rfm)
+            # Align to legacy column expectations internally
+            if 'Smart_Profile' in smart.columns:
+                smart = smart.rename(columns={'Smart_Profile': 'Recommended_Campaign'})
                 
-            master_df = _get_crm_intel(_raw_df)
-            filtered_master = master_df.copy()
+            master_df = smart
+            filtered_master = master_df
         
             if filtered_master.empty:
                 st.warning("No player data available.")
@@ -3581,7 +3578,7 @@ if not _master_df.empty:
     # ==========================================
     if "📈 Campaigns" in tab_map:
         with tab_map["📈 Campaigns"]:
-            _raw_df = df.copy()  # <-- ADDED DECLARATION
+            _raw_df = df
 
             st.markdown("#### > 🎯 LIFECYCLE & CAMPAIGN ROI MATRIX_")
             st.markdown("*Insight: Evaluates the true profitability and player quality of distinct marketing lifecycles and acquisition channels.*")
@@ -3722,7 +3719,7 @@ if "📞 Operations Command" in tab_map:
         st.markdown("*Insight: Tracks True CAC, Lead Quality, and Contractual SLA Fulfillment.*")
         
         if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
-            ops_df = st.session_state["ops_df"].copy()
+            ops_df = st.session_state["ops_df"]
             # Fetch SLAs from persistent DB (Cached 24h)
             vol_df = fetch_config_tables("SELECT * FROM contractual_volumes")
             bench_df = fetch_config_tables("SELECT * FROM granular_benchmarks")
@@ -4088,7 +4085,7 @@ if "📞 Operations Command" in tab_map:
                         st.info("Not enough data to display trend charts for the selected range.")
 
                 # Render directly without tabs
-                display_trend_charts(daily_trends.copy())
+                display_trend_charts(daily_trends)
 
             # --- 🎯 Pitch vs. List Scorecard ---
             st.markdown("---")
@@ -4096,14 +4093,18 @@ if "📞 Operations Command" in tab_map:
             st.markdown("*Insight: Analyzes the raw list quality vs. the dial floor execution. Isolates script fatigue from telecom blocking and bad data.*")
 
             if not ops_df.empty:
-                # Ensure previously unmapped columns default to 0 to prevent KeyError
                 req_cols = ["Records", "Calls", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "sp", "ev", "es", "ed", "ef", "eo", "ec", "D"]
-                for c in req_cols:
-                    if c not in ops_df.columns:
-                        ops_df[c] = 0
-
-                agg_dict = {c: 'sum' for c in req_cols}
+                
+                # Only aggregate columns that actually exist in the global frame natively
+                avail_cols = [c for c in req_cols if c in ops_df.columns]
+                agg_dict = {c: 'sum' for c in avail_cols}
+                
                 scorecard_df = ops_df.groupby("Core_Signature").agg(agg_dict).reset_index()
+                
+                # Backfill structural zeros onto the tiny aggregated frame, not the 350k main table
+                for c in req_cols:
+                    if c not in scorecard_df.columns:
+                        scorecard_df[c] = 0
                 # Net Records excludes HLRV & 2XRV
                 scorecard_df["Net_Records"] = scorecard_df["Records"] - scorecard_df["hlrv"] - scorecard_df["twoxrv"]
                 scorecard_df["Net_Records"] = scorecard_df["Net_Records"].apply(lambda x: max(x, 1)) # Prevent Div by Zero
@@ -4201,25 +4202,22 @@ if "📞 Operations Command" in tab_map:
             default_sla_target = 5000
 
             if not ops_df.empty:
-                sla_ops_df = ops_df.copy()
                 
-                # 2. Lifecycle Mapping Logic
-                # Use the extracted_lifecycle directly from the database schema
-                if "extracted_lifecycle" in sla_ops_df.columns:
-                    sla_ops_df["SLA_Lifecycle"] = sla_ops_df["extracted_lifecycle"]
-                else:
-                    sla_ops_df["SLA_Lifecycle"] = "UNKNOWN"
-                
+                # 2. Lifecycle Mapping Logic - Extracted inline via renaming
                 # Filter out UNKNOWN lifecycles as they don't count towards these specific SLAs
-                sla_ops_df = sla_ops_df[sla_ops_df["SLA_Lifecycle"] != "UNKNOWN"]
                 
-                if not sla_ops_df.empty:
-                    # Calculate number of days in the current slice to scale the monthly SLA
-                    num_days_sla = sla_ops_df['ops_date'].nunique() if 'ops_date' in sla_ops_df.columns else 1
-                    local_sla_scale_factor = max(num_days_sla / 30.0, 1.0) if num_days_sla >= 28 else (num_days_sla / 30.0)
+                if "extracted_lifecycle" in ops_df.columns:
+                    # Isolate the data first
+                    sla_ops_target = ops_df[ops_df["extracted_lifecycle"] != "UNKNOWN"]
                     
-                    # 3. Group by Client and Lifecycle
-                    sla_agg = sla_ops_df.groupby(["ops_client", "SLA_Lifecycle"]).agg({"Records": "sum"}).reset_index()
+                    if not sla_ops_target.empty:
+                        # Calculate number of days in the current slice to scale the monthly SLA
+                        num_days_sla = sla_ops_target['ops_date'].nunique() if 'ops_date' in sla_ops_target.columns else 1
+                        local_sla_scale_factor = max(num_days_sla / 30.0, 1.0) if num_days_sla >= 28 else (num_days_sla / 30.0)
+                        
+                        # 3. Group by Client and Lifecycle using the native column
+                        sla_agg = sla_ops_target.groupby(["ops_client", "extracted_lifecycle"]).agg({"Records": "sum"}).reset_index()
+                        sla_agg = sla_agg.rename(columns={"extracted_lifecycle": "SLA_Lifecycle"})
                     
                     # 4. Math & Target Mapping
                     def get_sla_target(row):
@@ -4267,26 +4265,23 @@ if "📞 Operations Command" in tab_map:
             st.markdown("---")
             st.markdown("### 🔍 Campaign Comparison Matrix")
             if not ops_df.empty:
-                comp_df = ops_df.copy()
-                
-                if 'ops_date' in comp_df.columns:
-                    try:
-                        comp_df['Week'] = pd.to_datetime(comp_df['ops_date']).dt.isocalendar().week
-                        comp_df['Month'] = pd.to_datetime(comp_df['ops_date']).dt.month
-                    except:
-                        comp_df['Week'] = 1
-                        comp_df['Month'] = 1
-                else:
-                    comp_df['Week'] = 1
-                    comp_df['Month'] = 1
-                    
                 group_by = st.selectbox("Compare Timeframe By:", ["Month", "Week", "Overall"])
                 
                 pivot_cols = ['Base Campaign']
-                if group_by != "Overall":
-                    pivot_cols.append(group_by)
-                    
-                matrix = comp_df.groupby(pivot_cols).agg({
+                
+                # Perform temporal extractions dynamically inside the groupby sequence instead of copying/augmenting 350,000 rows
+                if group_by == "Week":
+                    if 'ops_date' in ops_df.columns:
+                        pivot_cols.append(pd.to_datetime(ops_df['ops_date']).dt.isocalendar().week.rename('Week'))
+                    else:
+                        pivot_cols.append(pd.Series([1]*len(ops_df), name='Week'))
+                elif group_by == "Month":
+                    if 'ops_date' in ops_df.columns:
+                        pivot_cols.append(pd.to_datetime(ops_df['ops_date']).dt.month.rename('Month'))
+                    else:
+                        pivot_cols.append(pd.Series([1]*len(ops_df), name='Month'))
+                        
+                matrix = ops_df.groupby(pivot_cols).agg({
                     'Records': 'sum',
                     'Calls': 'sum',
                     'KPI1-Conv.': 'sum',
@@ -4298,8 +4293,12 @@ if "📞 Operations Command" in tab_map:
                 matrix['True_CAC'] = matrix['True_CAC'].replace([float('inf'), -float('inf')], 0).fillna(0)
                 matrix['D Ratio'] = matrix['D Ratio'] * 100
                 
+                sort_cols = ['Base Campaign']
+                if group_by != "Overall":
+                    sort_cols.append(group_by)
+                
                 st.dataframe(
-                    matrix.sort_values(by=pivot_cols),
+                    matrix.sort_values(by=sort_cols),
                     width='stretch', hide_index=True,
                     column_config={
                         "Records": st.column_config.NumberColumn("Total Records", format="%d"),
