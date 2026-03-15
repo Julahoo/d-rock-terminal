@@ -17,6 +17,7 @@ The primary control panel for managing real-time telemarketing data. Tracks dail
 
 ### 3. CRM Intelligence & Financials
 Deep analytical views parsing cumulative lifetime value (LTV), cross-brand cannibalization, 80/20 Pareto curves, and dynamic VIP tiering.
+* **Performance Architecture**: Analytics run on 100% vectorized C-level native NumPy and Pandas matrices (`np.select()`, `np.where()`). No row-by-row iteration bottlenecks. Streamlit UX renders completely from RAM with zero memory inflation.
 
 ### 4. Admin Management
 A configuration workspace enabling Directors to define volume SLAs, manually sync missing Brand mappings to the backend, and audit data hygiene across active clients.
