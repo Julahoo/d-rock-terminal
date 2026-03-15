@@ -370,13 +370,13 @@ def _prepare_display_df(brand_df: pd.DataFrame) -> pd.DataFrame:
     """
     out = brand_df[DF_COLS].copy()
 
-    # Convert "YYYY-MM" → "Month YYYY" (e.g. "2024-08" → "August 2024")
-    out["month"] = out["month"].apply(_pretty_month)
+    # Convert "YYYY-MM" → "Month YYYY" via fast vectorized DateTime
+    out["month"] = pd.to_datetime(out["month"]).dt.strftime('%B %Y')
 
     # openpyxl percentage format expects 0–1 range, not 0–100
-    for pct_col in ("profitable_pct", "hold_pct", "top_10_pct_ggr_share", "retention_pct"):
-        if pct_col in out.columns:
-            out[pct_col] = out[pct_col] / 100.0
+    pct_cols = [c for c in ("profitable_pct", "hold_pct", "top_10_pct_ggr_share", "retention_pct") if c in out.columns]
+    if pct_cols:
+        out[pct_cols] = out[pct_cols] / 100.0
 
     return out
 
@@ -433,12 +433,14 @@ def _write_campaign_tab(writer, campaign_df: pd.DataFrame) -> None:  # noqa: ANN
 
     display = campaign_df[CAMPAIGN_DF_COLS].copy()
     display = display.sort_values(["month", "brand"]).reset_index(drop=True)
-    display["month"] = display["month"].apply(_pretty_month)
+    
+    # Vectorized month string conversion
+    display["month"] = pd.to_datetime(display["month"]).dt.strftime('%B %Y')
 
     # openpyxl percentage format expects 0–1 range
-    for rate_col in ("kpi1_conversion_rate", "kpi2_login_rate"):
-        if rate_col in display.columns:
-            display[rate_col] = display[rate_col] / 100.0
+    rate_cols = [c for c in ("kpi1_conversion_rate", "kpi2_login_rate") if c in display.columns]
+    if rate_cols:
+        display[rate_cols] = display[rate_cols] / 100.0
 
     display.to_excel(
         writer,
@@ -460,7 +462,7 @@ def _write_segmentation_tab(writer, seg_df: pd.DataFrame) -> None:  # noqa: ANN0
 
     display = seg_df[SEGMENTATION_DF_COLS].copy()
     display = display.sort_values(["month", "brand", "wb_tag"]).reset_index(drop=True)
-    display["month"] = display["month"].apply(_pretty_month)
+    display["month"] = pd.to_datetime(display["month"]).dt.strftime('%B %Y')
 
     display.to_excel(
         writer,
@@ -482,12 +484,12 @@ def _write_both_business_tab(writer, bb_df: pd.DataFrame) -> None:  # noqa: ANN0
 
     display = bb_df[BOTH_BUSINESS_DF_COLS].copy()
     display = display.sort_values("month").reset_index(drop=True)
-    display["month"] = display["month"].apply(_pretty_month)
+    display["month"] = pd.to_datetime(display["month"]).dt.strftime('%B %Y')
 
     # openpyxl percentage format expects 0–1 range
-    for pct_col in ("margin", "new_players_pct", "returning_players_pct"):
-        if pct_col in display.columns:
-            display[pct_col] = display[pct_col] / 100.0
+    pct_cols = [c for c in ("margin", "new_players_pct", "returning_players_pct") if c in display.columns]
+    if pct_cols:
+        display[pct_cols] = display[pct_cols] / 100.0
 
     display.to_excel(
         writer,
@@ -537,8 +539,8 @@ def _auto_column_widths(ws, headers: list[str]) -> None:  # noqa: ANN001
 
 
 def _pretty_month(ym: str) -> str:
-    """Convert 'YYYY-MM' → 'Month YYYY'."""
-    y, m = (int(x) for x in ym.split("-"))
+    """Convert 'YYYY-MM' → 'Month YYYY'. (Kept for backwards compatibility in external scripts)"""
+    y, m = (int(x) for x in str(ym).split("-"))
     return f"{calendar.month_name[m]} {y}"
 
 def export_ops_to_excel(ops_df: pd.DataFrame) -> io.BytesIO:

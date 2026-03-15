@@ -957,110 +957,132 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             # Use the exact daily date parsed from the filename
             df['ops_date'] = report_date
 
-        for _, row in df.iterrows():
-            campaign = str(row.get("Campaign Name", "UNKNOWN"))
-            tokens = [t for t in campaign.upper().replace('_', '-').split('-') if t]
-            
-            # Normalize WBD -> WB
-            tokens = ['WB' if t == 'WBD' else t for t in tokens]
-            
-            tag = tokens[0] if len(tokens) > 0 else "UNKNOWN"
-            
-            if tag != "UNKNOWN" and tag not in live_map:
-                unmapped_tags.add(tag)
-                
-            mapped_info = live_map.get(tag, {})
-            client = mapped_info.get('client', "UNKNOWN")
-            brand_name = mapped_info.get('brand', tag)
+        # --- VECTORIZED METRIC CALCULATION (Phase 10) ---
+        df["campaign"] = df.get("Campaign Name", "UNKNOWN").astype(str)
+        df["ops_date"] = report_date if 'Date' not in df.columns else pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+        
+        # Upper case and normalize 'WBD' -> 'WB'
+        df["normalized_camp"] = df["campaign"].str.upper().str.replace('_', '-').str.replace('-WBD-', '-WB-')
+        # Split tokens into a DataFrame of varying lengths
+        tokens_df = df["normalized_camp"].str.split('-', expand=True).fillna("")
+        
+        # Extract Brand Tag (first token)
+        df["tag"] = tokens_df[0]
+        df["tag"] = np.where(df["tag"] == "", "UNKNOWN", df["tag"])
+        
+        # Track unmapped tags
+        new_unmapped = set(df["tag"].unique()) - set(live_map.keys()) - {"UNKNOWN"}
+        if new_unmapped: unmapped_tags.update(new_unmapped)
+        
+        # Map Client and Brand names vector-wise
+        df["ops_client"] = df["tag"].map(lambda x: live_map.get(x, {}).get("client", "UNKNOWN"))
+        df["ops_brand"] = df["tag"].map(lambda x: live_map.get(x, {}).get("brand", x))
+        
+        # Vectorized list searches for Benchmark components
+        def _extract_component(allowed_list):
+            return tokens_df.isin(allowed_list).idxmax(axis=1).map(lambda idx: tokens_df.lookup(tokens_df.index, [idx])[0] if tokens_df.iloc[:, idx].notna().any() else "UNKNOWN")
 
-            # Extract Benchmarking Data — Campaign Naming Convention Components
-            extracted_lifecycle = next((t for t in tokens if t in ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER']), "UNKNOWN")
-            extracted_segment = next((t for t in tokens if t in ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4']), "UNKNOWN")
-            extracted_engagement = next((t for t in tokens if t in ['NLI', 'LI']), "UNKNOWN")
-            extracted_product = next((t for t in tokens if t in ['SPO', 'CAS', 'LIVE', 'ALL']), "UNKNOWN")
-            extracted_sublifecycle = next((t for t in tokens if t in ['J1', 'J2', 'J3', 'BULK']), "UNKNOWN")
+        # Fast extraction by creating a stacked token lookup to find the first match
+        stacked = tokens_df.stack()
+        
+        LIFECYCLES = {'RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER'}
+        SEGMENTS = {'HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4'}
+        ENGAGEMENTS = {'NLI', 'LI'}
+        PRODUCTS = {'SPO', 'CAS', 'LIVE', 'ALL'}
+        SUBLIFECYCLES = {'J1', 'J2', 'J3', 'BULK'}
+        
+        def _vector_extract(target_set):
+            # Find the index of the first token in the target set for each row
+            mask = tokens_df.isin(target_set)
+            # idxmax returns the first True column, if any True exists
+            return np.where(mask.any(axis=1), tokens_df.values[np.arange(len(tokens_df)), mask.values.argmax(axis=1)], "UNKNOWN")
             
-            # Extract Country
-            # Look for a 2 or 3 letter alphabetical code not in the blocklist
-            blocklist = ['SPO', 'CAS', 'LIVE', 'ALL', 'DAY', 'A', 'B', 'J1', 'J2', 'J3', 'NLI', 'LI', 'NEW', 'BULK'] + \
-                        ['RND', 'WB', 'CS', 'ROC', 'FD', 'OTD', 'CHU', 'ACQ', 'SL', 'LFC', 'LOADER'] + \
-                        ['HIGH', 'MID', 'MED', 'LOW', 'VIP', 'NA', 'AFF', 'COH1', 'COH2', 'COH3', 'COH4'] + \
-                        [tag.upper()]
+        df["extracted_lifecycle"] = _vector_extract(LIFECYCLES)
+        df["extracted_segment"] = _vector_extract(SEGMENTS)
+        df["extracted_engagement"] = _vector_extract(ENGAGEMENTS)
+        df["extracted_product"] = _vector_extract(PRODUCTS)
+        df["extracted_sublifecycle"] = _vector_extract(SUBLIFECYCLES)
+        
+        # Country Extraction
+        BLOCKLIST = PRODUCTS | LIFECYCLES | SEGMENTS | ENGAGEMENTS | SUBLIFECYCLES | {'DAY', 'A', 'B', 'NEW'}
+        
+        # Function to find the first 2-3 char iso code not in block_set
+        def _find_country(row_tokens, tag):
+            block = BLOCKLIST | {str(tag).upper()}
+            for t in row_tokens[1:]:
+                if str(t) not in block and str(t).isalpha() and 2 <= len(str(t)) <= 3:
+                    return str(t)
+            return "Global"
             
-            country = "Global"
-            for t in tokens[1:]:
-                if t not in blocklist and t.isalpha() and 2 <= len(t) <= 3:
-                    country = t
-                    break
+        df["country"] = [ _find_country(row, tag) for row, tag in zip(tokens_df.values, df["tag"]) ]
+        
+        _LANG_DEFAULTS = {
+            'TR': 'TR', 'ES': 'ES', 'CL': 'ES', 'EC': 'ES', 'MX': 'ES', 'AR': 'ES', 'CO': 'ES', 'PE': 'ES', 
+            'BR': 'PT', 'GB': 'EN', 'UK': 'EN', 'IE': 'EN', 'CA': 'EN', 'NZ': 'EN', 'JP': 'JA', 'DE': 'DE', 
+            'AT': 'DE', 'CH': 'DE', 'SE': 'SV', 'NO': 'NO', 'DK': 'DA', 'FI': 'FI', 'IT': 'IT', 'FR': 'FR', 'ONT': 'EN'
+        }
+        df["extracted_language"] = df["country"].map(_LANG_DEFAULTS).fillna("UNKNOWN")
+        
+        # Calculate Math Arrays
+        df["total_cost"] = df["Cost Caller"] + df["Cost SIP"] + df["Cost SMS"] + df["Cost Email"]
+        df["true_cac"] = np.where(df["KPI1-Conv."] > 0, df["total_cost"] / df["KPI1-Conv."], 0.0)
+        
+        df["campaign_name"] = df["campaign"] + "_" + df["ops_date"]
+        
+        # Resolve 'records' fallback array logic
+        if "New Data" in df.columns and "# Records" in df.columns:
+            df["records"] = np.where(df["New Data"] > 0, df["New Data"], df["# Records"])
+        elif "New Data" in df.columns:
+            df["records"] = df["New Data"]
+        elif "# Records" in df.columns:
+            df["records"] = df["# Records"]
+        else:
+            df["records"] = 0
             
-            # Smart Language Defaults from Country
-            _LANG_DEFAULTS = {
-                'TR': 'TR', 'ES': 'ES', 'CL': 'ES', 'EC': 'ES', 'MX': 'ES',
-                'AR': 'ES', 'CO': 'ES', 'PE': 'ES', 'BR': 'PT', 'GB': 'EN',
-                'UK': 'EN', 'IE': 'EN', 'CA': 'EN', 'NZ': 'EN', 'JP': 'JA',
-                'DE': 'DE', 'AT': 'DE', 'CH': 'DE', 'SE': 'SV', 'NO': 'NO',
-                'DK': 'DA', 'FI': 'FI', 'IT': 'IT', 'FR': 'FR', 'ONT': 'EN'
-            }
-            extracted_language = _LANG_DEFAULTS.get(country, "UNKNOWN")
-            
-            calls = int(row["Calls"])
-            convs = int(row["KPI1-Conv."])
-            total_cost = row["Cost Caller"] + row["Cost SIP"] + row["Cost SMS"] + row["Cost Email"]
-            true_cac = total_cost / convs if convs > 0 else 0.0
-            file_date = row["ops_date"]
-            
-            records_to_insert.append({
-                "campaign_name": f"{campaign}_{file_date}",
-                "ops_client": client,
-                "ops_brand": brand_name,
-                "ops_date": file_date,
-                "records": int(row.get("New Data", 0) or row.get("# Records", 0)),
-                "calls": calls,
-                "conversions": convs,
-                "total_cost": total_cost,
-                "true_cac": true_cac,
-                "d_total": int(row["D"]),
-                "d_plus": int(row.get("D+", 0)),
-                "d_minus": int(row.get("D-", 0)),
-                "d_neutral": int(row.get("D", 0)),
-                "d_ratio": float(row["D Ratio"]),
-                "kpi2_logins": int(row["KPI2-Login"]),
-                "li_pct": float(row["LI%"]),
-                "tech_issues": int(row["T"]),
-                "t": int(row.get("T", 0)),
-                "am": int(row.get("AM", 0)),
-                "dnc": int(row.get("DNC", 0)),
-                "na": int(row.get("NA", 0)),
-                "dx": int(row.get("DX", 0)),
-                "wn": int(row.get("WN", 0)),
-                "cost_caller": float(row.get("Cost Caller", 0)),
-                "cost_sip": float(row.get("Cost SIP", 0)),
-                "cost_sms": float(row.get("Cost SMS", 0)),
-                "cost_email": float(row.get("Cost Email", 0)),
-                "hlrv": int(row.get("HLRV", 0)),
-                "twoxrv": int(row.get("2XRV", 0)),
-                "sa": int(row.get("SA", 0)),
-                "sd": int(row.get("SD", 0)),
-                "sf": int(row.get("SF", 0)),
-                "sp": int(row.get("SP", 0)),
-                "ev": int(row.get("EV", 0)),
-                "es": int(row.get("ES", 0)),
-                "ed": int(row.get("ED", 0)),
-                "eo": int(row.get("EO", 0)),
-                "ec": int(row.get("EC", 0)),
-                "ef": int(row.get("EF", 0)),
-                "optouts_all": int(row.get("Optouts (All)", 0)),
-                "optout_call": int(row.get("Optout - Call", 0)),
-                "optout_sms": int(row.get("Optout - SMS", 0)),
-                "optout_email": int(row.get("Optout - Email", 0)),
-                "extracted_engagement": extracted_engagement,
-                "extracted_lifecycle": extracted_lifecycle,
-                "extracted_segment": extracted_segment,
-                "extracted_product": extracted_product,
-                "extracted_language": extracted_language,
-                "extracted_sublifecycle": extracted_sublifecycle,
-                "country": country
-            })
+        df["records"] = df["records"].fillna(0).astype(int)
+        
+        # Rename standard columns to prep for insertion payload mapping
+        df.rename(columns={
+            "Calls": "calls", "KPI1-Conv.": "conversions", "D": "d_neutral", "D+": "d_plus", "D-": "d_minus", 
+            "D Ratio": "d_ratio", "KPI2-Login": "kpi2_logins", "LI%": "li_pct", "T": "tech_issues",
+            "Cost Caller": "cost_caller", "Cost SIP": "cost_sip", "Cost SMS": "cost_sms", "Cost Email": "cost_email",
+            "AM": "am", "DNC": "dnc", "NA": "na", "DX": "dx", "WN": "wn", "HLRV": "hlrv", "2XRV": "twoxrv",
+            "SA": "sa", "SD": "sd", "SF": "sf", "SP": "sp", "EV": "ev", "ES": "es", "ED": "ed", "EO": "eo", 
+            "EC": "ec", "EF": "ef", "Optouts (All)": "optouts_all", "Optout - Call": "optout_call", 
+            "Optout - SMS": "optout_sms", "Optout - Email": "optout_email"
+        }, inplace=True)
+        
+        # Additional cleanup of duplicate 'T' column requirement from old array
+        df["t"] = df["tech_issues"]
+        
+        cols_to_keep = [
+            "campaign_name", "ops_client", "ops_brand", "ops_date", "records", "calls", "conversions", 
+            "total_cost", "true_cac", "d_neutral", "d_plus", "d_minus", "d_ratio", "kpi2_logins", "li_pct", 
+            "tech_issues", "t", "am", "dnc", "na", "dx", "wn", "cost_caller", "cost_sip", "cost_sms", "cost_email", 
+            "hlrv", "twoxrv", "sa", "sd", "sf", "sp", "ev", "es", "ed", "eo", "ec", "ef", "optouts_all", 
+            "optout_call", "optout_sms", "optout_email", "extracted_engagement", "extracted_lifecycle", 
+            "extracted_segment", "extracted_product", "extracted_language", "extracted_sublifecycle", "country"
+        ]
+        
+        # Build d_total from neutral as per legacy logic
+        df["d_total"] = df["d_neutral"]
+        cols_to_keep.append("d_total")
+        
+        # Filter cleanly to DB payload
+        batch_df = df[[c for c in cols_to_keep if c in df.columns]].copy()
+        
+        # Type enforcement
+        int_fields = ["calls", "conversions", "d_neutral", "d_plus", "d_minus", "kpi2_logins", "tech_issues", "t", "am", "dnc", "na", "dx", "wn", "hlrv", "twoxrv", "sa", "sd", "sf", "sp", "ev", "es", "ed", "eo", "ec", "ef", "optouts_all", "optout_call", "optout_sms", "optout_email", "d_total"]
+        float_fields = ["total_cost", "true_cac", "d_ratio", "li_pct", "cost_caller", "cost_sip", "cost_sms", "cost_email"]
+        
+        for field in int_fields:
+            if field in batch_df.columns:
+                batch_df[field] = pd.to_numeric(batch_df[field], errors='coerce').fillna(0).astype(int)
+        for field in float_fields:
+            if field in batch_df.columns:
+                batch_df[field] = pd.to_numeric(batch_df[field], errors='coerce').fillna(0.0)
+        
+        records_to_insert = True # Flag marker
             
         if records_to_insert:
             batch_df = pd.DataFrame(records_to_insert)
