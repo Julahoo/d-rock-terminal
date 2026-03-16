@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 from sqlalchemy import text
 from src.database import engine as db_engine
 
