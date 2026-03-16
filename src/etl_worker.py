@@ -146,6 +146,83 @@ def materialize_dashboard_pulse():
         daily.to_sql('dashboard_pulse_matrix', db_engine, if_exists='replace', index=False)
         print(f"[{datetime.now().isoformat()}] Successfully materialized dashboard_pulse_matrix ({len(daily)} rows).")
 
+        # ── Phase 14.1: Pre-compute Pulse Card Snapshots ──
+        # Compute the ENTIRE card payload (values, deltas, sparkline JSON) now,
+        # so the frontend just reads and renders — zero computation needed.
+        import json
+        import plotly.express as px
+        import plotly.io as pio
+
+        daily.rename(columns={
+            'total_records': 'Records',
+            'total_conversions': 'KPI1-Conv.',
+            'total_logins': 'KPI2-Login'
+        }, inplace=True)
+
+        card_cache = {}
+        for engagement_type in ['LI', 'NLI']:
+            edf = daily[daily['extracted_engagement'].str.upper() == engagement_type].copy()
+            if edf.empty:
+                card_cache[engagement_type] = None
+                continue
+
+            max_date = edf['ops_date'].max()
+            windows = [7, 14, 30, 90]
+            window_labels = ["7 Days", "14 Days", "30 Days", "90 Days"]
+            metrics = [
+                ("Volume", "Records", "sum", "", "#AAAAAA"),
+                ("Login %", "Login%", "mean", "%", "#eab308"),
+                ("Conv %", "Conv%", "mean", "%", "#22c55e")
+            ]
+
+            edf = edf.sort_values('ops_date')
+            edf['Conv%'] = ((edf['KPI1-Conv.'] / edf['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100)
+            edf['Login%'] = ((edf['KPI2-Login'] / edf['Records']).replace([float('inf'), -float('inf')], 0).fillna(0) * 100).clip(upper=100)
+
+            results = []
+            for metric_label, col_name, agg_fn, suffix, color in metrics:
+                metric_out = {"label": metric_label, "windows": []}
+                for window, wlabel in zip(windows, window_labels):
+                    curr_mask = (edf['ops_date'] > (max_date - pd.Timedelta(days=window))) & (edf['ops_date'] <= max_date)
+                    prior_mask = (edf['ops_date'] > (max_date - pd.Timedelta(days=window*2))) & (edf['ops_date'] <= (max_date - pd.Timedelta(days=window)))
+                    c_data, p_data = edf.loc[curr_mask, col_name], edf.loc[prior_mask, col_name]
+
+                    c_val = c_data.mean() if agg_fn == "mean" else c_data.sum()
+                    p_val = p_data.mean() if agg_fn == "mean" else p_data.sum()
+                    c_val = c_val if not pd.isna(c_val) else 0
+                    p_val = p_val if not pd.isna(p_val) else 0
+
+                    d_val = c_val - p_val
+                    disp_val = f"{c_val:.1f}%" if suffix == "%" else f"{c_val:,.0f}"
+                    disp_del = f"{d_val:+.1f}%" if suffix == "%" else f"{d_val:+,.0f}"
+
+                    fig_json = None
+                    spark_data = edf.loc[curr_mask].copy()
+                    if len(spark_data) > 1:
+                        fig_spark = px.line(spark_data, x='ops_date', y=col_name)
+                        fig_spark.update_traces(line_color=color, line_width=2)
+                        fig_spark.update_layout(
+                            height=60, margin=dict(l=0, r=0, t=0, b=0),
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            showlegend=False, xaxis=dict(visible=False), yaxis=dict(visible=False)
+                        )
+                        fig_json = pio.to_json(fig_spark)
+
+                    metric_out["windows"].append({
+                        "wlabel": wlabel, "disp_val": disp_val,
+                        "disp_delta": disp_del, "fig_json": fig_json
+                    })
+                results.append(metric_out)
+            card_cache[engagement_type] = results
+
+        # Store the pre-computed card data as JSON in the database
+        card_records = pd.DataFrame([
+            {"engagement_type": eng, "card_json": json.dumps(data)}
+            for eng, data in card_cache.items()
+        ])
+        card_records.to_sql('cache_dashboard_pulse_cards', db_engine, if_exists='replace', index=False)
+        print(f"[{datetime.now().isoformat()}] Successfully pre-computed pulse card snapshots for {len(card_cache)} engagement types.")
+
     except Exception as e:
         print(f"❌ Failed to materialize dashboard pulse: {e}")
 

@@ -340,6 +340,22 @@ def _cached_cohort_matrix():
         return {b: pd.read_json(io.StringIO(mj), orient="split") for b, mj in zip(res["brand"], res["matrix_json"])}
     except Exception: return {}
 
+@st.cache_data(ttl="24h", show_spinner=False)
+def _cached_pulse_card_snapshot(engagement_type):
+    """Read pre-computed pulse card payload from DB (computed once by ETL at 4:30 AM).
+    Returns the full card data (values, deltas, sparkline JSON) instantly — zero computation."""
+    try:
+        import json
+        from src.database import engine as _db
+        from sqlalchemy import inspect
+        if not inspect(_db).has_table("cache_dashboard_pulse_cards"): return None
+        res = pd.read_sql(
+            f"SELECT card_json FROM cache_dashboard_pulse_cards WHERE engagement_type = '{engagement_type}'", _db)
+        if not res.empty and res.iloc[0]["card_json"]:
+            return json.loads(res.iloc[0]["card_json"])
+    except Exception: pass
+    return None
+
 # Removed _cached_segmentation and _cached_program_summary block to prevent 350,000-row MD5 array hashing penalties.
 # Phase 14 Option B: Re-introduce with TTL-based caching keyed on smaller derived frames, not raw 350K-row df.
 
@@ -2138,49 +2154,50 @@ if view_mode == "📊 Dashboard":
     tab_map = dict(zip(tabs, created_tabs))
     with tab_map["📊 Dashboard"]:
         st.markdown("#### > 📡 OPERATIONS PULSE_")
-        st.markdown("*Rolling KPI windows — at a glance.*")
+        st.markdown("*Rolling KPI windows — at a glance. Data is pre-computed daily at 04:30 UTC.*")
         
-        if "raw_pulse_df" in st.session_state and not st.session_state["raw_pulse_df"].empty:
-            _pulse_ops = st.session_state["raw_pulse_df"]
+        def _render_pulse_matrix(title, engagement_type):
+            """Render pulse matrix — snapshot-first, inline fallback."""
+            import plotly.io as pio
             
-            def _render_pulse_matrix(title, engagement_type):
-                """Render a 3-row x 4-col sparkline performance matrix effortlessly from cache."""
-                import plotly.io as pio
-                data_payload = _cached_pulse_matrix_data(_pulse_ops, engagement_type)
-                if not data_payload:
-                    st.caption(f"No {engagement_type} data available.")
-                    return
-                st.markdown(f"**> {title}_**")
-                
-                for metric_group in data_payload:
-                    cols = st.columns(4)
-                    for i, w_data in enumerate(metric_group["windows"]):
-                        with cols[i]:
-                            st.metric(
-                                label=f"{metric_group['label']} ({w_data['wlabel']})", 
-                                value=w_data["disp_val"], 
-                                delta=w_data["disp_delta"]
+            # Phase 14.1: Try pre-computed snapshot first (computed at 4:30 AM, instant read)
+            data_payload = _cached_pulse_card_snapshot(engagement_type)
+            
+            # Fallback: compute inline only if ETL snapshot doesn't exist yet
+            if data_payload is None and "raw_pulse_df" in st.session_state and not st.session_state["raw_pulse_df"].empty:
+                data_payload = _cached_pulse_matrix_data(st.session_state["raw_pulse_df"], engagement_type)
+            
+            if not data_payload:
+                st.caption(f"No {engagement_type} data available.")
+                return
+            st.markdown(f"**> {title}_**")
+            
+            for metric_group in data_payload:
+                cols = st.columns(4)
+                for i, w_data in enumerate(metric_group["windows"]):
+                    with cols[i]:
+                        st.metric(
+                            label=f"{metric_group['label']} ({w_data['wlabel']})", 
+                            value=w_data["disp_val"], 
+                            delta=w_data["disp_delta"]
+                        )
+                        if w_data["fig_json"]:
+                            st.plotly_chart(
+                                pio.from_json(w_data["fig_json"]), 
+                                width='stretch', 
+                                config={'displayModeBar': False}, 
+                                key=f"spark_{title}_{metric_group['label']}_{w_data['wlabel']}"
                             )
-                            if w_data["fig_json"]:
-                                st.plotly_chart(
-                                    pio.from_json(w_data["fig_json"]), 
-                                    width='stretch', 
-                                    config={'displayModeBar': False}, 
-                                    key=f"spark_{title}_{metric_group['label']}_{w_data['wlabel']}"
-                                )
-            
-            # Render side-by-side LI / NLI matrices
-            col_li, col_nli = st.columns(2)
-            with col_li:
-                _render_pulse_matrix("LI OPERATIONS PULSE", "LI")
-            with col_nli:
-                _render_pulse_matrix("NLI OPERATIONS PULSE", "NLI")
-            
-            # ── HALF-YEAR OPERATIONAL BASELINE ──
-            st.markdown("---")
-            
-        else:
-            st.info("No operations data loaded. Navigate to 📞 Operations to upload data.")
+        
+        # Render side-by-side LI / NLI matrices
+        col_li, col_nli = st.columns(2)
+        with col_li:
+            _render_pulse_matrix("LI OPERATIONS PULSE", "LI")
+        with col_nli:
+            _render_pulse_matrix("NLI OPERATIONS PULSE", "NLI")
+        
+        # ── HALF-YEAR OPERATIONAL BASELINE ──
+        st.markdown("---")
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")
@@ -4484,34 +4501,19 @@ if "📞 Operations Command" in tab_map:
             # Drop signature columns for clean display
             final_display_df = ledger_df.drop(columns=[c for c in sig_cols + ['D', 'NA', 'AM', 'DNC', 'DX', 'WN', 'T', 'KPI1-Conv.'] if c in ledger_df.columns]).sort_values("True_CAC", ascending=False)
 
-            def style_cac_delta(val):
-                if pd.isna(val) or val == 0:
-                    return ''
-                if val > 0:
-                    return 'color: #f87171; font-weight: bold;' # Red text (More expensive)
-                else:
-                    return 'color: #4ade80; font-weight: bold;' # Green text (Cheaper or equal)
-            
-            styled_ledger = final_display_df.style.format({
-                    "Records": "{:,.0f}",
-                    "Total_Campaign_Cost": "${:,.2f}",
-                    "True_CAC": "${:,.2f}",
-                    "Benchmark CAC": "${:,.2f}",
-                    "CAC Delta": "${:,.2f}",
-                    "Contact Rate": "{:.1f}%",
-                    "Conv %": "{:.1f}%",
-            }).map(style_cac_delta, subset=["CAC Delta"])
-                
+            # Phase 14.1: Bypass Pandas Styler entirely — it crashes at >1.5M cells.
+            # Use Streamlit's native column_config formatting instead (no cell limit).
             st.dataframe(
-                styled_ledger,
+                final_display_df,
                 width='stretch', hide_index=True,
                 column_config={
-                    "Records": st.column_config.NumberColumn("New Data"),
-                    "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend"),
-                    "True_CAC": st.column_config.NumberColumn("True CAC"),
-                    "Benchmark CAC": st.column_config.NumberColumn("Benchmark CAC"),
-                    "CAC Delta": st.column_config.NumberColumn("CAC Delta"),
-                    "D Ratio": st.column_config.NumberColumn("Contact Rate")
+                    "Records": st.column_config.NumberColumn("New Data", format="%d"),
+                    "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend", format="$%.2f"),
+                    "True_CAC": st.column_config.NumberColumn("True CAC", format="$%.2f"),
+                    "Benchmark CAC": st.column_config.NumberColumn("Benchmark CAC", format="$%.2f"),
+                    "CAC Delta": st.column_config.NumberColumn("CAC Delta", format="$%.2f"),
+                    "Contact Rate": st.column_config.NumberColumn("Contact Rate", format="%.1f%%"),
+                    "Conv %": st.column_config.NumberColumn("Conv %", format="%.1f%%"),
                 }
             )
         else:
