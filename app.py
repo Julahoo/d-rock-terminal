@@ -447,10 +447,20 @@ def fetch_ops_data():
 def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
+    OPS_COLS = """campaign_name, ops_client, ops_brand, ops_date, records, calls, conversions,
+        total_cost, true_cac, d_total, d_plus, d_minus, d_neutral, d_ratio,
+        kpi2_logins, li_pct, tech_issues, t, am, dnc, na, dx, wn,
+        cost_caller, cost_sip, cost_sms, cost_email,
+        extracted_engagement, extracted_lifecycle, extracted_segment,
+        extracted_product, extracted_language, extracted_sublifecycle, country,
+        "Strategy_Signature", campaign_signature"""
     try:
-        return _optimize_memory(pd.read_sql("SELECT * FROM ops_telemarketing_snapshots_materialized", engine))
+        return _optimize_memory(pd.read_sql(f"SELECT {OPS_COLS} FROM ops_telemarketing_snapshots_materialized", engine))
     except Exception:
-        return pd.DataFrame()
+        try:
+            return _optimize_memory(pd.read_sql("SELECT * FROM ops_telemarketing_snapshots_materialized", engine))
+        except Exception:
+            return pd.DataFrame()
 
 @st.cache_data(ttl="15m", show_spinner=False)
 def fetch_dashboard_pulse_data():
