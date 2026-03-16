@@ -984,11 +984,8 @@ with st.sidebar:
         "VIP Churn Radar": "vip_churn_radar",
     }
     
-    _rq_col1, _rq_col2 = st.sidebar.columns([3, 1])
-    with _rq_col1:
-        _rq_selection = st.selectbox("📊 Report Type", list(_available_reports.keys()), label_visibility="collapsed")
-    with _rq_col2:
-        _rq_submit = st.button("🚀", help="Request this report in the background")
+    _rq_selection = st.sidebar.selectbox("📊 Report Type", list(_available_reports.keys()))
+    _rq_submit = st.sidebar.button("🚀 Request Report", help="Request this report in the background", width='stretch')
     
     if _rq_submit:
         job_id = _rq.submit(
