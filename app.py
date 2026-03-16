@@ -1663,6 +1663,28 @@ if view_mode == "⚙️ Admin":
                         st.error(f"❌ Purge failed: {e}")
 
         st.markdown("---")
+
+        # --- FORCE RE-MATERIALIZE VIEWS (Phase 14.1) ---
+        st.markdown("### ⚡ Force Re-Materialize Views")
+        st.markdown("*If data was ingested but isn't showing in reports, this forces the ETL worker to rebuild all materialized views from the raw tables. This is safe and non-destructive.*")
+        
+        if st.button("⚡ Re-Materialize All Views Now", width='stretch', type="primary"):
+            with st.spinner("Running ETL materialization pipeline..."):
+                try:
+                    import src.etl_worker as _etl
+                    _etl.main()
+                    # Clear all cached data so frontend reads fresh materialized views
+                    fetch_ops_data.clear()
+                    fetch_ops_snapshots_data.clear()
+                    fetch_dashboard_pulse_data.clear()
+                    for k in ["raw_ops_df", "raw_ops_snapshots_df", "raw_pulse_df", "ops_df", "ops_snapshots_df"]:
+                        if k in st.session_state: del st.session_state[k]
+                    st.success("✅ All materialized views rebuilt successfully! Data is now up to date.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Materialization failed: {e}")
+
+        st.markdown("---")
         st.markdown("### 📊 Benchmark Snapshots")
         st.markdown("*Generate historical daily-average benchmarks from completed half-year periods. These power the H-over-H comparison table in the Dashboard.*")
 
@@ -2282,12 +2304,23 @@ if "🗄️ Operations Ingestion" in tab_map:
                     # Clear old log
                     open("data/api_sync.log", "w").close()
 
-                    # Launch detached thread
-                    t = threading.Thread(target=run_historical_pull, args=(sync_start.strftime('%Y-%m-%d'), sync_end.strftime('%Y-%m-%d')))
-                    t.add_script_run_ctx = True
+                    # Phase 14.1: Wrap pull + ETL materialization so data appears immediately
+                    def _sync_and_materialize(start, end):
+                        """Pull from API, then cascade into ETL materialization."""
+                        success = run_historical_pull(start, end)
+                        if success:
+                            try:
+                                import src.etl_worker as _etl
+                                _etl.main()
+                            except Exception as e:
+                                print(f"❌ ETL materialization failed after sync: {e}")
+
+                    # Launch detached thread with cascade
+                    t = threading.Thread(target=_sync_and_materialize, args=(sync_start.strftime('%Y-%m-%d'), sync_end.strftime('%Y-%m-%d')))
+                    t.daemon = True
                     t.start()
                     st.session_state.sync_thread = t
-                    st.success("Background worker launched!")
+                    st.success("Background worker launched! Data will auto-materialize after sync.")
                 else:
                     st.warning("A sync is already running in the background!")
 
