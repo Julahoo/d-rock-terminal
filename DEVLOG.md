@@ -1205,3 +1205,10 @@ Replaced `SELECT client_name, brand_code FROM contractual_slas` mapped instances
 - **The Python .apply() Bottleneck Fix**: Overhauled the core aggregation engine (src/analytics/base.py) by purging over 15+ instances of df.apply(lambda row: ..., axis=1). The use of .apply() forces Pandas to drop out of C-extensions and iterate locally in Python, introducing severe calculation lag on 300,000+ row datasets.
 - Replace logic with native 
 p.where() array vectorizations for metrics such as ggr_per_player, 	urnover_per_player, Avg_Deposit_Value, Avg_NGR_per_Player, and timestamp tracking (Tenure_Months, Months_Inactive) via pd.PeriodIndex. The backend data engine now processes entirely outside of standard Python bytecode loops.
+
+### [Refactor - Phase 13] - ETL Resiliency & Client-Level SLAs - 2026-03-16
+- **Issue Identified:** The midnight etl_worker.py crashed due to a Railway 500MB container OOM kill when reading 350,000+ operations rows continuously.
+- **Issue Identified:** Operational SLA thresholds were stored at the individual brand level, isolating true volumes rather than fulfilling client-level aggregate metrics.
+- **System Change 1:** Rebuilt src/etl_worker.py base materializations to use an asynchronous Pandas generator (pd.read_sql(chunksize=50000)), executing regex parses in batched 50K increments before flattening Memory load back natively to 0.
+- **System Change 2:** Refactored the contractual_volumes SLA Backend insertion logic (pp.py) to bypass brand filtering. The Admin System now injects #ALL as the global brand.
+- **System Change 3:** Modified the Operations Dashboard Trend mapping and fulfillment UI Scorecard to intelligently route SLA extraction boundaries at the global client-scale instead of specific brand domains.

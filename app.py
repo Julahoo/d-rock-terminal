@@ -1325,7 +1325,7 @@ if view_mode == "⚙️ Admin":
                 # --- Sub-Tab 1: Monthly Volumes ---
                 st.markdown("#### 1️⃣ Monthly Volume Minimums")
                 try:
-                    vol_df = pd.read_sql(f"SELECT brand_code as \"Brand\", lifecycle as \"Lifecycle\", monthly_minimum_records as \"Min Records\" FROM contractual_volumes WHERE client_name = '{client}'", engine)
+                    vol_df = pd.read_sql(f"SELECT client_name as \"Client\", lifecycle as \"Lifecycle\", monthly_minimum_records as \"Min Records\" FROM contractual_volumes WHERE client_name = '{client}'", engine)
                     st.dataframe(vol_df, width='stretch', hide_index=True)
                 except Exception as e:
                     st.info("No Volume Targets set.")
@@ -1333,23 +1333,23 @@ if view_mode == "⚙️ Admin":
                 c3, c4 = st.columns(2)
                 with c3:
                     with st.form("add_client_vol_form"):
-                        vol_brand = st.text_input("Brand (e.g., Rojabet)")
+                        st.markdown("**Client Volume Threshold**")
                         vol_lifecycle = st.selectbox("Lifecycle", ["RND", "WB", "AFF", "ALL"])
                         vol_min = st.number_input("Monthly Min Records", min_value=0, step=100)
                         if st.form_submit_button("Set Volume Minimum"):
                             execute_query("""INSERT INTO contractual_volumes (client_name, brand_code, lifecycle, monthly_minimum_records) 
-                                             VALUES (:c, :b, :l, :m) ON CONFLICT (client_name, brand_code, lifecycle) 
+                                             VALUES (:c, 'ALL', :l, :m) ON CONFLICT (client_name, brand_code, lifecycle) 
                                              DO UPDATE SET monthly_minimum_records = :m""",
-                                          {"c": client, "b": vol_brand.strip(), "l": vol_lifecycle.upper(), "m": vol_min})
+                                          {"c": client, "l": vol_lifecycle.upper(), "m": vol_min})
                             st.success("Volume Saved!")
                             st.rerun()
                 with c4:
                     with st.form("del_client_vol_form"):
-                        del_vol_brand = st.text_input("Brand Name to Remove")
+                        st.markdown("**Remove Threshold**")
                         del_vol_lc = st.selectbox("Lifecycle to Remove", ["RND", "WB", "AFF", "ALL"])
                         if st.form_submit_button("Delete Volume"):
-                            execute_query("DELETE FROM contractual_volumes WHERE client_name = :c AND brand_code = :b AND lifecycle = :l", 
-                                          {"c": client, "b": del_vol_brand.strip(), "l": del_vol_lc.upper()})
+                            execute_query("DELETE FROM contractual_volumes WHERE client_name = :c AND brand_code = 'ALL' AND lifecycle = :l", 
+                                          {"c": client, "l": del_vol_lc.upper()})
                             st.success("Deleted!")
                             st.rerun()
 
@@ -3994,11 +3994,11 @@ if "📞 Operations Command" in tab_map:
                         active_b = ops_df['ops_brand'].unique() if not ops_df.empty else []
                         vol_y_cols = ['Records']
                         
-                        # Setup target overlays if exactly 1 brand
-                        if len(active_b) == 1:
+                        # Setup target overlays if selected_client is not Global
+                        if selected_client != "Global":
                             sla_min = 0
                             try:
-                                slas_df = fetch_config_tables(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE brand_code = '{active_b[0]}'")
+                                slas_df = fetch_config_tables(f"SELECT monthly_minimum_records FROM contractual_volumes WHERE client_name = '{selected_client}' AND brand_code = 'ALL'")
                                 if not slas_df.empty: 
                                     sla_min = slas_df['monthly_minimum_records'].sum()
                             except: pass
@@ -4238,11 +4238,26 @@ if "📞 Operations Command" in tab_map:
                         sla_agg = sla_ops_target.groupby(["ops_client", "extracted_lifecycle"]).agg({"Records": "sum"}).reset_index()
                         sla_agg = sla_agg.rename(columns={"extracted_lifecycle": "SLA_Lifecycle"})
                     
+                    # Fetch Database Configs First
+                    vol_df = pd.DataFrame()
+                    try:
+                        vol_df = fetch_config_tables("SELECT client_name, lifecycle, monthly_minimum_records FROM contractual_volumes WHERE brand_code = 'ALL'")
+                    except:
+                        pass
+
                     # 4. Math & Target Mapping
                     def get_sla_target(row):
                         client = row["ops_client"]
                         lifecycle = row["SLA_Lifecycle"]
                         raw_target = default_sla_target
+                        
+                        # Check DB
+                        if not vol_df.empty:
+                            db_match = vol_df[(vol_df['client_name'] == client) & (vol_df['lifecycle'].isin([lifecycle, 'ALL']))]
+                            if not db_match.empty:
+                                raw_target = db_match['monthly_minimum_records'].max() # Use highest applicable (ALL or specific)
+                                return max(1, int(raw_target * local_sla_scale_factor))
+
                         if client in sla_targets and lifecycle in sla_targets[client]:
                             raw_target = sla_targets[client][lifecycle]
                         

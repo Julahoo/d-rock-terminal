@@ -13,59 +13,68 @@ from src.database import execute_query, engine as db_engine
 def materialize_ops_base_view():
     print(f"[{datetime.now().isoformat()}] Starting Operations Base Regex Materialization...")
     try:
-        df = pd.read_sql("SELECT * FROM ops_telemarketing_data", db_engine)
-        if df.empty:
+        total_rows = 0
+        first_chunk = True
+        for df in pd.read_sql("SELECT * FROM ops_telemarketing_data", db_engine, chunksize=50000):
+            if df.empty:
+                continue
+
+            # Clean generic strings
+            if 'ops_client' in df.columns: df['ops_client'] = df['ops_client'].astype(str).str.strip()
+            if 'ops_brand' in df.columns: df['ops_brand'] = df['ops_brand'].astype(str).str.strip()
+            
+            # UI-expected renames
+            df.rename(columns={
+                "campaign_name": "Campaign Name", "records": "Records", "total_cost": "Total_Campaign_Cost",
+                "conversions": "KPI1-Conv.", "kpi2_logins": "KPI2-Login", "li_pct": "LI%",
+                "true_cac": "True_CAC", "calls": "Calls", "d_total": "D", "d_plus": "D+",
+                "d_minus": "D-", "d_ratio": "D Ratio", "tech_issues": "T", "am": "AM",
+                "dnc": "DNC", "na": "NA", "dx": "DX", "wn": "WN"
+            }, inplace=True)
+            
+            # Vectorized Date Suffix Stripping
+            core_sig = df['Campaign Name'].astype(str)
+            core_sig = core_sig.str.replace(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', regex=True)
+            core_sig = core_sig.str.replace(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', regex=True)
+            core_sig = core_sig.str.replace(r'[_-]\d{4}[_-]\d{2}$', '', regex=True)
+            
+            df['Core_Signature'] = core_sig
+            df['Base Campaign'] = df['Core_Signature']
+            
+            # Vectorized Lifecycle Extraction
+            camp_upper = core_sig.str.upper()
+            df['ops_lifecycle'] = 'UNKNOWN'
+            df.loc[camp_upper.str.contains(r'[-_ ]WB', regex=True, na=False), 'ops_lifecycle'] = 'WB'
+            df.loc[camp_upper.str.contains(r'[-_ ]RND', regex=True, na=False), 'ops_lifecycle'] = 'RND'
+            
+            # Standard Strategy Signatures
+            df['Strategy_Signature'] = (
+                df['ops_brand'].fillna('UNKNOWN') + "-" +
+                df['country'].fillna('UNKNOWN') + "-" +
+                df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+                df['extracted_engagement'].fillna('UNKNOWN')
+            )
+            
+            # Vectorized Granular Campaign Signature
+            camp_str = df['Campaign Name'].astype(str)
+            norm_camp = camp_str.str.replace("-", "_")
+            mask_3 = norm_camp.str.contains(r'_\d+_\d+_\d+$', regex=True)
+            mask_2 = norm_camp.str.contains(r'_\d+_\d+$', regex=True)
+            
+            sig = camp_str.copy()
+            sig.loc[(mask_3 | mask_2) & camp_str.str.contains('_')] = camp_str.str.rsplit('_', n=1).str[0]
+            df['campaign_signature'] = sig
+
+            if_exists_action = 'replace' if first_chunk else 'append'
+            df.to_sql('ops_telemarketing_data_materialized', db_engine, if_exists=if_exists_action, index=False)
+            first_chunk = False
+            total_rows += len(df)
+            
+        if total_rows == 0:
             print("No data found in ops_telemarketing_data.")
             return False
-
-        # Clean generic strings
-        if 'ops_client' in df.columns: df['ops_client'] = df['ops_client'].astype(str).str.strip()
-        if 'ops_brand' in df.columns: df['ops_brand'] = df['ops_brand'].astype(str).str.strip()
-        
-        # UI-expected renames
-        df.rename(columns={
-            "campaign_name": "Campaign Name", "records": "Records", "total_cost": "Total_Campaign_Cost",
-            "conversions": "KPI1-Conv.", "kpi2_logins": "KPI2-Login", "li_pct": "LI%",
-            "true_cac": "True_CAC", "calls": "Calls", "d_total": "D", "d_plus": "D+",
-            "d_minus": "D-", "d_ratio": "D Ratio", "tech_issues": "T", "am": "AM",
-            "dnc": "DNC", "na": "NA", "dx": "DX", "wn": "WN"
-        }, inplace=True)
-        
-        # Vectorized Date Suffix Stripping
-        core_sig = df['Campaign Name'].astype(str)
-        core_sig = core_sig.str.replace(r'[_-]\d{4}[_-]\d{2}[_-]\d{2}$', '', regex=True)
-        core_sig = core_sig.str.replace(r'[_-]\d{2}[A-Z]{3}\d{4}$', '', regex=True)
-        core_sig = core_sig.str.replace(r'[_-]\d{4}[_-]\d{2}$', '', regex=True)
-        
-        df['Core_Signature'] = core_sig
-        df['Base Campaign'] = df['Core_Signature']
-        
-        # Vectorized Lifecycle Extraction
-        camp_upper = core_sig.str.upper()
-        df['ops_lifecycle'] = 'UNKNOWN'
-        df.loc[camp_upper.str.contains(r'[-_ ]WB', regex=True, na=False), 'ops_lifecycle'] = 'WB'
-        df.loc[camp_upper.str.contains(r'[-_ ]RND', regex=True, na=False), 'ops_lifecycle'] = 'RND'
-        
-        # Standard Strategy Signatures
-        df['Strategy_Signature'] = (
-            df['ops_brand'].fillna('UNKNOWN') + "-" +
-            df['country'].fillna('UNKNOWN') + "-" +
-            df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-            df['extracted_engagement'].fillna('UNKNOWN')
-        )
-        
-        # Vectorized Granular Campaign Signature
-        camp_str = df['Campaign Name'].astype(str)
-        norm_camp = camp_str.str.replace("-", "_")
-        mask_3 = norm_camp.str.contains(r'_\d+_\d+_\d+$', regex=True)
-        mask_2 = norm_camp.str.contains(r'_\d+_\d+$', regex=True)
-        
-        sig = camp_str.copy()
-        sig.loc[(mask_3 | mask_2) & camp_str.str.contains('_')] = camp_str.str.rsplit('_', n=1).str[0]
-        df['campaign_signature'] = sig
-
-        df.to_sql('ops_telemarketing_data_materialized', db_engine, if_exists='replace', index=False)
-        print(f"[{datetime.now().isoformat()}] Successfully materialized ops_telemarketing_data_materialized ({len(df)} rows).")
+            
+        print(f"[{datetime.now().isoformat()}] Successfully materialized ops_telemarketing_data_materialized ({total_rows} rows).")
         return True
     except Exception as e:
         print(f"❌ Failed to materialize ops base view: {e}")
@@ -74,20 +83,29 @@ def materialize_ops_base_view():
 def materialize_ops_snapshots_view():
     print(f"[{datetime.now().isoformat()}] Starting Operations Snapshots Materialization...")
     try:
-        df = pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", db_engine)
-        if df.empty:
+        total_rows = 0
+        first_chunk = True
+        for df in pd.read_sql("SELECT * FROM ops_telemarketing_snapshots", db_engine, chunksize=50000):
+            if df.empty:
+                continue
+
+            df['Strategy_Signature'] = (
+                df['ops_brand'].fillna('UNKNOWN') + "-" +
+                df['country'].fillna('UNKNOWN') + "-" +
+                df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
+                df['extracted_engagement'].fillna('UNKNOWN')
+            )
+            
+            if_exists_action = 'replace' if first_chunk else 'append'
+            df.to_sql('ops_telemarketing_snapshots_materialized', db_engine, if_exists=if_exists_action, index=False)
+            first_chunk = False
+            total_rows += len(df)
+            
+        if total_rows == 0:
             print("No data found in ops_telemarketing_snapshots.")
             return False
-
-        df['Strategy_Signature'] = (
-            df['ops_brand'].fillna('UNKNOWN') + "-" +
-            df['country'].fillna('UNKNOWN') + "-" +
-            df['extracted_lifecycle'].fillna('UNKNOWN') + "-" +
-            df['extracted_engagement'].fillna('UNKNOWN')
-        )
-        
-        df.to_sql('ops_telemarketing_snapshots_materialized', db_engine, if_exists='replace', index=False)
-        print(f"[{datetime.now().isoformat()}] Successfully materialized ops_telemarketing_snapshots_materialized ({len(df)} rows).")
+            
+        print(f"[{datetime.now().isoformat()}] Successfully materialized ops_telemarketing_snapshots_materialized ({total_rows} rows).")
         return True
     except Exception as e:
         print(f"❌ Failed to materialize ops snapshots view: {e}")
@@ -96,28 +114,33 @@ def materialize_ops_snapshots_view():
 def materialize_dashboard_pulse():
     print(f"[{datetime.now().isoformat()}] Starting Dashboard Pulse Materialization...")
     try:
-        # Load the base operations data
-        df = pd.read_sql("SELECT ops_date, extracted_engagement, records, conversions, kpi2_logins FROM ops_telemarketing_data", db_engine)
-        if df.empty:
+        accumulated_daily = []
+        for df in pd.read_sql("SELECT ops_date, extracted_engagement, records, conversions, kpi2_logins FROM ops_telemarketing_data", db_engine, chunksize=50000):
+            if df.empty:
+                continue
+
+            # Ensure ops_date is datetime
+            df['ops_date'] = pd.to_datetime(df['ops_date'], errors='coerce')
+            
+            # Convert necessary columns to numeric
+            for col in ['records', 'conversions', 'kpi2_logins']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+            daily_chunk = df.groupby(['ops_date', 'extracted_engagement']).agg(
+                total_records=('records', 'sum'),
+                total_conversions=('conversions', 'sum'),
+                total_logins=('kpi2_logins', 'sum')
+            ).reset_index()
+
+            daily_chunk = daily_chunk.dropna(subset=['ops_date'])
+            accumulated_daily.append(daily_chunk)
+
+        if not accumulated_daily:
             print("No data found in ops_telemarketing_data.")
             return
 
-        # Ensure ops_date is datetime
-        df['ops_date'] = pd.to_datetime(df['ops_date'], errors='coerce')
-        
-        # We need daily sums by engagement
-        # Convert necessary columns to numeric
-        for col in ['records', 'conversions', 'kpi2_logins']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-        # Normalize column names to match what pulse matrix expects, though we are doing it in SQL
-        daily = df.groupby(['ops_date', 'extracted_engagement']).agg(
-            total_records=('records', 'sum'),
-            total_conversions=('conversions', 'sum'),
-            total_logins=('kpi2_logins', 'sum')
-        ).reset_index()
-
-        daily = daily.dropna(subset=['ops_date'])
+        # Combine all chunk aggregates
+        daily = pd.concat(accumulated_daily).groupby(['ops_date', 'extracted_engagement']).sum().reset_index()
 
         # Write to database (replace existing table)
         daily.to_sql('dashboard_pulse_matrix', db_engine, if_exists='replace', index=False)
