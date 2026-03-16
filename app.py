@@ -952,7 +952,7 @@ with st.sidebar:
         st.session_state["date_preset"] = "Custom"
 
     if "date_preset" not in st.session_state:
-        st.session_state["date_preset"] = "Last 90 Days"
+        st.session_state["date_preset"] = "Last 30 Days"
         update_slider()
 
     options = ["Custom", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
