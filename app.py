@@ -341,6 +341,32 @@ def _cached_cohort_matrix():
     except Exception: return {}
 
 # Removed _cached_segmentation and _cached_program_summary block to prevent 350,000-row MD5 array hashing penalties.
+# Phase 14 Option B: Re-introduce with TTL-based caching keyed on smaller derived frames, not raw 350K-row df.
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_segmentation(df):
+    from src.analytics import generate_segmentation_summary
+    return generate_segmentation_summary(df)
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_program_summary(df):
+    from src.analytics import generate_program_summary
+    return generate_program_summary(df)
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_both_business(financial_summary):
+    from src.analytics import generate_both_business_summary
+    return generate_both_business_summary(financial_summary)
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_vip_churn_radar(df):
+    from src.analytics import generate_vip_churn_radar
+    return generate_vip_churn_radar(df)
+
+@st.cache_data(ttl="15m", show_spinner=False)
+def _cached_rfm_summary(df):
+    from src.analytics import generate_rfm_summary
+    return generate_rfm_summary(df)
 
 @st.cache_data(show_spinner=False)
 def _get_financial_excel_bytes(summary_df, cohort_matrices, segmentation, both_business):
@@ -726,19 +752,34 @@ with st.sidebar:
         
     view_mode = st.radio("Go to:", nav_options)
 
-    # --- 1. HYDRATE RAW DATA FROM CACHE ---
-    raw_ops = fetch_ops_data()
-    raw_fin = fetch_financial_data()
-    raw_ops_snapshots = fetch_ops_snapshots_data()
-
-    # Store minimal pointers silently (bypassing blocking UI spinner overlay penalties)
+    # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
+    # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
+    raw_ops = fetch_ops_data()  # Always needed (sidebar filters, Dashboard, Operations)
     st.session_state["raw_ops_df"] = raw_ops
-    st.session_state["raw_ops_snapshots_df"] = raw_ops_snapshots
-    st.session_state["raw_fin_df"] = raw_fin
-    st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
-    
     st.session_state["ops_df"] = raw_ops
+
+    # Financial data: only needed by Financial and Operations (CRM Intelligence) views
+    if view_mode in ["🏦 Financial", "📞 Operations", "⚙️ Admin"]:
+        raw_fin = fetch_financial_data()
+    else:
+        raw_fin = st.session_state.get("raw_fin_df", pd.DataFrame())
+        if raw_fin.empty:
+            raw_fin = fetch_financial_data()  # First-run fallback
+    st.session_state["raw_fin_df"] = raw_fin
     st.session_state["financial_df"] = raw_fin
+
+    # Snapshots: only needed by Operations Command
+    if view_mode in ["📞 Operations", "⚙️ Admin"]:
+        raw_ops_snapshots = fetch_ops_snapshots_data()
+    else:
+        raw_ops_snapshots = st.session_state.get("raw_ops_snapshots_df", pd.DataFrame())
+    st.session_state["raw_ops_snapshots_df"] = raw_ops_snapshots
+
+    # Pulse: only needed by Dashboard
+    if view_mode == "📊 Dashboard":
+        st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
+    elif "raw_pulse_df" not in st.session_state:
+        st.session_state["raw_pulse_df"] = pd.DataFrame()
 
     if raw_ops.empty and raw_fin.empty:
         st.sidebar.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
@@ -913,9 +954,49 @@ with st.sidebar:
     # Master DF for Dashboard auto-hydration
     _master_df = filtered_fin
 
+    # --- REPORT QUEUE SIDEBAR WIDGET (Phase 14, Option D) ---
+    from src.report_queue import ReportQueue
+    _rq = ReportQueue.get_instance()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📋 Report Queue")
+    
+    _available_reports = {
+        "Full Financial Export": "full_financial_export",
+        "Player Master List": "player_master_list",
+        "Cohort Retention Matrix": "cohort_matrix",
+        "VIP Churn Radar": "vip_churn_radar",
+    }
+    
+    _rq_col1, _rq_col2 = st.sidebar.columns([3, 1])
+    with _rq_col1:
+        _rq_selection = st.selectbox("📊 Report Type", list(_available_reports.keys()), label_visibility="collapsed")
+    with _rq_col2:
+        _rq_submit = st.button("🚀", help="Request this report in the background")
+    
+    if _rq_submit:
+        job_id = _rq.submit(
+            _available_reports[_rq_selection],
+            display_name=_rq_selection
+        )
+        st.sidebar.success(f"✅ Queued: {_rq_selection} (#{job_id})")
+    
+    # Show active/recent jobs
+    _rq_jobs = _rq.get_all_jobs()
+    if _rq_jobs:
+        for _j in _rq_jobs[:5]:
+            _status_icon = {"pending": "⏳", "running": "🔄", "done": "✅", "error": "❌"}.get(_j["status"], "❓")
+            _time_str = _j["completed_at"] or _j["requested_at"]
+            st.sidebar.caption(f"{_status_icon} {_j['display_name']} — {_time_str}")
+        
+        # Auto-poll if any jobs are still running
+        if any(j["status"] in ("pending", "running") for j in _rq_jobs):
+            time.sleep(0.5)  # Brief pause before re-poll
+            st.rerun()
+
     # --- BOTTOM SIDEBAR: AUTHENTICATION ---
     # Use vertical space to push this to the bottom of the sidebar visually
-    st.sidebar.markdown("<br>" * 10, unsafe_allow_html=True) 
+    st.sidebar.markdown("<br>" * 5, unsafe_allow_html=True) 
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"👤 **Role:** {st.session_state['user_role']}")
     
@@ -2239,19 +2320,29 @@ if "🗄️ Operations Ingestion" in tab_map:
                 st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  BI Dashboard — reads from session state
+#  BI Dashboard — reads from session state (LAZY: only compute if needed)
 # ══════════════════════════════════════════════════════════════════════════════
-if not _master_df.empty:
+# Phase 14, Option A: Financial analytics are ONLY needed by Financial Deep-Dive
+# and CRM Intelligence tabs. Dashboard and Admin views skip this entirely,
+# saving 3-6 seconds per rerun.
+financial_summary = pd.DataFrame()
+cohort_matrices = {}
+segmentation = pd.DataFrame()
+program_summary = pd.DataFrame()
+both_business = pd.DataFrame()
+
+if not _master_df.empty and view_mode in ["🏦 Financial", "📞 Operations"]:
     df = _master_df
     financial_summary = _cached_monthly_summaries(df, start=start_month, end=end_month)
     cohort_matrices = _cached_cohort_matrix()
     
-    # Bypass MD5 cache traps on the base 350k df. Native Pandas grouping (50ms) is 24x faster than Streamlit hashing (1200ms).
-    from src.analytics import generate_segmentation_summary, generate_program_summary, generate_both_business_summary
-    segmentation = generate_segmentation_summary(df)
-    program_summary = generate_program_summary(df)
+    # Phase 14 Option B: Use TTL-cached wrappers instead of re-computing every rerun
+    segmentation = _cached_segmentation(df)
+    program_summary = _cached_program_summary(df)
     
-    both_business = generate_both_business_summary(financial_summary)
+    both_business = _cached_both_business(financial_summary)
+elif not _master_df.empty:
+    df = _master_df
 
     # ══════════════════════════════════════════════════════════════════════
     #  BI Dashboard (Phase 9)
@@ -2416,7 +2507,7 @@ if not _master_df.empty:
         # RFM Tiering (brand-filtered)
         b_latest_month = bdf["month"].max()
         brand_raw = df[df["brand"] == brand_key]
-        b_rfm = generate_rfm_summary(brand_raw)
+        b_rfm = _cached_rfm_summary(brand_raw)
         if not b_rfm.empty:
             st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({b_latest_month})")
             bt1, bt2, bt3 = st.columns(3)
@@ -3055,7 +3146,7 @@ if not _master_df.empty:
                 # ── VIP Tiering (Phase 15 - RFM) ─────────────────────────
                 try:
                     latest_month_str = filtered_both["month"].max()
-                    rfm = generate_rfm_summary(_raw_df)
+                    rfm = _cached_rfm_summary(_raw_df)
                     if not rfm.empty:
                         st.markdown(f"##### 🏆 VIP Tiering — RFM Segmentation ({latest_month_str})")
                         t1, t2, t3 = st.columns(3)
@@ -3224,8 +3315,7 @@ if not _master_df.empty:
             st.markdown("#### > 📉 EARLY-WARNING VIP CHURN RADAR_")
             st.markdown("*Insight: Proactively flags high-value VIPs whose month-over-month NGR trajectory has crashed by >30%. Call them before they leave.*")
 
-            from src.analytics import generate_vip_churn_radar
-            churn_df = generate_vip_churn_radar(_raw_df)
+            churn_df = _cached_vip_churn_radar(_raw_df)
 
             if not churn_df.empty:
                 st.error(f"🚨 {len(churn_df)} VIPs are exhibiting severe flight risk behaviors in the latest month.")
@@ -3295,9 +3385,9 @@ if not _master_df.empty:
             st.caption(f"Currently viewing CRM targets for: {selected_client} | {selected_brand} | {selected_country}")
         
             # Load data through the CRM Engine heuristics (native grouping is 24x faster than @st.cache_data hashing)
-            from src.analytics import generate_rfm_summary, generate_smart_profiles
+            from src.analytics import generate_smart_profiles
             
-            rfm = generate_rfm_summary(_raw_df)
+            rfm = _cached_rfm_summary(_raw_df)
             smart = generate_smart_profiles(rfm)
             # Align to legacy column expectations internally
             if 'Smart_Profile' in smart.columns:

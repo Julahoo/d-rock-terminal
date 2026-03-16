@@ -1,8 +1,8 @@
-# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.2)
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.3)
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
-- **Architecture:** 4-Tier Modular Enterprise Platform (V3.2). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron.
+- **Architecture:** 4-Tier Modular Enterprise Platform (V3.3). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron. Async Report Queue for heavy analytics. Lazy Tab Computation guards for sub-second navigation.
 - **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
 - **UI Theme:** Material Design 3 Dark — Inter font (Google Fonts), Deep Purple primary (`#7C4DFF`), GitHub-dark backgrounds (`#0D1117`/`#161B22`), soft white text (`#E6EDF3`). Custom CSS injection via `st.markdown(unsafe_allow_html=True)` for metric cards with gradient/elevation, pill-style tabs/radio, rounded inputs/buttons with hover glow, and slim scrollbars. Config: `.streamlit/config.toml`.
 - **Deployment:** Railway (Docker) with PostgreSQL. Automated daily ops sync at 03:30 UTC.

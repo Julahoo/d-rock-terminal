@@ -4,6 +4,21 @@
 
 ## LOG ENTRIES
 
+### [Feature - Phase 14: Performance Profiling & Async Report Architecture] - 2026-03-16 - COMPLETED
+- **Objectives:** Systematically profile all 20 component boundaries in the production app, identify 4 critical bottlenecks, and implement 5 optimization options to achieve sub-second menu navigation.
+- **RCA Findings (Debugging Workflow Phase 1):**
+  1. "The Eager Compute Wall" (L2244-2254): 5 Financial analytics generators fire on every page load even for Dashboard/Admin users (3-6s wasted).
+  2. "Un-Cached CRM Analytics" (L3228, L2419): `generate_vip_churn_radar()` and `generate_rfm_summary()` recompute from scratch every render (1-2s wasted).
+  3. "3-Dataset Sidebar Hydration" (L730-738): All datasets load unconditionally (2-5s on cold cache).
+  4. "Inline Ops Aggregations" (L4120-4238): Scorecard and SLA aggregations run uncached (~300ms).
+- **Solution (5 Options Implemented):**
+  - **Option A:** Lazy Tab Computation — wrapped Financial analytics inside `view_mode in [Financial, Operations]` guard. Dashboard/Admin skip entirely.
+  - **Option B:** Cache Uncached Analytics — added 5 new `@st.cache_data(ttl=15m)` wrappers for segmentation, program summary, both business, VIP churn radar, and RFM summary.
+  - **Option C:** Conditional Dataset Hydration — only fetch datasets the current view needs (financial for Financial/Ops, snapshots for Ops, pulse for Dashboard).
+  - **Option D:** Async Report Queue — created `src/report_queue.py` with singleton threaded worker + sidebar widget for background report generation.
+  - **Option E:** ETL Pre-Computation — added `materialize_popular_reports()` to `src/etl_worker.py` to pre-compute financial summaries, segmentation, and program summaries during midnight cron.
+- **Files Changed:** `app.py`, `src/report_queue.py` [NEW], `src/etl_worker.py`
+
 ### [Feature - 60-Iteration Refactor Round 6 (Phase 12)] - 2026-03-15 - COMPLETED
 - **Objectives:** Execute pure technical optimizations resolving the 3 remaining structural bottlenecks (ETL Vectorization, Global Downcasting, UI Micro-Loops).
 - **RCA Findings:** The `src/etl_worker.py` midnight cron was processing 350k rows using python-level `lambda` regexes for Campaign Extraction, causing 3-minute blocking. The Railway Cloud instance was accumulating 300MB RAM peaks due to loading 64-bit numerical metrics and strings, risking the 500MB container limit. 

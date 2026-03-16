@@ -227,6 +227,80 @@ def materialize_crm_intelligence():
         print(f"❌ Failed to materialize CRM Intelligence: {e}")
         return False
 
+def materialize_popular_reports():
+    """Phase 14, Option E: Pre-compute popular analytics during midnight cron.
+    
+    Stores financial summaries, segmentation, and program summaries in cache tables
+    so the frontend can load them instantly without recomputing from raw data.
+    """
+    print(f"[{datetime.now().isoformat()}] Starting Popular Reports Pre-Computation...")
+    try:
+        import io
+        df = pd.read_sql("SELECT * FROM raw_financial_data", db_engine)
+        if df.empty:
+            print("No financial data found. Skipping popular reports.")
+            return False
+        
+        df.rename(columns={"player_id": "id"}, inplace=True)
+        if 'client' in df.columns: df['client'] = df['client'].astype(str).str.strip()
+        if 'brand' in df.columns: df['brand'] = df['brand'].astype(str).str.strip()
+
+        from src.analytics.base import (
+            generate_monthly_summaries, generate_segmentation_summary,
+            generate_program_summary, generate_both_business_summary
+        )
+
+        # 1. Monthly Financial Summaries
+        print(" > Computing Monthly Summaries...")
+        summary = generate_monthly_summaries(df)
+        
+        # 2. Segmentation Summary
+        print(" > Computing Segmentation Summary...")
+        segmentation = generate_segmentation_summary(df)
+        
+        # 3. Program Summary
+        print(" > Computing Program Summary...")
+        program = generate_program_summary(df)
+        
+        # 4. Both Business (Combined) Summary
+        print(" > Computing Both Business Summary...")
+        both_biz = generate_both_business_summary(summary)
+
+        # Store all in a single cache table
+        cache_records = []
+        if not summary.empty:
+            cache_records.append({
+                "report_name": "monthly_summaries",
+                "report_json": summary.to_json(orient="split", date_format="iso")
+            })
+        if not segmentation.empty:
+            cache_records.append({
+                "report_name": "segmentation_summary",
+                "report_json": segmentation.to_json(orient="split", date_format="iso")
+            })
+        if not program.empty:
+            cache_records.append({
+                "report_name": "program_summary",
+                "report_json": program.to_json(orient="split", date_format="iso")
+            })
+        if not both_biz.empty:
+            cache_records.append({
+                "report_name": "both_business_summary",
+                "report_json": both_biz.to_json(orient="split", date_format="iso")
+            })
+        
+        if cache_records:
+            pd.DataFrame(cache_records).to_sql(
+                'cache_popular_reports', db_engine,
+                if_exists='replace', index=False
+            )
+        
+        print(f"[{datetime.now().isoformat()}] Successfully pre-computed {len(cache_records)} popular reports.")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to materialize popular reports: {e}")
+        return False
+
 def main():
     print(f"🚀 ETL Worker starting at {datetime.now().isoformat()}")
     success_base = materialize_ops_base_view()
@@ -235,7 +309,9 @@ def main():
         
     materialize_ops_snapshots_view()
     materialize_crm_intelligence()
+    materialize_popular_reports()
     print(f"🏁 ETL Worker complete at {datetime.now().isoformat()}")
 
 if __name__ == "__main__":
     main()
+
