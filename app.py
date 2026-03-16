@@ -1619,6 +1619,26 @@ if view_mode == "⚙️ Admin":
         m3.metric("🗃️ Ops DB Rows", f"{ops_count:,}")
         m4.metric("📸 Snapshot Rows", f"{snap_count:,}")
 
+        # --- DATE RANGE DIAGNOSTICS (Phase 14.1) ---
+        try:
+            raw_dates = pd.read_sql("SELECT MIN(ops_date) as min_d, MAX(ops_date) as max_d FROM ops_telemarketing_data", _maint_engine)
+            mat_dates = pd.read_sql("SELECT MIN(ops_date) as min_d, MAX(ops_date) as max_d FROM ops_telemarketing_data_materialized", _maint_engine)
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("📅 Raw Min Date", str(raw_dates.iloc[0]['min_d'])[:10] if pd.notna(raw_dates.iloc[0]['min_d']) else "N/A")
+            d2.metric("📅 Raw Max Date", str(raw_dates.iloc[0]['max_d'])[:10] if pd.notna(raw_dates.iloc[0]['max_d']) else "N/A")
+            d3.metric("📅 View Min Date", str(mat_dates.iloc[0]['min_d'])[:10] if pd.notna(mat_dates.iloc[0]['min_d']) else "N/A")
+            d4.metric("📅 View Max Date", str(mat_dates.iloc[0]['max_d'])[:10] if pd.notna(mat_dates.iloc[0]['max_d']) else "N/A")
+            
+            # Show if there's a gap
+            raw_max = str(raw_dates.iloc[0]['max_d'])[:10] if pd.notna(raw_dates.iloc[0]['max_d']) else ""
+            mat_max = str(mat_dates.iloc[0]['max_d'])[:10] if pd.notna(mat_dates.iloc[0]['max_d']) else ""
+            if raw_max and mat_max and raw_max != mat_max:
+                st.warning(f"⚠️ **Data Gap Detected:** Raw table has data up to **{raw_max}** but materialized view only has up to **{mat_max}**. Click '⚡ Re-Materialize' below to fix.")
+            elif raw_max == mat_max:
+                st.success(f"✅ Raw and materialized views are in sync (latest: **{raw_max}**)")
+        except Exception:
+            pass
+
         st.markdown("---")
 
         pc1, pc2 = st.columns(2)
