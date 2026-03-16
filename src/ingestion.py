@@ -1082,12 +1082,10 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
             if field in batch_df.columns:
                 batch_df[field] = pd.to_numeric(batch_df[field], errors='coerce').fillna(0.0)
         
-        records_to_insert = True # Flag marker
-            
-        if records_to_insert:
-            batch_df = pd.DataFrame(records_to_insert)
+        # Phase 14.1 FIX: Removed legacy `records_to_insert = True` flag + `pd.DataFrame(records_to_insert)`
+        # which was overwriting the valid batch_df with an empty DataFrame, silently dropping all data.
+        if not batch_df.empty:
             try:
-                # Save permanently to PostgreSQL
                 batch_df.to_sql("ops_telemarketing_data", db_engine, if_exists="append", index=False)
             except Exception as e:
                 pass
