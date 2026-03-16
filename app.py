@@ -1701,6 +1701,48 @@ if view_mode == "⚙️ Admin":
                 except Exception as e:
                     st.error(f"❌ Materialization failed: {e}")
 
+        # --- PULL & MATERIALIZE MISSING DATES (Phase 14.1) ---
+        st.markdown("### 🔄 Pull & Materialize Missing Dates")
+        st.markdown("*Detects any date gaps between the latest data in the DB and yesterday. Pulls missing dates from the iWinBack API and materializes them.*")
+        
+        try:
+            _latest_raw = pd.read_sql("SELECT MAX(ops_date) as max_d FROM ops_telemarketing_data", _maint_engine)
+            _db_max = pd.to_datetime(_latest_raw.iloc[0]['max_d'])
+            _yesterday = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=1)
+            _yesterday = _yesterday.normalize().tz_localize(None)
+            
+            if pd.notna(_db_max) and _db_max < _yesterday:
+                _missing_start = (_db_max + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+                _missing_end = _yesterday.strftime('%Y-%m-%d')
+                _gap_days = (_yesterday - _db_max).days
+                st.warning(f"⚠️ **{_gap_days} missing day(s) detected:** DB latest = **{_db_max.strftime('%Y-%m-%d')}**, Yesterday = **{_missing_end}**")
+                
+                if st.button(f"🔄 Pull {_missing_start} → {_missing_end} & Materialize", width='stretch', type="primary"):
+                    with st.spinner(f"Pulling {_gap_days} missing day(s) from iWinBack API..."):
+                        try:
+                            success = run_historical_pull(_missing_start, _missing_end)
+                            if success:
+                                st.success("✅ API pull complete! Now materializing views...")
+                                import src.etl_worker as _etl
+                                _etl.main()
+                                fetch_ops_data.clear()
+                                fetch_ops_snapshots_data.clear()
+                                fetch_dashboard_pulse_data.clear()
+                                for k in ["raw_ops_df", "raw_ops_snapshots_df", "raw_pulse_df", "ops_df", "ops_snapshots_df"]:
+                                    if k in st.session_state: del st.session_state[k]
+                                st.success("✅ All missing dates pulled and materialized! Data is now up to date.")
+                                st.rerun()
+                            else:
+                                st.error("❌ API pull failed. Check the logs in Operations Ingestion.")
+                        except Exception as e:
+                            st.error(f"❌ Pull failed: {e}")
+            elif pd.notna(_db_max):
+                st.success(f"✅ No gaps detected. Latest data: **{_db_max.strftime('%Y-%m-%d')}**")
+            else:
+                st.info("No operations data in database yet.")
+        except Exception as e:
+            st.caption(f"Could not check for gaps: {e}")
+
         st.markdown("---")
         st.markdown("### 📊 Benchmark Snapshots")
         st.markdown("*Generate historical daily-average benchmarks from completed half-year periods. These power the H-over-H comparison table in the Dashboard.*")
