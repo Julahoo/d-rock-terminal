@@ -1,8 +1,8 @@
-# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.1)
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.2)
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
-- **Architecture:** 4-Tier Modular Enterprise Platform (V3.0). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron.
+- **Architecture:** 4-Tier Modular Enterprise Platform (V3.2). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron.
 - **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
 - **UI Theme:** Material Design 3 Dark — Inter font (Google Fonts), Deep Purple primary (`#7C4DFF`), GitHub-dark backgrounds (`#0D1117`/`#161B22`), soft white text (`#E6EDF3`). Custom CSS injection via `st.markdown(unsafe_allow_html=True)` for metric cards with gradient/elevation, pill-style tabs/radio, rounded inputs/buttons with hover glow, and slim scrollbars. Config: `.streamlit/config.toml`.
 - **Deployment:** Railway (Docker) with PostgreSQL. Automated daily ops sync at 03:30 UTC.
@@ -16,7 +16,7 @@
 - **`ops_telemarketing_snapshots`:** Mirror of `ops_telemarketing_data` for daily snapshots used by Dashboard Pulse matrices and benchmarks. Same column schema.
 - **`raw_financial_data`:** Core financial records populated from ingestion. Columns: `player_id`, `client`, `brand`, `country`, `wb_tag`, `segment`, `bet`, `revenue`, `ngr`, casino/sports splits, `deposits`, `withdrawals`, `bonus_*`, `tax_total`, `report_month`, `reactivation_date`, `campaign_start_date`, `reactivation_days`.
 - **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`, `financial_format` (Enum: Standard, LeoVegas, Offside). Used to normalize incoming data and intercept/quarantine orphaned tags.
-- **`contractual_volumes`:** Client-specific SLA volume thresholds. Columns: `client_name`, `brand_code`, `lifecycle`, `monthly_minimum_records`. UNIQUE on `(client_name, brand_code, lifecycle)`.
+- **`contractual_volumes`:** Client-specific SLA volume thresholds. Columns: `client_name`, `brand_code` (Admin UI globally injects 'ALL' to bypass legacy brand limits), `lifecycle`, `monthly_minimum_records`. UNIQUE on `(client_name, brand_code, lifecycle)`.
 - **`ops_historical_benchmarks`:** Aggregated benchmark averages per brand/country/lifecycle/segment/engagement.
 - **`users`:** RBAC authentication registry. Columns: `username` (UNIQUE), `password_hash` (SHA-256 hex digest — never store plaintext), `role` (Enum: `Superadmin`, `Admin`, `Operations`, `Financial`), `name`, `allowed_clients` (JSONB array). Min password length: 4 characters.
 - **`ops_contact_events`:** Player-level journey events pulled from iWinBack contact APIs. Columns: `box_id`, `contact_id`, `account_number`, `campaign_id`, `brand_id`, `event_type` (login/register/deposit), `event_at`, `extra_data` (JSONB), `ingested_at`. Indexes on `campaign_id`, `account_number`, and `(event_type, event_at)`. Financial linkage via `account_number` → `raw_financial_data.player_id` for True ROI.
