@@ -2741,6 +2741,9 @@ elif not _master_df.empty:
     # ═════════════════════════════════════════════════════════════════════
     if "🏦 Financial Deep-Dive" in tab_map:
         with tab_map["🏦 Financial Deep-Dive"]:
+            if financial_summary.empty or "brand" not in financial_summary.columns:
+                st.info("📊 No financial data available for the selected 'Analysis Window'. Please select a wider date range (e.g., 'Last 90 Days') from the sidebar.")
+
             # ── System Diagnostic (Combined) ──────────────────────────────────
             if not both_business.empty:
                 active_bb = both_business[both_business["total_players"] > 0]
@@ -2768,7 +2771,10 @@ elif not _master_df.empty:
                         st.info(e_narrative)
 
                 # --- DYNAMIC BRAND DETECTION ---
-                active_brands = sorted([b for b in financial_summary["brand"].unique() if b != "Combined"])
+                if not financial_summary.empty and "brand" in financial_summary.columns:
+                    active_brands = sorted([b for b in financial_summary["brand"].unique() if b != "Combined"])
+                else:
+                    active_brands = []
                 combined_label = "All Business" if len(active_brands) > 2 else "Both Business"
 
                 # ── Cross-Brand Executive Matrix ─────────────────────────────
@@ -2779,7 +2785,10 @@ elif not _master_df.empty:
                     master_excel = _get_master_excel_bytes(financial_summary, cohort_matrices, segmentation, both_business)
                     st.download_button("📥 Download Master Report", data=master_excel, file_name=f"Master_Report_{selected_client}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
-                latest_month = both_business["month"].max()
+                if not both_business.empty and "month" in both_business.columns:
+                    latest_month = both_business["month"].max()
+                else:
+                    latest_month = None
 
                 _mom_map = {
                     "Turnover": "total_handle", "GGR": "ggr", "Margin %": "hold_pct",
