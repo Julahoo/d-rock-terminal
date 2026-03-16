@@ -19,6 +19,13 @@
   - **Option E:** ETL Pre-Computation — added `materialize_popular_reports()` to `src/etl_worker.py` to pre-compute financial summaries, segmentation, and program summaries during midnight cron.
 - **Files Changed:** `app.py`, `src/report_queue.py` [NEW], `src/etl_worker.py`
 
+### [Hotfix - Phase 14.1: Styler Crash + Dashboard Snapshot Rendering] - 2026-03-16 - COMPLETED
+- **Problem 1:** `StreamlitAPIException: The dataframe has 35600400 cells` — Pandas Styler has a 1.5M cell limit. The Operations Ledger (350K rows × 100 cols) styled via `.style.format().map()` exceeded this, crashing production.
+- **Fix:** Replaced Pandas Styler with Streamlit's native `column_config` formatting (no cell limit).
+- **Problem 2:** Dashboard Pulse cards recomputed 24 rolling-window calculations + Plotly sparklines on every page load, despite data being static after the 4:30 AM ETL run.
+- **Fix:** Extended `materialize_dashboard_pulse()` in `src/etl_worker.py` to pre-compute the entire card payload (values, deltas, sparkline JSON) during the ETL run. Added `_cached_pulse_card_snapshot(ttl=24h)` fetcher. Dashboard now reads snapshots instantly with inline fallback.
+- **Commit Hash:** `df051ef`
+
 ### [Feature - 60-Iteration Refactor Round 6 (Phase 12)] - 2026-03-15 - COMPLETED
 - **Objectives:** Execute pure technical optimizations resolving the 3 remaining structural bottlenecks (ETL Vectorization, Global Downcasting, UI Micro-Loops).
 - **RCA Findings:** The `src/etl_worker.py` midnight cron was processing 350k rows using python-level `lambda` regexes for Campaign Extraction, causing 3-minute blocking. The Railway Cloud instance was accumulating 300MB RAM peaks due to loading 64-bit numerical metrics and strings, risking the 500MB container limit. 
