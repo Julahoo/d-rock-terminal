@@ -550,26 +550,27 @@ def fetch_ops_snapshots():
     except Exception:
         return pd.DataFrame()
 
-def _generate_sidebar_filters(raw_ops, raw_fin):
+@st.cache_data(ttl="15m", show_spinner=False)
+def _generate_sidebar_filters(_raw_ops, _raw_fin):
     
     db_clients = set()
-    if not raw_ops.empty and 'ops_client' in raw_ops.columns: db_clients.update(raw_ops['ops_client'].unique())
-    if not raw_fin.empty and 'client' in raw_fin.columns: db_clients.update(raw_fin['client'].unique())
+    if not _raw_ops.empty and 'ops_client' in _raw_ops.columns: db_clients.update(_raw_ops['ops_client'].unique())
+    if not _raw_fin.empty and 'client' in _raw_fin.columns: db_clients.update(_raw_fin['client'].unique())
     
     db_brands = set()
-    if not raw_ops.empty and 'ops_brand' in raw_ops.columns: db_brands.update(raw_ops['ops_brand'].unique())
-    if not raw_fin.empty and 'brand' in raw_fin.columns: db_brands.update(raw_fin['brand'].unique())
+    if not _raw_ops.empty and 'ops_brand' in _raw_ops.columns: db_brands.update(_raw_ops['ops_brand'].unique())
+    if not _raw_fin.empty and 'brand' in _raw_fin.columns: db_brands.update(_raw_fin['brand'].unique())
     
     avail_countries_raw = []
-    if not raw_ops.empty and 'country' in raw_ops.columns:
-        avail_countries_raw = sorted([str(c).upper() for c in raw_ops['country'].unique() if pd.notna(c) and str(c).strip() != ""])
+    if not _raw_ops.empty and 'country' in _raw_ops.columns:
+        avail_countries_raw = sorted([str(c).upper() for c in _raw_ops['country'].unique() if pd.notna(c) and str(c).strip() != ""])
         
-    avail_products = sorted([str(c) for c in raw_ops['extracted_product'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_product' in raw_ops.columns else []
-    avail_languages = sorted([str(c) for c in raw_ops['extracted_language'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_language' in raw_ops.columns else []
-    avail_lifecycles = sorted([str(c) for c in raw_ops['extracted_lifecycle'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_lifecycle' in raw_ops.columns else []
-    avail_segments = sorted([str(c) for c in raw_ops['extracted_segment'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_segment' in raw_ops.columns else []
-    avail_sublifecycles = sorted([str(c) for c in raw_ops['extracted_sublifecycle'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_sublifecycle' in raw_ops.columns else []
-    avail_engagements = sorted([str(c) for c in raw_ops['extracted_engagement'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not raw_ops.empty and 'extracted_engagement' in raw_ops.columns else []
+    avail_products = sorted([str(c) for c in _raw_ops['extracted_product'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not _raw_ops.empty and 'extracted_product' in _raw_ops.columns else []
+    avail_languages = sorted([str(c) for c in _raw_ops['extracted_language'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not _raw_ops.empty and 'extracted_language' in _raw_ops.columns else []
+    avail_lifecycles = sorted([str(c) for c in _raw_ops['extracted_lifecycle'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not _raw_ops.empty and 'extracted_lifecycle' in _raw_ops.columns else []
+    avail_segments = sorted([str(c) for c in _raw_ops['extracted_segment'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not _raw_ops.empty and 'extracted_segment' in _raw_ops.columns else []
+    avail_sublifecycles = sorted([str(c) for c in _raw_ops['extracted_sublifecycle'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not _raw_ops.empty and 'extracted_sublifecycle' in _raw_ops.columns else []
+    avail_engagements = sorted([str(c) for c in _raw_ops['extracted_engagement'].unique() if pd.notna(c) and str(c) != "UNKNOWN"]) if not _raw_ops.empty and 'extracted_engagement' in _raw_ops.columns else []
 
     return (
         sorted(list(db_clients)),
@@ -583,17 +584,18 @@ def _generate_sidebar_filters(raw_ops, raw_fin):
         avail_engagements
     )
 
-def _generate_global_date_boundaries(raw_ops, raw_fin):
+@st.cache_data(ttl="15m", show_spinner=False)
+def _generate_global_date_boundaries(_raw_ops, _raw_fin):
     import pandas as pd
     valid_mins, valid_maxs = [], []
     
-    if not raw_ops.empty and 'ops_date' in raw_ops.columns:
-        ops_dates = pd.to_datetime(raw_ops['ops_date'])
+    if not _raw_ops.empty and 'ops_date' in _raw_ops.columns:
+        ops_dates = pd.to_datetime(_raw_ops['ops_date'])
         valid_maxs.append(ops_dates.max())
         valid_mins.append(ops_dates.min())
         
-    if not raw_fin.empty and 'report_month' in raw_fin.columns:
-        fin_dates = pd.to_datetime(raw_fin['report_month'], format='mixed', errors='coerce')
+    if not _raw_fin.empty and 'report_month' in _raw_fin.columns:
+        fin_dates = pd.to_datetime(_raw_fin['report_month'], format='mixed', errors='coerce')
         if not fin_dates.empty and not fin_dates.isna().all():
              valid_maxs.append(fin_dates.max() + pd.offsets.MonthEnd(0))
              valid_mins.append(fin_dates.min())
@@ -856,16 +858,12 @@ with st.sidebar:
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # MEMORY OPTIMIZATION: @st.cache_resource returns SAME object (zero-copy) across all sessions.
     # Do NOT store in session_state — that creates per-user copies and wastes RAM.
-    _mem_mb("BEFORE fetch_ops_data")
     raw_ops = fetch_ops_data()  # Always needed (sidebar filters, Operations)
-    _mem_mb(f"AFTER fetch_ops_data ({len(raw_ops)} rows)")
     st.session_state["ops_df"] = raw_ops  # Thin reference, not a copy
 
     # Snapshots: only needed by Operations Historical Benchmarks
     if view_mode in ["📞 Operations"]:
-        _mem_mb("BEFORE fetch_ops_snapshots")
         st.session_state["snap_df"] = fetch_ops_snapshots_data()
-        _mem_mb(f"AFTER fetch_ops_snapshots")
 
     if raw_ops.empty and st.session_state.get("financial_df", pd.DataFrame()).empty:
         st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
@@ -877,12 +875,10 @@ with st.sidebar:
     # --- MASSIVE PERFORMANCE BOOST ---
     # Fetch unique categories directly from the isolated memory cache instead of making Pandas 
     # extract distinct rows from 350,000+ string arrays on every generic UI button click.
-    _mem_mb("BEFORE _generate_sidebar_filters")
     (
         db_clients, sorted_brands, avail_countries_raw, avail_products, 
         avail_languages, avail_lifecycles, avail_segments, avail_sublifecycles, avail_engagements
     ) = _generate_sidebar_filters(raw_ops, st.session_state.get("financial_df", pd.DataFrame()))
-    _mem_mb("AFTER _generate_sidebar_filters")
 
     allowed = st.session_state.get("allowed_clients", ["All"])
     if "All" not in allowed:
@@ -964,9 +960,7 @@ with st.sidebar:
 
     # 5. Elite Date Range Quick-Select Helper
     # Fetch from ultra-fast cached boundaries instead of coercing 350,000 strings into datetime vectors
-    _mem_mb("BEFORE _generate_global_date_boundaries")
     min_db_date, max_date = _generate_global_date_boundaries(raw_ops, st.session_state.get("financial_df", pd.DataFrame()))
-    _mem_mb("AFTER _generate_global_date_boundaries")
 
     # Streamlit slider min_value must be STRICTLY less than max_value
     if min_db_date.date() >= max_date.date():
@@ -1045,7 +1039,6 @@ with st.sidebar:
     # Keep session state in sync with the new date pickers
     st.session_state["date_slider_val"] = (start_date_val, end_date_val)
 
-    _mem_mb("BEFORE filter declarations")
     start_date_str = start_date_val.strftime("%Y-%m-%d")
     end_date_str = end_date_val.strftime("%Y-%m-%d")
     start_month = start_date_val.strftime("%Y-%m")
@@ -4603,7 +4596,6 @@ if "📞 Operations Command" in tab_map:
                 )
 
             # --- 📋 Daily Campaign Detail (Non-Aggregated) ---
-            _mem_mb("AFTER SLA_Tracker_Section / BEFORE Daily_Campaign_Detail")
             st.markdown("---")
             st.markdown("### 📋 Daily Campaign Detail")
             st.markdown("*Raw campaign rows as received from the daily pull — no date aggregation.*")
@@ -4670,7 +4662,6 @@ if "📞 Operations Command" in tab_map:
 
 
             # Campaign Comparison Matrix — REMOVED per user request (v14.2)
-            _mem_mb("AFTER Daily_Campaign_Detail / BEFORE True_Cost_Ledger")
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
             ledger_agg_cols = {'Records': 'sum', 'Calls': 'sum', 'Total_Campaign_Cost': 'sum', 'KPI1-Conv.': 'sum'}
@@ -4733,7 +4724,6 @@ if "📞 Operations Command" in tab_map:
                     "Conv %": st.column_config.NumberColumn("Conv %", format="%.1f%%"),
                 }
             )
-            _mem_mb("AFTER True_Cost_Ledger")
         else:
             st.warning("⚠️ **No Operations Data Loaded**.")
             st.info("Please navigate to the **🗄️ Operations Ingestion** tab and upload your daily `CSV/XLSX` reports or trigger a CallsU API sync.")
