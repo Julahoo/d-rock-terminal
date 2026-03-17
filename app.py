@@ -22,6 +22,14 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 
+# ── Memory Diagnostics (OOM tracing) ──
+import psutil, gc
+def _mem_mb(tag=""):
+    """Log current RSS memory in MB to stdout (visible in Railway logs)."""
+    rss = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+    print(f"[MEM] {tag}: {rss:.0f} MB", flush=True)
+    return rss
+
 # Increase Pandas Styler limits to prevent crashes on large ledgers
 pd.set_option("styler.render.max_elements", 1_500_000)
 
@@ -815,12 +823,16 @@ with st.sidebar:
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # MEMORY OPTIMIZATION: @st.cache_resource returns SAME object (zero-copy) across all sessions.
     # Do NOT store in session_state — that creates per-user copies and wastes RAM.
+    _mem_mb("BEFORE fetch_ops_data")
     raw_ops = fetch_ops_data()  # Always needed (sidebar filters, Operations)
+    _mem_mb(f"AFTER fetch_ops_data ({len(raw_ops)} rows)")
     st.session_state["ops_df"] = raw_ops  # Thin reference, not a copy
 
     # Snapshots: only needed by Operations Historical Benchmarks
     if view_mode in ["📞 Operations"]:
+        _mem_mb("BEFORE fetch_ops_snapshots")
         st.session_state["snap_df"] = fetch_ops_snapshots_data()
+        _mem_mb(f"AFTER fetch_ops_snapshots")
 
     if raw_ops.empty and st.session_state.get("financial_df", pd.DataFrame()).empty:
         st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
@@ -1005,16 +1017,19 @@ with st.sidebar:
     # MASSIVE PERFORMANCE BOOST: Only iterate 350k rows IF the sidebar actually changed. 
     # If the user just clicked a new Tab, Streamlit hits this function cache execution key 
     # natively (in nanoseconds) and retrieves the subset dataframes directly from memory.
+    _mem_mb("BEFORE _apply_global_filters")
     filtered_ops, filtered_ops_snapshots, filtered_fin = _apply_global_filters(
         selected_client, selected_brand, selected_category, selected_country, 
         selected_language, selected_lifecycle, selected_segment, 
         selected_sublifecycle, selected_engagement, selected_campaign, 
         start_date_str, end_date_str, start_month, end_month
     )
+    _mem_mb(f"AFTER _apply_global_filters (ops={len(filtered_ops)}, snap={len(filtered_ops_snapshots)}, fin={len(filtered_fin)})")
 
     st.session_state["ops_df"] = filtered_ops
     st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
     st.session_state["financial_df"] = filtered_fin
+    _mem_mb("AFTER session_state assignment")
 
     # Master DF for Dashboard auto-hydration
     _master_df = filtered_fin
