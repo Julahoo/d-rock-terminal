@@ -1165,9 +1165,15 @@ with st.sidebar:
     st.markdown(f"👤 **Role:** {st.session_state['user_role']}")
     
     if st.button("🚪 Logout", key="logout_btn_bottom", use_container_width=True):
-        st.session_state.clear()
-        cookie_manager.delete("auth_session")
-        st.rerun()
+        st.session_state["logout_triggered"] = True
+
+    if st.session_state.get("logout_triggered"):
+        with st.spinner("Clearing secure session..."):
+            cookie_manager.delete("auth_session")
+            import time
+            time.sleep(1) # CRITICAL: Give JS time to delete the browser cookie
+            st.session_state.clear()
+            st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  System Settings View (Full-Screen, Superadmin Only)
