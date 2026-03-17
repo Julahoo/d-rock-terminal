@@ -4103,12 +4103,12 @@ if "📞 Operations Command" in tab_map:
                 else:
                     ops_sla = ops_df
 
-                client_agg = ops_sla.groupby('ops_client').agg(agg_cols).reset_index()
+                client_agg = ops_sla.groupby('ops_client', observed=True).agg(agg_cols).reset_index()
                 # Remove UNKNOWN client — these are unmapped campaigns
                 client_agg = client_agg[client_agg['ops_client'] != 'UNKNOWN']
                 # Get active lifecycles per client
                 if lc_col:
-                    client_lcs = ops_sla.groupby('ops_client')[lc_col].apply(lambda x: sorted(x.unique())).to_dict()
+                    client_lcs = ops_sla.groupby('ops_client', observed=True)[lc_col].apply(lambda x: sorted(x.unique())).to_dict()
                 else:
                     client_lcs = {}
 
@@ -4152,7 +4152,7 @@ if "📞 Operations Command" in tab_map:
                                                       'calls': 'sum'}
                                     for _sc in ['sa', 'sd', 'sf', 'sp', 'ev', 'es', 'ed', 'ef', 'eo', 'ec']:
                                         if _sc in _snap.columns: _snap_agg_cols[_sc] = 'sum'
-                                    _snap_client = _snap_period.groupby('ops_client').agg(_snap_agg_cols).reset_index()
+                                    _snap_client = _snap_period.groupby('ops_client', observed=True).agg(_snap_agg_cols).reset_index()
                                     for _, _sr in _snap_client.iterrows():
                                         _cl = _sr['ops_client']
                                         _scale = num_days / _snap_days
@@ -4220,7 +4220,7 @@ if "📞 Operations Command" in tab_map:
                                         # Get per-brand stats from ops data for this client
                                         client_ops = ops_sla[ops_sla['ops_client'] == client]
                                         if not client_ops.empty:
-                                            brand_stats = client_ops.groupby('ops_brand').agg({'Records': 'sum'}).reset_index()
+                                            brand_stats = client_ops.groupby('ops_brand', observed=True).agg({'Records': 'sum'}).reset_index()
                                             for bn in registered_brands:
                                                 bn_row = brand_stats[brand_stats['ops_brand'] == bn]
                                                 bn_recs = int(bn_row['Records'].iloc[0]) if not bn_row.empty else 0
@@ -4402,7 +4402,7 @@ if "📞 Operations Command" in tab_map:
                 if 'LI%' in latest_snaps.columns:
                     agg_dict['LI%'] = 'mean'
                     
-                daily_trends = latest_snaps.groupby('ops_date').agg(agg_dict).reset_index().sort_values('ops_date')
+                daily_trends = latest_snaps.groupby('ops_date', observed=True).agg(agg_dict).reset_index().sort_values('ops_date')
 
                 def display_trend_charts(df_filtered):
                     if len(df_filtered) > 0:
@@ -4533,7 +4533,7 @@ if "📞 Operations Command" in tab_map:
                 avail_cols = [c for c in req_cols if c in ops_df.columns]
                 agg_dict = {c: 'sum' for c in avail_cols}
                 
-                scorecard_df = ops_df.groupby("Core_Signature").agg(agg_dict).reset_index()
+                scorecard_df = ops_df.groupby("Core_Signature", observed=True).agg(agg_dict).reset_index()
                 
                 # Backfill structural zeros onto the tiny aggregated frame, not the 350k main table
                 for c in req_cols:
@@ -4702,7 +4702,7 @@ if "📞 Operations Command" in tab_map:
                 if c in ops_df.columns: ledger_agg_cols[c] = 'sum'
             ledger_group = ['Campaign Name', 'ops_client', 'ops_brand', 'ops_date']
             ledger_group = [c for c in ledger_group if c in ops_df.columns]
-            ledger_df = ops_df.groupby(ledger_group).agg(ledger_agg_cols).reset_index()
+            ledger_df = ops_df.groupby(ledger_group, observed=True).agg(ledger_agg_cols).reset_index()
             ledger_df['True_CAC'] = (ledger_df['Total_Campaign_Cost'] / ledger_df['KPI1-Conv.']).replace([float('inf'), -float('inf')], 0).fillna(0)
             
             # Conv % = Conversions / New Data
