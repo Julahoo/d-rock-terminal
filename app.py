@@ -258,6 +258,25 @@ div[data-testid="stExpander"] {
 section[data-testid="stSidebar"] {
     border-right: 1px solid #334155 !important;
 }
+/* ── Sidebar width normalization ── */
+/* Remove form border/padding inside sidebar so all widgets align flush */
+section[data-testid="stSidebar"] [data-testid="stForm"] {
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+}
+/* Ensure all sidebar widgets use full width */
+section[data-testid="stSidebar"] .stSelectbox,
+section[data-testid="stSidebar"] .stRadio,
+section[data-testid="stSidebar"] .stTextInput,
+section[data-testid="stSidebar"] .stDateInput,
+section[data-testid="stSidebar"] .stButton {
+    width: 100% !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    width: 100% !important;
+}
 
 /* ── Matrix theme: neon glow CSS ── */
 /* Neon green glow on metric numbers */
