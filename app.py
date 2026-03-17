@@ -783,7 +783,6 @@ if "data_loaded" not in st.session_state:
 with st.sidebar:
     st.markdown("### 🦅 CallsU Command **(v2.0.1)**")
 
-    st.markdown("### 🧭 NAVIGATION")
     nav_options = ["📊 Dashboard"]
     if st.session_state.get("user_role") in ["Superadmin", "Admin", "Operations"]:
         nav_options.append("📞 Operations")
@@ -791,8 +790,9 @@ with st.sidebar:
         nav_options.append("🏦 Financial")
     if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
         nav_options.append("⚙️ Admin")
-        
-    view_mode = st.radio("Go to:", nav_options, label_visibility="collapsed")
+
+    st.sidebar.markdown("---")
+    view_mode = st.sidebar.radio("🧭 Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
