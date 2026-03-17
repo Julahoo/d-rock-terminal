@@ -768,9 +768,6 @@ except Exception as e:
 # ── Matrix theme: neon glow CSS ──────────────────────────────────────────
 # Matrix neon glow CSS has been optimized and consolidated into _MATERIAL_CSS at the top of the file
 
-st.title("📊 D-ROCK DASHBOARD")
-st.markdown("*Enterprise Business Intelligence & Operations Command*")
-st.markdown("---")
 
 # ── 🔐 Enterprise Authentication & Data Security RBAC ──────────────────
 
@@ -858,6 +855,10 @@ if "data_loaded" not in st.session_state:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
+
+st.title("📊 D-ROCK DASHBOARD")
+st.markdown("*Enterprise Business Intelligence & Operations Command*")
+st.markdown("---")
 
 # Global Helper just for this debug session
 def _mem_mb(tag):
