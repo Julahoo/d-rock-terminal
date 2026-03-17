@@ -4009,96 +4009,92 @@ if "📞 Operations Command" in tab_map:
                 num_days = ops_df['ops_date'].nunique() if 'ops_date' in ops_df.columns else 1
                 sla_scale_factor = num_days / 30.0
 
-                # --- Build CLIENT-level cards with brands nested inside ---
-                # 1. Aggregate ops data by client -> brand -> lifecycle
+                # --- Fetch brand registry for proper client→brand mapping ---
+                try:
+                    brand_registry = fetch_config_tables("SELECT client_name, brand_name FROM client_mapping")
+                    # Build dict: client → [brand_name, ...]
+                    client_brand_map = {}
+                    if not brand_registry.empty:
+                        for _, br in brand_registry.iterrows():
+                            cn = str(br.get('client_name', '')).strip()
+                            bn = str(br.get('brand_name', '')).strip()
+                            if cn and bn:
+                                client_brand_map.setdefault(cn, set()).add(bn)
+                except Exception:
+                    client_brand_map = {}
+
+                # --- Build CLIENT-level cards ---
+                # Aggregate at the client level only (not per-brand) for metrics
                 agg_cols = {'Records': 'sum', 'KPI2-Login': 'sum', 'KPI1-Conv.': 'sum', 'Calls': 'sum'}
-                # SMS metrics (sa=sent, sd=delivered, sf=failed, sp=pending)
                 for sc in ['sa', 'sd', 'sf', 'sp']:
                     if sc in ops_df.columns: agg_cols[sc] = 'sum'
-                # Email metrics (ev=sent, es=sent2, ed=delivered, ef=failed, eo=opened, ec=clicked)
                 for ec_col in ['ev', 'es', 'ed', 'ef', 'eo', 'ec']:
                     if ec_col in ops_df.columns: agg_cols[ec_col] = 'sum'
-                # Call delivery metrics
                 for dc in ['D+', 'D', 'D-']:
                     if dc in ops_df.columns: agg_cols[dc] = 'sum'
 
-                client_brand_lc = ops_df.groupby(['ops_client', 'ops_brand', 'extracted_lifecycle']).agg(agg_cols).reset_index()
+                # Filter to known lifecycles only (skip UNKNOWN)
+                lc_col = 'extracted_lifecycle' if 'extracted_lifecycle' in ops_df.columns else None
+                if lc_col:
+                    ops_sla = ops_df[ops_df[lc_col] != 'UNKNOWN']
+                else:
+                    ops_sla = ops_df
 
-                # 2. Build nested dict: client -> {brands: {brand -> {lifecycles, metrics}}}
-                client_cards = {}
-                for _, row in client_brand_lc.iterrows():
-                    client = row['ops_client']
-                    brand = row['ops_brand']
-                    lc = row['extracted_lifecycle']
-                    if lc == 'UNKNOWN': continue
+                client_agg = ops_sla.groupby('ops_client').agg(agg_cols).reset_index()
+                # Get active lifecycles per client
+                if lc_col:
+                    client_lcs = ops_sla.groupby('ops_client')[lc_col].apply(lambda x: sorted(x.unique())).to_dict()
+                else:
+                    client_lcs = {}
 
-                    if client not in client_cards:
-                        client_cards[client] = {'brands': {}, 'total_records': 0, 'total_logins': 0, 'total_conv': 0,
-                                                'total_calls': 0, 'total_sms': 0, 'total_emails': 0,
-                                                'total_d_plus': 0, 'total_d': 0, 'total_d_minus': 0,
-                                                'total_sd': 0, 'total_sms_total': 0,
-                                                'total_ed': 0, 'total_ef': 0, 'total_eo': 0,
-                                                'lifecycles': set()}
-                    cc = client_cards[client]
-                    if brand not in cc['brands']:
-                        cc['brands'][brand] = {'lifecycles': set(), 'records': 0}
-                    cc['brands'][brand]['lifecycles'].add(lc)
-                    cc['brands'][brand]['records'] += int(row.get('Records', 0))
-                    cc['lifecycles'].add(lc)
-                    cc['total_records'] += int(row.get('Records', 0))
-                    cc['total_logins'] += int(row.get('KPI2-Login', 0))
-                    cc['total_conv'] += int(row.get('KPI1-Conv.', 0))
-                    cc['total_calls'] += int(row.get('Calls', 0))
-                    # SMS = sa (sent)
-                    cc['total_sms'] += int(row.get('sa', 0))
-                    # Emails = ev (sent/volume)
-                    cc['total_emails'] += int(row.get('ev', 0))
-                    # Call delivery
-                    cc['total_d_plus'] += int(row.get('D+', 0))
-                    cc['total_d'] += int(row.get('D', 0))
-                    cc['total_d_minus'] += int(row.get('D-', 0))
-                    # SMS delivery
-                    cc['total_sd'] += int(row.get('sd', 0))
-                    sms_total = int(row.get('sd', 0)) + int(row.get('sf', 0)) + int(row.get('sp', 0))
-                    cc['total_sms_total'] += sms_total
-                    # Email delivery & open
-                    cc['total_ed'] += int(row.get('ed', 0))
-                    cc['total_ef'] += int(row.get('ef', 0))
-                    cc['total_eo'] += int(row.get('eo', 0))
-
-                if client_cards:
+                if not client_agg.empty:
                     # Render 2-column grid of client cards
-                    client_keys = list(client_cards.keys())
-                    for row_start in range(0, len(client_keys), 2):
-                        row_keys = client_keys[row_start:row_start + 2]
+                    client_list = client_agg['ops_client'].tolist()
+                    for row_start in range(0, len(client_list), 2):
+                        row_clients = client_list[row_start:row_start + 2]
                         cols = st.columns(2)
-                        for i, client in enumerate(row_keys):
-                            cc = client_cards[client]
+                        for i, client in enumerate(row_clients):
+                            cr = client_agg[client_agg['ops_client'] == client].iloc[0]
                             with cols[i]:
                                 st.markdown(f"#### 🏢 {client}")
-                                brand_names = sorted(cc['brands'].keys())
-                                lifecycle_tags = ", ".join(sorted(cc['lifecycles']))
-                                st.caption(f"**Brands**: {', '.join(brand_names)}  |  **Active Lifecycles**: {lifecycle_tags}")
+                                # Use client_mapping for registered brands
+                                registered_brands = sorted(client_brand_map.get(client, set()))
+                                lifecycles = client_lcs.get(client, [])
+                                if registered_brands:
+                                    st.caption(f"**Brands**: {', '.join(registered_brands)}  |  **Active Lifecycles**: {', '.join(lifecycles)}")
+                                else:
+                                    st.caption(f"**Active Lifecycles**: {', '.join(lifecycles)}")
 
                                 # Volume / Logins / Conversions
                                 m1, m2, m3 = st.columns(3)
-                                m1.metric("📋 Volume", f"{cc['total_records']:,}")
-                                m2.metric("🔑 Logins", f"{cc['total_logins']:,}")
-                                m3.metric("✅ Conversions", f"{cc['total_conv']:,}")
+                                m1.metric("📋 Volume", f"{int(cr.get('Records', 0)):,}")
+                                m2.metric("🔑 Logins", f"{int(cr.get('KPI2-Login', 0)):,}")
+                                m3.metric("✅ Conversions", f"{int(cr.get('KPI1-Conv.', 0)):,}")
 
                                 # Calls / SMS / Emails
                                 m4, m5, m6 = st.columns(3)
-                                m4.metric("📞 Calls", f"{cc['total_calls']:,}")
-                                m5.metric("💬 SMS", f"{cc['total_sms']:,}")
-                                m6.metric("📧 Emails", f"{cc['total_emails']:,}")
+                                m4.metric("📞 Calls", f"{int(cr.get('Calls', 0)):,}")
+                                m5.metric("💬 SMS", f"{int(cr.get('sa', 0)):,}")
+                                m6.metric("📧 Emails", f"{int(cr.get('ev', 0)):,}")
 
                                 # Delivery Rates
-                                total_call_dials = cc['total_d_plus'] + cc['total_d'] + cc['total_d_minus']
-                                call_d_str = f"D: {cc['total_d']:,}  D+: {cc['total_d_plus']:,}  D-: {cc['total_d_minus']:,}"
-                                sms_del_pct = (cc['total_sd'] / cc['total_sms_total'] * 100) if cc['total_sms_total'] > 0 else 0
-                                email_total = cc['total_ed'] + cc['total_ef']
-                                email_del_pct = (cc['total_ed'] / email_total * 100) if email_total > 0 else 0
-                                email_open_pct = (cc['total_eo'] / cc['total_ed'] * 100) if cc['total_ed'] > 0 else 0
+                                d_plus = int(cr.get('D+', 0))
+                                d_val = int(cr.get('D', 0))
+                                d_minus = int(cr.get('D-', 0))
+                                call_d_str = f"D: {d_val:,}  D+: {d_plus:,}  D-: {d_minus:,}"
+
+                                sd_v = int(cr.get('sd', 0))
+                                sf_v = int(cr.get('sf', 0))
+                                sp_v = int(cr.get('sp', 0))
+                                sms_total = sd_v + sf_v + sp_v
+                                sms_del_pct = (sd_v / sms_total * 100) if sms_total > 0 else 0
+
+                                ed_v = int(cr.get('ed', 0))
+                                ef_v = int(cr.get('ef', 0))
+                                eo_v = int(cr.get('eo', 0))
+                                email_total = ed_v + ef_v
+                                email_del_pct = (ed_v / email_total * 100) if email_total > 0 else 0
+                                email_open_pct = (eo_v / ed_v * 100) if ed_v > 0 else 0
 
                                 st.caption(f"**Call Delivery**: {call_d_str}")
                                 d1, d2, d3 = st.columns(3)
@@ -4106,12 +4102,17 @@ if "📞 Operations Command" in tab_map:
                                 d2.metric("Email Delivery %", f"{email_del_pct:.1f}%")
                                 d3.metric("Email Open %", f"{email_open_pct:.1f}%")
 
-                                # Brand breakdown
-                                with st.expander(f"📊 Brand Breakdown ({len(brand_names)} brands)"):
-                                    for bn in brand_names:
-                                        bd = cc['brands'][bn]
-                                        lcs = ", ".join(sorted(bd['lifecycles']))
-                                        st.caption(f"**{bn}** — {bd['records']:,} records — Lifecycles: {lcs}")
+                                # Brand breakdown from registered brands only
+                                if registered_brands:
+                                    with st.expander(f"📊 Brand Breakdown ({len(registered_brands)} brands)"):
+                                        # Get per-brand stats from ops data for this client
+                                        client_ops = ops_sla[ops_sla['ops_client'] == client]
+                                        if not client_ops.empty:
+                                            brand_stats = client_ops.groupby('ops_brand').agg({'Records': 'sum'}).reset_index()
+                                            for bn in registered_brands:
+                                                bn_row = brand_stats[brand_stats['ops_brand'] == bn]
+                                                bn_recs = int(bn_row['Records'].iloc[0]) if not bn_row.empty else 0
+                                                st.caption(f"**{bn}** — {bn_recs:,} records")
                                 st.markdown("---")
                 else:
                     st.info("No active Volume SLAs match the currently loaded operations data. Add them in System Settings.")
