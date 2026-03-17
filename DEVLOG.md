@@ -4,6 +4,18 @@
 
 ## LOG ENTRIES
 
+### [Fix - 7-Issue Operations Command Batch] - 2026-03-17 - COMPLETED
+- **Commit:** `4900e10`
+- **Issues Resolved:**
+  1. **Client card blur** — Cards for non-selected clients were rendered blurred. Fixed via `client_agg` DataFrame filtering.
+  2. **SLA Volume data leakage** — `Client SLA Volume Fulfillment` used unfiltered `ops_df`. Added `selected_client`/`selected_brand` filtering before lifecycle groupby.
+  3. **Operations default tab** — Operations role now defaults to `📞 Operations` tab instead of `📊 Dashboard`.
+  4. **CSV download crash** — `@st.cache_data` on `_get_ops_csv_bytes(df)` failed due to unhashable DataFrame argument. Removed decorator.
+  5. **Benchmark H1/H2 scaling** — `_render_fixed_benchmark` now scales prior period (e.g., 182-day H1 2025) proportionally to current period (e.g., 76-day H1 2026). Percentages auto-correct as ratios of scaled volumes.
+  6. **Ops Ingestion RBAC** — `🗄️ Operations Ingestion` tab hidden from Operations role; only visible to Superadmin/Admin.
+  7. **Report Queue RBAC** — All 4 report types restricted to Superadmin/Admin/Financial. Operations sees empty-state message.
+- **Files Changed:** `app.py`
+
 ### [Feature - Phase 14: Performance Profiling & Async Report Architecture] - 2026-03-16 - COMPLETED
 - **Objectives:** Systematically profile all 20 component boundaries in the production app, identify 4 critical bottlenecks, and implement 5 optimization options to achieve sub-second menu navigation.
 - **RCA Findings (Debugging Workflow Phase 1):**
