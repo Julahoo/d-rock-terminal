@@ -835,7 +835,7 @@ if "data_loaded" not in st.session_state:
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     # Logout Button
-    if st.button("🚪 Logout", use_container_width=True):
+    if st.button("🚪 Logout", key="logout_btn_top", use_container_width=True):
         st.session_state.clear()
         controller.remove("auth_session")
         st.rerun()
@@ -1046,21 +1046,29 @@ with st.sidebar:
 
     # --- 3. APPLY FILTERS TO TABS ---
     # MASSIVE PERFORMANCE BOOST: Only iterate 350k rows IF the sidebar actually changed. 
-    # If the user just clicked a new Tab, Streamlit hits this function cache execution key 
-    # natively (in nanoseconds) and retrieves the subset dataframes directly from memory.
-    _mem_mb("BEFORE _apply_global_filters")
-    filtered_ops, filtered_ops_snapshots, filtered_fin = _apply_global_filters(
-        selected_client, selected_brand, selected_category, selected_country, 
-        selected_language, selected_lifecycle, selected_segment, 
-        selected_sublifecycle, selected_engagement, selected_campaign, 
-        start_date_str, end_date_str, start_month, end_month
-    )
-    _mem_mb(f"AFTER _apply_global_filters (ops={len(filtered_ops)}, snap={len(filtered_ops_snapshots)}, fin={len(filtered_fin)})")
-
-    st.session_state["ops_df"] = filtered_ops
-    st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
-    st.session_state["financial_df"] = filtered_fin
-    _mem_mb("AFTER session_state assignment")
+    # If the user just clicked a new Tab, retrieve the subset dataframes directly from memory.
+    
+    needs_filtering = False
+    if "ops_df" not in st.session_state or "ops_snapshots_df" not in st.session_state or "financial_df" not in st.session_state:
+        needs_filtering = True
+    elif _filters_submitted:
+        needs_filtering = True
+        
+    if needs_filtering:
+        filtered_ops, filtered_ops_snapshots, filtered_fin = _apply_global_filters(
+            selected_client, selected_brand, selected_category, selected_country, 
+            selected_language, selected_lifecycle, selected_segment, 
+            selected_sublifecycle, selected_engagement, selected_campaign, 
+            start_date_str, end_date_str, start_month, end_month
+        )
+    
+        st.session_state["ops_df"] = filtered_ops
+        st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
+        st.session_state["financial_df"] = filtered_fin
+    else:
+        filtered_ops = st.session_state["ops_df"]
+        filtered_ops_snapshots = st.session_state.get("ops_snapshots_df", pd.DataFrame())
+        filtered_fin = st.session_state.get("financial_df", pd.DataFrame())
 
     # Master DF for Dashboard auto-hydration
     _master_df = filtered_fin
