@@ -745,8 +745,12 @@ st.set_page_config(
 init_db()
 
 # --- PERSISTENT SESSIONS ---
-from streamlit_cookies_controller import CookieController
-controller = CookieController()
+import extra_streamlit_components as stx
+@st.cache_resource(experimental_allow_widgets=True)
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
 
 # --- GLOBAL STATE HYDRATION (DB to RAM) ---
 # This ensures all global dropdowns and legacy tabs populate instantly from the persistent RAM cache
@@ -775,10 +779,9 @@ st.markdown("---")
 # ── 🔐 Enterprise Authentication & Data Security RBAC ──────────────────
 
 if not st.session_state.get("authenticated", False):
-    # The cookie controller takes a split second to receive data from the browser React component.
-    # By checking it on every unauthenticated run, we catch the cookie when it finally arrives
-    # and trigger a rerun to bypass the login screen.
-    auth_cookie = controller.get("auth_session")
+    # Retrieve the persistent cookie via stx.CookieManager
+    auth_cookie = cookie_manager.get("auth_session")
+    
     if auth_cookie and isinstance(auth_cookie, dict):
         st.session_state["authenticated"] = True
         st.session_state["user_role"] = auth_cookie.get("role")
@@ -820,15 +823,17 @@ if not st.session_state["authenticated"]:
                             raw_clients = user_record["allowed_clients"]
                             st.session_state["allowed_clients"] = json.loads(raw_clients) if isinstance(raw_clients, str) else raw_clients
                             
+                            import datetime
+                            expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
                             # Set persistent cookie for 1 day
-                            controller.set(
+                            cookie_manager.set(
                                 "auth_session", 
                                 {
                                     "name": st.session_state["user_name"],
                                     "role": st.session_state["user_role"],
                                     "allowed_clients": st.session_state["allowed_clients"]
                                 },
-                                max_age=86400 # 1 day
+                                expires_at=expires_at
                             )
                             
                             st.rerun()
@@ -857,7 +862,7 @@ with st.sidebar:
     # Logout Button
     if st.button("🚪 Logout", key="logout_btn_top", use_container_width=True):
         st.session_state.clear()
-        controller.remove("auth_session")
+        cookie_manager.delete("auth_session")
         st.rerun()
         
     st.markdown("### 🦅 CallsU Command")
