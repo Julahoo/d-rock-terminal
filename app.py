@@ -808,7 +808,11 @@ with st.sidebar:
         nav_options.append("⚙️ Admin")
 
     st.markdown("---")
-    view_mode = st.selectbox("🧭 Go to:", nav_options)
+    # Default Operations role directly to Operations tab
+    _default_nav_idx = 0
+    if st.session_state.get("user_role") == "Operations" and "📞 Operations" in nav_options:
+        _default_nav_idx = nav_options.index("📞 Operations")
+    view_mode = st.selectbox("🧭 Go to:", nav_options, index=_default_nav_idx)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
@@ -1043,15 +1047,21 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📋 Report Queue")
     
-    _available_reports = {
-        "Full Financial Export": "full_financial_export",
-        "Player Master List": "player_master_list",
-        "Cohort Retention Matrix": "cohort_matrix",
-        "VIP Churn Radar": "vip_churn_radar",
+    _all_reports = {
+        "Full Financial Export": {"key": "full_financial_export", "roles": ["Superadmin", "Admin", "Financial"]},
+        "Player Master List": {"key": "player_master_list", "roles": ["Superadmin", "Admin", "Financial"]},
+        "Cohort Retention Matrix": {"key": "cohort_matrix", "roles": ["Superadmin", "Admin", "Financial"]},
+        "VIP Churn Radar": {"key": "vip_churn_radar", "roles": ["Superadmin", "Admin", "Financial"]},
     }
+    _user_role = st.session_state.get("user_role", "")
+    _available_reports = {k: v["key"] for k, v in _all_reports.items() if _user_role in v["roles"]}
     
-    _rq_selection = st.selectbox("📊 Report Type", list(_available_reports.keys()))
-    _rq_submit = st.button("🚀 Request Report", help="Request this report in the background", use_container_width=True)
+    if _available_reports:
+        _rq_selection = st.selectbox("📊 Report Type", list(_available_reports.keys()))
+        _rq_submit = st.button("🚀 Request Report", help="Request this report in the background", use_container_width=True)
+    else:
+        st.caption("No reports available for your role.")
+        _rq_submit = False
     
     if _rq_submit:
         job_id = _rq.submit(
@@ -2136,12 +2146,18 @@ def _render_fixed_benchmark(df, prior_half="H2 2025"):
             arrow = "↑" if change > 0 else "↓" if change < 0 else "→"
             return f"{arrow} {abs(change):.1f}%"
 
-    # Aggregate sums
+    # Aggregate sums — scale prior period to match current period day count
     agg_cols = ['records', 'kpi2_logins', 'conversions',
          'd_plus', 'd_minus', 'd_neutral', 'na', 't', 'dnc', 'dx', 'wn', 'am',
          'es', 'ed', 'eo', 'ec', 'ef', 'sd', 'sf', 'sp']
+    curr_days = curr_df['ops_date'].nunique() if not curr_df.empty else 0
+    prior_days = prior_df['ops_date'].nunique() if not prior_df.empty else 0
+    _bench_scale = curr_days / prior_days if prior_days > 0 else 1
+
     c = {col: safe_sum(curr_df, col) for col in agg_cols}
-    p = {col: safe_sum(prior_df, col) for col in agg_cols}
+    _p_raw = {col: safe_sum(prior_df, col) for col in agg_cols}
+    p = {col: int(v * _bench_scale) for col, v in _p_raw.items()}
+    st.caption(f"*Scaling: {curr_days} current days vs {prior_days} prior days (×{_bench_scale:.3f})*")
 
     # Derive SS (SMS Sent) = sd + sf + sp
     c['ss'] = c['sd'] + c['sf'] + c['sp']
@@ -2294,7 +2310,9 @@ if view_mode == "📊 Dashboard":
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")
-    tabs = ["📞 Operations Command", "📉 Historical Benchmarks", "🕵️ CRM Intelligence", "📈 Campaigns", "🗄️ Operations Ingestion"]
+    tabs = ["📞 Operations Command", "📉 Historical Benchmarks", "🕵️ CRM Intelligence", "📈 Campaigns"]
+    if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
+        tabs.append("🗄️ Operations Ingestion")
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
     st.info("Operations Reports and Uploads will be consolidated here.")
@@ -3969,7 +3987,6 @@ if "📞 Operations Command" in tab_map:
             else:
                 selected_client = "All" # Or prompt user to select if multiple
 
-            @st.cache_data(show_spinner=False)
             def _get_ops_csv_bytes(df):
                 return df.to_csv(index=False).encode('utf-8')
 
@@ -4664,6 +4681,11 @@ if "📞 Operations Command" in tab_map:
                 if "extracted_lifecycle" in ops_df.columns:
                     # Only WB and RND lifecycles have active SLA requirements
                     sla_ops_target = ops_df[ops_df["extracted_lifecycle"].isin(["WB", "RND"])]
+                    # Filter by selected client/brand from sidebar
+                    if selected_client != "All":
+                        sla_ops_target = sla_ops_target[sla_ops_target['ops_client'] == selected_client]
+                    if selected_brand != "All" and 'ops_brand' in sla_ops_target.columns:
+                        sla_ops_target = sla_ops_target[sla_ops_target['ops_brand'] == selected_brand]
                     
                     if not sla_ops_target.empty:
                         # Calculate number of days in the current slice to scale the monthly SLA
