@@ -266,25 +266,12 @@ section[data-testid="stSidebar"] [data-testid="stForm"] {
     margin: 0 !important;
     background: transparent !important;
 }
-/* Force radio groups to full sidebar width (they auto-shrink to content) */
-section[data-testid="stSidebar"] [role="radiogroup"] {
-    width: 100% !important;
-}
-section[data-testid="stSidebar"] [data-testid="stRadio"] > div {
-    width: 100% !important;
-}
-section[data-testid="stSidebar"] [data-testid="stRadio"] > div > div {
-    width: 100% !important;
-}
-/* Force form submit button (Apply Filters) to full width */
-section[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] {
-    width: 100% !important;
-}
-section[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] > button {
-    width: 100% !important;
-}
-/* Force all sidebar buttons to full width */
-section[data-testid="stSidebar"] button {
+/* Force form submit button and all buttons in sidebar to full width */
+section[data-testid="stSidebar"] [data-testid="stFormSubmitButton"],
+section[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button,
+section[data-testid="stSidebar"] [data-testid="baseButton-secondary"],
+section[data-testid="stSidebar"] .stDownloadButton,
+section[data-testid="stSidebar"] .stDownloadButton button {
     width: 100% !important;
 }
 
@@ -821,7 +808,7 @@ with st.sidebar:
         nav_options.append("⚙️ Admin")
 
     st.markdown("---")
-    view_mode = st.radio("🧭 Go to:", nav_options)
+    view_mode = st.selectbox("🧭 Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
@@ -998,7 +985,7 @@ with st.sidebar:
         update_slider()
 
     options = ["Custom", "Yesterday", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
-    st.radio("Quick Select", options, horizontal=False, key="date_preset", on_change=update_slider)
+    st.selectbox("⏱️ Quick Select", options, key="date_preset", on_change=update_slider)
 
     if "date_slider_val" not in st.session_state:
         st.session_state["date_slider_val"] = (min_db_date.date(), max_date.date())
