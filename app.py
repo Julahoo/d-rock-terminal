@@ -799,7 +799,9 @@ if "data_loaded" not in st.session_state:
 with st.sidebar:
     st.markdown("### 🦅 CallsU Command")
 
-    nav_options = ["📊 Dashboard"]
+    nav_options = []
+    if st.session_state.get("user_role") != "Operations":
+        nav_options.append("📊 Dashboard")
     if st.session_state.get("user_role") in ["Superadmin", "Admin", "Operations"]:
         nav_options.append("📞 Operations")
     if st.session_state.get("user_role") in ["Superadmin", "Admin", "Financial"]: 
@@ -808,11 +810,7 @@ with st.sidebar:
         nav_options.append("⚙️ Admin")
 
     st.markdown("---")
-    # Default Operations role directly to Operations tab
-    _default_nav_idx = 0
-    if st.session_state.get("user_role") == "Operations" and "📞 Operations" in nav_options:
-        _default_nav_idx = nav_options.index("📞 Operations")
-    view_mode = st.selectbox("🧭 Go to:", nav_options, index=_default_nav_idx)
+    view_mode = st.selectbox("🧭 Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
@@ -1089,10 +1087,17 @@ with st.sidebar:
                         key=f"rq_dl_{_j['id']}"
                     )
         
-        # Auto-poll if any jobs are still running
+        # Auto-poll if any jobs are still running (limit to prevent infinite rerun)
         if any(j["status"] in ("pending", "running") for j in _rq_jobs):
-            time.sleep(0.5)  # Brief pause before re-poll
-            st.rerun()
+            _poll_count = st.session_state.get("_rq_poll_count", 0)
+            if _poll_count < 30:  # Max 30 polls (15 seconds)
+                st.session_state["_rq_poll_count"] = _poll_count + 1
+                time.sleep(0.5)
+                st.rerun()
+            else:
+                st.caption("⏳ Report is still processing. Refresh page to check status.")
+        else:
+            st.session_state["_rq_poll_count"] = 0  # Reset counter when all done
 
     # --- BOTTOM SIDEBAR: AUTHENTICATION ---
     # Use vertical space to push this to the bottom of the sidebar visually
