@@ -4575,6 +4575,7 @@ if "📞 Operations Command" in tab_map:
                 )
 
             # --- 📋 Daily Campaign Detail (Non-Aggregated) ---
+            _mem_mb("AFTER SLA_Tracker_Section / BEFORE Daily_Campaign_Detail")
             st.markdown("---")
             st.markdown("### 📋 Daily Campaign Detail")
             st.markdown("*Raw campaign rows as received from the daily pull — no date aggregation.*")
@@ -4641,7 +4642,7 @@ if "📞 Operations Command" in tab_map:
 
 
             # Campaign Comparison Matrix — REMOVED per user request (v14.2)
-
+            _mem_mb("AFTER Daily_Campaign_Detail / BEFORE True_Cost_Ledger")
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
             ledger_agg_cols = {'Records': 'sum', 'Calls': 'sum', 'Total_Campaign_Cost': 'sum', 'KPI1-Conv.': 'sum'}
@@ -4704,6 +4705,7 @@ if "📞 Operations Command" in tab_map:
                     "Conv %": st.column_config.NumberColumn("Conv %", format="%.1f%%"),
                 }
             )
+            _mem_mb("AFTER True_Cost_Ledger")
         else:
             st.warning("⚠️ **No Operations Data Loaded**.")
             st.info("Please navigate to the **🗄️ Operations Ingestion** tab and upload your daily `CSV/XLSX` reports or trigger a CallsU API sync.")
