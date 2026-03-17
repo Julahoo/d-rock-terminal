@@ -792,7 +792,7 @@ with st.sidebar:
     if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
         nav_options.append("⚙️ Admin")
         
-    view_mode = st.radio("Go to:", nav_options)
+    view_mode = st.radio("Go to:", nav_options, label_visibility="collapsed")
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
@@ -969,14 +969,28 @@ with st.sidebar:
     if "date_slider_val" not in st.session_state:
         st.session_state["date_slider_val"] = (min_db_date.date(), max_date.date())
 
-    start_date_val, end_date_val = st.sidebar.slider(
-        "📅 Analysis Window",
-        min_value=min_db_date.date(),
-        max_value=max_date.date(),
-        key="date_slider_val",
-        format="YYYY-MM-DD",
-        on_change=update_preset
-    )
+    st.sidebar.markdown("##### 📅 Analysis Window")
+    _aw_c1, _aw_c2 = st.sidebar.columns(2)
+    with _aw_c1:
+        start_date_val = st.date_input(
+            "Start",
+            value=st.session_state["date_slider_val"][0],
+            min_value=min_db_date.date(),
+            max_value=max_date.date(),
+            key="aw_start_date",
+            on_change=update_preset
+        )
+    with _aw_c2:
+        end_date_val = st.date_input(
+            "End",
+            value=st.session_state["date_slider_val"][1],
+            min_value=min_db_date.date(),
+            max_value=max_date.date(),
+            key="aw_end_date",
+            on_change=update_preset
+        )
+    # Keep session state in sync with the new date pickers
+    st.session_state["date_slider_val"] = (start_date_val, end_date_val)
 
     start_date_str = start_date_val.strftime("%Y-%m-%d")
     end_date_str = end_date_val.strftime("%Y-%m-%d")
@@ -1032,6 +1046,17 @@ with st.sidebar:
             _status_icon = {"pending": "⏳", "running": "🔄", "done": "✅", "error": "❌"}.get(_j["status"], "❓")
             _time_str = _j["completed_at"] or _j["requested_at"]
             st.sidebar.caption(f"{_status_icon} {_j['display_name']} — {_time_str}")
+            # Offer download button for completed jobs with bytes results
+            if _j["status"] == "done":
+                _result = _rq.get_result(_j["id"])
+                if _result is not None and isinstance(_result, bytes):
+                    st.sidebar.download_button(
+                        f"📥 Download {_j['display_name']}",
+                        data=_result,
+                        file_name=f"{_j['display_name'].replace(' ', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"rq_dl_{_j['id']}"
+                    )
         
         # Auto-poll if any jobs are still running
         if any(j["status"] in ("pending", "running") for j in _rq_jobs):
@@ -2243,51 +2268,8 @@ if view_mode == "📊 Dashboard":
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
     with tab_map["📊 Dashboard"]:
-        st.markdown("#### > 📡 OPERATIONS PULSE_")
-        st.markdown("*Rolling KPI windows — at a glance. Data is pre-computed daily at 04:30 UTC.*")
-        
-        def _render_pulse_matrix(title, engagement_type):
-            """Render pulse matrix — snapshot-first, inline fallback."""
-            import plotly.io as pio
-            
-            # Phase 14.1: Try pre-computed snapshot first (computed at 4:30 AM, instant read)
-            data_payload = _cached_pulse_card_snapshot(engagement_type)
-            
-            # Fallback: compute inline only if ETL snapshot doesn't exist yet
-            if data_payload is None and "raw_pulse_df" in st.session_state and not st.session_state["raw_pulse_df"].empty:
-                data_payload = _cached_pulse_matrix_data(st.session_state["raw_pulse_df"], engagement_type)
-            
-            if not data_payload:
-                st.caption(f"No {engagement_type} data available.")
-                return
-            st.markdown(f"**> {title}_**")
-            
-            for metric_group in data_payload:
-                cols = st.columns(4)
-                for i, w_data in enumerate(metric_group["windows"]):
-                    with cols[i]:
-                        st.metric(
-                            label=f"{metric_group['label']} ({w_data['wlabel']})", 
-                            value=w_data["disp_val"], 
-                            delta=w_data["disp_delta"]
-                        )
-                        if w_data["fig_json"]:
-                            st.plotly_chart(
-                                pio.from_json(w_data["fig_json"]), 
-                                width='stretch', 
-                                config={'displayModeBar': False}, 
-                                key=f"spark_{title}_{metric_group['label']}_{w_data['wlabel']}"
-                            )
-        
-        # Render side-by-side LI / NLI matrices
-        col_li, col_nli = st.columns(2)
-        with col_li:
-            _render_pulse_matrix("LI OPERATIONS PULSE", "LI")
-        with col_nli:
-            _render_pulse_matrix("NLI OPERATIONS PULSE", "NLI")
-        
-        # ── HALF-YEAR OPERATIONAL BASELINE ──
-        st.markdown("---")
+        # Operations Pulse removed per user request — data moved to SLA client cards
+        st.caption("Dashboard content coming soon. Use the **Operations** tab for live SLA and benchmark data.")
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")
@@ -4026,6 +4008,16 @@ if "📞 Operations Command" in tab_map:
                     client_lcs = ops_sla.groupby('ops_client')[lc_col].apply(lambda x: sorted(x.unique())).to_dict()
                 else:
                     client_lcs = {}
+
+                if not client_agg.empty:
+                    # --- Filter client cards by sidebar selection ---
+                    if selected_client != "All":
+                        client_agg = client_agg[client_agg['ops_client'] == selected_client]
+                    if selected_brand != "All" and 'ops_brand' in ops_sla.columns:
+                        # Find which client owns this brand and only show that client
+                        brand_clients = ops_sla[ops_sla['ops_brand'] == selected_brand]['ops_client'].unique()
+                        if len(brand_clients) > 0:
+                            client_agg = client_agg[client_agg['ops_client'].isin(brand_clients)]
 
                 if not client_agg.empty:
                     # --- Compute H1/H2 Benchmarks from SNAPSHOTS for Client Cards ---
