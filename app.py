@@ -818,13 +818,11 @@ with st.sidebar:
     st.session_state["raw_ops_df"] = raw_ops
     st.session_state["ops_df"] = raw_ops
 
-    # Financial data: only needed by Financial and Operations (CRM Intelligence) views
-    if view_mode in ["🏦 Financial", "📞 Operations", "⚙️ Admin"]:
+    # Financial data: only needed by Financial and Admin views (NOT Operations)
+    if view_mode in ["🏦 Financial", "⚙️ Admin"]:
         raw_fin = fetch_financial_data()
     else:
         raw_fin = st.session_state.get("raw_fin_df", pd.DataFrame())
-        if raw_fin.empty:
-            raw_fin = fetch_financial_data()  # First-run fallback
     st.session_state["raw_fin_df"] = raw_fin
     st.session_state["financial_df"] = raw_fin
 
@@ -932,7 +930,7 @@ with st.sidebar:
 
         selected_campaign = st.text_input("🎯 Campaign", placeholder="Type to search campaigns...", help="Filter by campaign name (partial match)")
 
-        _filters_submitted = st.form_submit_button("🔍 Apply Filters", type="primary")
+        _filters_submitted = st.form_submit_button("🔍 Apply Filters", type="primary", use_container_width=True)
 
     # 5. Elite Date Range Quick-Select Helper
     # Fetch from ultra-fast cached boundaries instead of coercing 350,000 strings into datetime vectors
@@ -4668,94 +4666,7 @@ if "📞 Operations Command" in tab_map:
                     }
                 )
 
-            # --- 📦 Client SLA Volume Fulfillment ---
-            st.markdown("---")
-            st.subheader("📦 Client SLA Volume Fulfillment")
-            
-            # 1. Extensible SLA Config Dictionary
-            sla_targets = {
-                "LeoVegas Group": {"WB": 6500, "ACQ": 2000, "RET": 2000}
-            }
-            default_sla_target = 5000
-
-            if not ops_df.empty:
-                
-                # 2. Lifecycle Mapping Logic - Extracted inline via renaming
-                # Filter out UNKNOWN lifecycles as they don't count towards these specific SLAs
-                
-                if "extracted_lifecycle" in ops_df.columns:
-                    # Only WB and RND lifecycles have active SLA requirements
-                    sla_ops_target = ops_df[ops_df["extracted_lifecycle"].isin(["WB", "RND"])]
-                    # Filter by selected client/brand from sidebar
-                    if selected_client != "All":
-                        sla_ops_target = sla_ops_target[sla_ops_target['ops_client'] == selected_client]
-                    if selected_brand != "All" and 'ops_brand' in sla_ops_target.columns:
-                        sla_ops_target = sla_ops_target[sla_ops_target['ops_brand'] == selected_brand]
-                    
-                    if not sla_ops_target.empty:
-                        # Calculate number of days in the current slice to scale the monthly SLA
-                        num_days_sla = sla_ops_target['ops_date'].nunique() if 'ops_date' in sla_ops_target.columns else 1
-                        local_sla_scale_factor = max(num_days_sla / 30.0, 1.0) if num_days_sla >= 28 else (num_days_sla / 30.0)
-                        
-                        # 3. Group by Client and Lifecycle using the native column
-                        sla_agg = sla_ops_target.groupby(["ops_client", "extracted_lifecycle"]).agg({"Records": "sum"}).reset_index()
-                        sla_agg = sla_agg.rename(columns={"extracted_lifecycle": "SLA_Lifecycle"})
-                    
-                    # Fetch Database Configs First
-                    vol_df = pd.DataFrame()
-                    try:
-                        vol_df = fetch_config_tables("SELECT client_name, lifecycle, monthly_minimum_records FROM contractual_volumes WHERE brand_code = 'ALL'")
-                    except:
-                        pass
-
-                    # 4. Math & Target Mapping
-                    def get_sla_target(row):
-                        client = row["ops_client"]
-                        lifecycle = row["SLA_Lifecycle"]
-                        raw_target = default_sla_target
-                        
-                        # Check DB
-                        if not vol_df.empty:
-                            db_match = vol_df[(vol_df['client_name'] == client) & (vol_df['lifecycle'].isin([lifecycle, 'ALL']))]
-                            if not db_match.empty:
-                                raw_target = db_match['monthly_minimum_records'].max() # Use highest applicable (ALL or specific)
-                                return max(1, int(raw_target * local_sla_scale_factor))
-
-                        if client in sla_targets and lifecycle in sla_targets[client]:
-                            raw_target = sla_targets[client][lifecycle]
-                        
-                        # Scale the monthly target to represent the current timeframe slice
-                        return max(1, int(raw_target * local_sla_scale_factor))
-                    
-                    sla_agg["SLA Target"] = sla_agg.apply(get_sla_target, axis=1)
-                    sla_agg["Fulfillment %"] = (sla_agg["Records"] / sla_agg["SLA Target"].replace(0, 1)) * 100
-                    
-                    # Rename columns for final display dataframe
-                    sla_agg.rename(columns={
-                        "ops_client": "Client",
-                        "SLA_Lifecycle": "Lifecycle",
-                        "Records": "Records Received"
-                    }, inplace=True)
-                    
-                    # 5. Conditional Red/Green Styling
-                    def style_fulfillment(val):
-                        if pd.isna(val):
-                            return ''
-                        if val >= 100:
-                            return 'color: #4ade80; font-weight: bold;' # Green text (Tailwind green-400)
-                        else:
-                            return 'color: #f87171; font-weight: bold;' # Red text (Tailwind red-400)
-                    
-                    styled_sla_df = sla_agg.style.format({
-                        "Records Received": "{:,.0f}",
-                        "SLA Target": "{:,.0f}",
-                        "Fulfillment %": "{:.1f}%"
-                    }).map(style_fulfillment, subset=["Fulfillment %"])
-                    
-                    # 6. Render
-                    st.dataframe(styled_sla_df, width='stretch', hide_index=True)
-                else:
-                    st.info("No recognizable SLA lifecycles (WB, ACQ, RET, RND) found in the current dataset.")
+            # Client SLA Volume Fulfillment — REMOVED per user request
 
 
             # Campaign Comparison Matrix — REMOVED per user request (v14.2)
