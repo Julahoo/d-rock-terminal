@@ -854,10 +854,6 @@ if "data_loaded" not in st.session_state:
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
 
-st.title("📊 D-ROCK DASHBOARD")
-st.markdown("*Enterprise Business Intelligence & Operations Command*")
-st.markdown("---")
-
 # Global Helper just for this debug session
 def _mem_mb(tag):
     import psutil, os
@@ -866,12 +862,6 @@ def _mem_mb(tag):
     print(f"[MEM] {tag}: {int(mb)} MB")
 
 with st.sidebar:
-    # Logout Button
-    if st.button("🚪 Logout", key="logout_btn_top", use_container_width=True):
-        st.session_state.clear()
-        cookie_manager.delete("auth_session")
-        st.rerun()
-        
     st.markdown("### 🦅 CallsU Command")
 
     nav_options = []
@@ -1174,11 +1164,9 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"👤 **Role:** {st.session_state['user_role']}")
     
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state["authenticated"] = False
-        st.session_state["user_role"] = None
-        st.session_state["user_name"] = None
-        st.session_state["allowed_clients"] = []
+    if st.button("🚪 Logout", key="logout_btn_bottom", use_container_width=True):
+        st.session_state.clear()
+        cookie_manager.delete("auth_session")
         st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════
