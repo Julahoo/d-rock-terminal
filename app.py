@@ -958,6 +958,11 @@ with st.sidebar:
 
     def update_preset():
         st.session_state["date_preset"] = "Custom"
+        # Sync date_slider_val from the date picker widgets so filters apply immediately
+        _s = st.session_state.get("aw_start_date")
+        _e = st.session_state.get("aw_end_date")
+        if _s is not None and _e is not None:
+            st.session_state["date_slider_val"] = (_s, _e)
 
     if "date_preset" not in st.session_state:
         st.session_state["date_preset"] = "Last 30 Days"
