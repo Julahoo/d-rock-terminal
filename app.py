@@ -266,15 +266,25 @@ section[data-testid="stSidebar"] [data-testid="stForm"] {
     margin: 0 !important;
     background: transparent !important;
 }
-/* Ensure all sidebar widgets use full width */
-section[data-testid="stSidebar"] .stSelectbox,
-section[data-testid="stSidebar"] .stRadio,
-section[data-testid="stSidebar"] .stTextInput,
-section[data-testid="stSidebar"] .stDateInput,
-section[data-testid="stSidebar"] .stButton {
+/* Force radio groups to full sidebar width (they auto-shrink to content) */
+section[data-testid="stSidebar"] [role="radiogroup"] {
     width: 100% !important;
 }
-section[data-testid="stSidebar"] .stButton > button {
+section[data-testid="stSidebar"] [data-testid="stRadio"] > div {
+    width: 100% !important;
+}
+section[data-testid="stSidebar"] [data-testid="stRadio"] > div > div {
+    width: 100% !important;
+}
+/* Force form submit button (Apply Filters) to full width */
+section[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] {
+    width: 100% !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] > button {
+    width: 100% !important;
+}
+/* Force all sidebar buttons to full width */
+section[data-testid="stSidebar"] button {
     width: 100% !important;
 }
 
