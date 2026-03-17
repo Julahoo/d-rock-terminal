@@ -854,10 +854,12 @@ with st.sidebar:
     # --- MASSIVE PERFORMANCE BOOST ---
     # Fetch unique categories directly from the isolated memory cache instead of making Pandas 
     # extract distinct rows from 350,000+ string arrays on every generic UI button click.
+    _mem_mb("BEFORE _cached_sidebar_filters")
     (
         db_clients, sorted_brands, avail_countries_raw, avail_products, 
         avail_languages, avail_lifecycles, avail_segments, avail_sublifecycles, avail_engagements
     ) = _cached_sidebar_filters()
+    _mem_mb("AFTER _cached_sidebar_filters")
 
     allowed = st.session_state.get("allowed_clients", ["All"])
     if "All" not in allowed:
@@ -939,7 +941,9 @@ with st.sidebar:
 
     # 5. Elite Date Range Quick-Select Helper
     # Fetch from ultra-fast cached boundaries instead of coercing 350,000 strings into datetime vectors
+    _mem_mb("BEFORE _cached_global_date_boundaries")
     min_db_date, max_date = _cached_global_date_boundaries()
+    _mem_mb("AFTER _cached_global_date_boundaries")
 
     # Streamlit slider min_value must be STRICTLY less than max_value
     if min_db_date.date() >= max_date.date():
@@ -1018,6 +1022,7 @@ with st.sidebar:
     # Keep session state in sync with the new date pickers
     st.session_state["date_slider_val"] = (start_date_val, end_date_val)
 
+    _mem_mb("BEFORE filter declarations")
     start_date_str = start_date_val.strftime("%Y-%m-%d")
     end_date_str = end_date_val.strftime("%Y-%m-%d")
     start_month = start_date_val.strftime("%Y-%m")
