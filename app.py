@@ -457,6 +457,16 @@ def _optimize_memory(df):
 
 @st.cache_resource(ttl=900, show_spinner=False)  # 15 min, ZERO-COPY shared across sessions
 def fetch_ops_data():
+    
+    # --- DIAGNOSTIC MEMORY TRACKER ---
+    def _mem_mb(tag):
+        import psutil, os
+        process = psutil.Process(os.getpid())
+        mb = process.memory_info().rss / (1024 * 1024)
+        print(f"[MEM] {tag}: {int(mb)} MB")
+        
+    _mem_mb("START fetch_ops_data")
+
     from src.database import engine
     import pandas as pd
     # Phase 14.2: Explicit column selection to stay under 200 MB message limit.
@@ -470,7 +480,9 @@ def fetch_ops_data():
         extracted_product, extracted_language, extracted_sublifecycle, country,
         "Strategy_Signature", campaign_signature, "Core_Signature", "Base Campaign", ops_lifecycle"""
     try:
-        return _optimize_memory(pd.read_sql(f"SELECT {OPS_COLS} FROM ops_telemarketing_data_materialized", engine))
+        df = _optimize_memory(pd.read_sql(f"SELECT {OPS_COLS} FROM ops_telemarketing_data_materialized", engine))
+        _mem_mb("END fetch_ops_data (Materialized)")
+        return df
     except Exception:
         # Fallback to SELECT * if column pruning fails (e.g. missing columns in older deployments)
         try:
@@ -833,6 +845,14 @@ if "data_loaded" not in st.session_state:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
+
+# Global Helper just for this debug session
+def _mem_mb(tag):
+    import psutil, os
+    process = psutil.Process(os.getpid())
+    mb = process.memory_info().rss / (1024 * 1024)
+    print(f"[MEM] {tag}: {int(mb)} MB")
+
 with st.sidebar:
     # Logout Button
     if st.button("🚪 Logout", key="logout_btn_top", use_container_width=True):
@@ -1055,12 +1075,14 @@ with st.sidebar:
         needs_filtering = True
         
     if needs_filtering:
+        _mem_mb("START _apply_global_filters")
         filtered_ops, filtered_ops_snapshots, filtered_fin = _apply_global_filters(
             selected_client, selected_brand, selected_category, selected_country, 
             selected_language, selected_lifecycle, selected_segment, 
             selected_sublifecycle, selected_engagement, selected_campaign, 
             start_date_str, end_date_str, start_month, end_month
         )
+        _mem_mb(f"END _apply_global_filters (ops={len(filtered_ops)})")
     
         st.session_state["ops_df"] = filtered_ops
         st.session_state["ops_snapshots_df"] = filtered_ops_snapshots
@@ -4604,6 +4626,7 @@ if "📞 Operations Command" in tab_map:
                 )
 
             # --- 📋 Daily Campaign Detail (Non-Aggregated) ---
+            _mem_mb("START Daily Campaign Detail Rendering")
             st.markdown("---")
             st.markdown("### 📋 Daily Campaign Detail")
             st.markdown("*Raw campaign rows as received from the daily pull — no date aggregation.*")
@@ -4670,6 +4693,7 @@ if "📞 Operations Command" in tab_map:
 
 
             # Campaign Comparison Matrix — REMOVED per user request (v14.2)
+            _mem_mb("START Campaign True Cost Ledger Rendering")
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
             ledger_agg_cols = {'Records': 'sum', 'Calls': 'sum', 'Total_Campaign_Cost': 'sum', 'KPI1-Conv.': 'sum'}
@@ -4732,6 +4756,7 @@ if "📞 Operations Command" in tab_map:
                     "Conv %": st.column_config.NumberColumn("Conv %", format="%.1f%%"),
                 }
             )
+            _mem_mb("END True Cost Ledger")
         else:
             st.warning("⚠️ **No Operations Data Loaded**.")
             st.info("Please navigate to the **🗄️ Operations Ingestion** tab and upload your daily `CSV/XLSX` reports or trigger a CallsU API sync.")
