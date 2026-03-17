@@ -774,19 +774,19 @@ st.markdown("---")
 
 # ── 🔐 Enterprise Authentication & Data Security RBAC ──────────────────
 
-if "authenticated" not in st.session_state:
-    # Check cookies first
+if not st.session_state.get("authenticated", False):
+    # The cookie controller takes a split second to receive data from the browser React component.
+    # By checking it on every unauthenticated run, we catch the cookie when it finally arrives
+    # and trigger a rerun to bypass the login screen.
     auth_cookie = controller.get("auth_session")
     if auth_cookie and isinstance(auth_cookie, dict):
         st.session_state["authenticated"] = True
         st.session_state["user_role"] = auth_cookie.get("role")
         st.session_state["user_name"] = auth_cookie.get("name")
         st.session_state["allowed_clients"] = auth_cookie.get("allowed_clients", [])
+        st.rerun()
     else:
         st.session_state["authenticated"] = False
-        st.session_state["user_role"] = None
-        st.session_state["user_name"] = None
-        st.session_state["allowed_clients"] = []
 
 if not st.session_state["authenticated"]:
     st.markdown("---")
