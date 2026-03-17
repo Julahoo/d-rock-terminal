@@ -781,7 +781,7 @@ if "data_loaded" not in st.session_state:
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### 🦅 CallsU Command **(v2.0.1)**")
+    st.markdown("### 🦅 CallsU Command **(v2.0.2)**")
 
     nav_options = ["📊 Dashboard"]
     if st.session_state.get("user_role") in ["Superadmin", "Admin", "Operations"]:
