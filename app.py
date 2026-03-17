@@ -788,6 +788,18 @@ if not st.session_state.get("authenticated", False):
         st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
+    # --- ANTI-FLICKER HACK ---
+    # The CookieManager requires exactly 1 full render cycle to retrieve cookies from the browser React DOM.
+    # To prevent the login screen from flashing before the cookie arrives, we halt the very first execution
+    # and show a spinner. The component will automatically trigger a rerun instantly after.
+    if "auth_hydration_run" not in st.session_state:
+        st.session_state["auth_hydration_run"] = True
+        st.markdown("---")
+        with st.spinner("Resuming secure session..."):
+            import time
+            time.sleep(0.5) # Give the network a split second round-trip
+        st.stop()
+
     st.markdown("---")
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
