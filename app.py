@@ -746,7 +746,7 @@ init_db()
 
 # --- PERSISTENT SESSIONS ---
 import extra_streamlit_components as stx
-@st.cache_resource(experimental_allow_widgets=True)
+@st.cache_resource(show_spinner=False)
 def get_cookie_manager():
     return stx.CookieManager()
 
