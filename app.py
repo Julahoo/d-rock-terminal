@@ -437,7 +437,7 @@ def _optimize_memory(df):
         df[col] = pd.to_numeric(df[col], downcast='integer')
     return df
 
-@st.cache_data(ttl="15m", show_spinner=False)
+@st.cache_resource(ttl=900, show_spinner=False)  # 15 min, ZERO-COPY shared across sessions
 def fetch_ops_data():
     from src.database import engine
     import pandas as pd
@@ -460,7 +460,7 @@ def fetch_ops_data():
         except Exception:
             return pd.DataFrame()
 
-@st.cache_data(ttl="15m", show_spinner=False)
+@st.cache_resource(ttl=900, show_spinner=False)  # 15 min, ZERO-COPY shared across sessions
 def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
@@ -481,7 +481,7 @@ def fetch_ops_snapshots_data():
         except Exception:
             return pd.DataFrame()
 
-@st.cache_data(ttl="15m", show_spinner=False)
+@st.cache_resource(ttl=900, show_spinner=False)  # 15 min, ZERO-COPY
 def fetch_dashboard_pulse_data():
     from src.database import engine
     import pandas as pd
@@ -499,7 +499,7 @@ def fetch_dashboard_pulse_data():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl="15m", show_spinner=False)
+@st.cache_resource(ttl=900, show_spinner=False)  # 15 min, ZERO-COPY
 def fetch_financial_data():
     from src.database import engine
     import pandas as pd
@@ -638,7 +638,7 @@ def _cached_pulse_matrix_data(df, engagement_type):
         results.append(metric_out)
     return results
 
-@st.cache_data(ttl="15m", show_spinner=False)
+@st.cache_resource(ttl=900, show_spinner=False)  # ZERO-COPY: prevents 3x DataFrame deep-copy per cache hit
 def _apply_global_filters(
     selected_client, selected_brand, selected_category, selected_country, 
     selected_language, selected_lifecycle, selected_segment, 
@@ -813,22 +813,14 @@ with st.sidebar:
     view_mode = st.selectbox("🧭 Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
-    # MEMORY OPTIMIZATION: Only store ONE copy in session_state (not raw + filtered duplicates).
-    # @st.cache_data already shares data across sessions; session_state is per-user overhead.
+    # MEMORY OPTIMIZATION: @st.cache_resource returns SAME object (zero-copy) across all sessions.
+    # Do NOT store in session_state — that creates per-user copies and wastes RAM.
     raw_ops = fetch_ops_data()  # Always needed (sidebar filters, Operations)
-    st.session_state["ops_df"] = raw_ops
+    st.session_state["ops_df"] = raw_ops  # Thin reference, not a copy
 
-    # Financial data: only needed by Financial and Admin views (NOT Operations)
-    if view_mode in ["🏦 Financial", "⚙️ Admin"]:
-        st.session_state["financial_df"] = fetch_financial_data()
-    elif "financial_df" not in st.session_state:
-        st.session_state["financial_df"] = pd.DataFrame()
-
-    # Snapshots: only needed by Operations Historical Benchmarks (heavy — skip for initial load)
+    # Snapshots: only needed by Operations Historical Benchmarks
     if view_mode in ["📞 Operations"]:
         st.session_state["snap_df"] = fetch_ops_snapshots_data()
-    elif "snap_df" not in st.session_state:
-        st.session_state["snap_df"] = pd.DataFrame()
 
     if raw_ops.empty and st.session_state.get("financial_df", pd.DataFrame()).empty:
         st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
