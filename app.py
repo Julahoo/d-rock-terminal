@@ -2321,9 +2321,12 @@ if view_mode == "📊 Dashboard":
     
 elif view_mode == "📞 Operations":
     st.markdown("## 📞 Operations Workspace")
-    tabs = ["📞 Operations Command", "📉 Historical Benchmarks", "🕵️ CRM Intelligence", "📈 Campaigns"]
-    if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
-        tabs.append("🗄️ Operations Ingestion")
+    # Operations role: only Operations Command to minimise render load
+    user_role = st.session_state.get("user_role", "")
+    if user_role in ["Superadmin", "Admin"]:
+        tabs = ["📞 Operations Command", "📉 Historical Benchmarks", "🕵️ CRM Intelligence", "📈 Campaigns", "🗄️ Operations Ingestion"]
+    else:
+        tabs = ["📞 Operations Command"]
     created_tabs = st.tabs(tabs)
     tab_map = dict(zip(tabs, created_tabs))
     st.info("Operations Reports and Uploads will be consolidated here.")
