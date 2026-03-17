@@ -23,12 +23,22 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 # ── Memory Diagnostics (OOM tracing) ──
-import psutil, gc
+import gc
 def _mem_mb(tag=""):
     """Log current RSS memory in MB to stdout (visible in Railway logs)."""
-    rss = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-    print(f"[MEM] {tag}: {rss:.0f} MB", flush=True)
-    return rss
+    try:
+        # Linux (Railway): read from /proc/self/status
+        with open('/proc/self/status') as f:
+            for line in f:
+                if line.startswith('VmRSS:'):
+                    rss_kb = int(line.split()[1])
+                    rss_mb = rss_kb / 1024
+                    print(f"[MEM] {tag}: {rss_mb:.0f} MB", flush=True)
+                    return rss_mb
+    except Exception:
+        pass
+    print(f"[MEM] {tag}: N/A", flush=True)
+    return 0
 
 # Increase Pandas Styler limits to prevent crashes on large ledgers
 pd.set_option("styler.render.max_elements", 1_500_000)
