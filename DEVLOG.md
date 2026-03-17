@@ -1234,3 +1234,13 @@ p.where() array vectorizations for metrics such as ggr_per_player, 	urnover_per_
 - **System Change 1:** Rebuilt src/etl_worker.py base materializations to use an asynchronous Pandas generator (pd.read_sql(chunksize=50000)), executing regex parses in batched 50K increments before flattening Memory load back natively to 0.
 - **System Change 2:** Refactored the contractual_volumes SLA Backend insertion logic (pp.py) to bypass brand filtering. The Admin System now injects #ALL as the global brand.
 - **System Change 3:** Modified the Operations Dashboard Trend mapping and fulfillment UI Scorecard to intelligently route SLA extraction boundaries at the global client-scale instead of specific brand domains.
+
+### [Phase 14.2 - Operations Command Overhaul & MessageSizeError Fix] - 2026-03-17
+- **Root Cause Fix (MessageSizeError):** `fetch_ops_data()` `OPS_COLS` used raw DB column names (`campaign_name`, `records`, `calls`) but the materialized view renames them via `etl_worker.py` (e.g., `"Campaign Name"`, `"Records"`, `"Calls"`). The explicit SELECT silently failed, falling back to `SELECT *` (217 MB) → MessageSizeError. Rewrote `OPS_COLS` to use materialized view column names with proper PostgreSQL double-quoting. Added `maxMessageSize = 300` safety net in `.streamlit/config.toml`.
+- **Change 1:** Replaced 3 donut charts (`px.pie`) with horizontal bar charts (`go.Bar`) in Campaign Performance Distributions.
+- **Change 2:** Restructured SLA Fulfillment Tracker from per-brand to per-client cards. Each card shows brands, active lifecycles, Volume/Logins/Conversions, Calls/SMS/Emails, Call D/D+/D-, SMS Delivery %, Email Delivery %, Email Open %.
+- **Change 3:** Added "Daily Campaign Detail" table — raw `campaign_name` rows without any `Core_Signature` or date aggregation.
+- **Change 4:** SLA lifecycle filter changed from `!= "UNKNOWN"` to `.isin(["WB", "RND"])` — only WB and RND have active SLA requirements.
+- **Change 5:** Swapped unused `cost_caller/cost_sip/cost_sms/cost_email` columns for SMS/Email funnel columns (`sa, sd, sf, sp, ev, es, ed, ef, eo, ec`) in `OPS_COLS`.
+- **Change 6:** Removed Campaign Comparison Matrix table.
+- **Change 7:** Added "Yesterday" and "Last 14 Days" to Quick Select sidebar options.

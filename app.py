@@ -425,15 +425,16 @@ def _optimize_memory(df):
 def fetch_ops_data():
     from src.database import engine
     import pandas as pd
-    # Phase 14.1: Explicit column selection — SELECT * was 217 MB, exceeding Streamlit's 200 MB limit.
-    # Only load the ~30 columns the frontend actually uses (drops hlrv, twoxrv, sa-sp, ev-ef, optout_* detail cols).
-    OPS_COLS = """campaign_name, ops_client, ops_brand, ops_date, records, calls, conversions,
-        total_cost, true_cac, d_total, d_plus, d_minus, d_neutral, d_ratio,
-        kpi2_logins, li_pct, tech_issues, t, am, dnc, na, dx, wn,
-        cost_caller, cost_sip, cost_sms, cost_email,
+    # Phase 14.2: Explicit column selection to stay under 200 MB message limit.
+    # CRITICAL: The materialized view renames columns via etl_worker.py (e.g. campaign_name → "Campaign Name").
+    # Column names with spaces MUST be double-quoted in PostgreSQL.
+    OPS_COLS = """"Campaign Name", ops_client, ops_brand, ops_date, "Records", "Calls", "KPI1-Conv.",
+        "Total_Campaign_Cost", "True_CAC", "D", "D+", "D-", d_neutral, "D Ratio",
+        "KPI2-Login", "LI%", "T", "AM", "DNC", "NA", "DX", "WN",
+        hlrv, twoxrv, sa, sd, sf, sp, ev, es, ed, ef, eo, ec,
         extracted_engagement, extracted_lifecycle, extracted_segment,
         extracted_product, extracted_language, extracted_sublifecycle, country,
-        "Strategy_Signature", campaign_signature"""
+        "Strategy_Signature", campaign_signature, "Core_Signature", "Base Campaign", ops_lifecycle"""
     try:
         return _optimize_memory(pd.read_sql(f"SELECT {OPS_COLS} FROM ops_telemarketing_data_materialized", engine))
     except Exception:
@@ -447,13 +448,15 @@ def fetch_ops_data():
 def fetch_ops_snapshots_data():
     from src.database import engine
     import pandas as pd
+    # Snapshots view does NOT rename columns (etl_worker only adds Strategy_Signature)
+    # So use raw lowercase column names here.
     OPS_COLS = """campaign_name, ops_client, ops_brand, ops_date, records, calls, conversions,
         total_cost, true_cac, d_total, d_plus, d_minus, d_neutral, d_ratio,
         kpi2_logins, li_pct, tech_issues, t, am, dnc, na, dx, wn,
-        cost_caller, cost_sip, cost_sms, cost_email,
+        hlrv, twoxrv, sa, sd, sf, sp, ev, es, ed, ef, eo, ec,
         extracted_engagement, extracted_lifecycle, extracted_segment,
         extracted_product, extracted_language, extracted_sublifecycle, country,
-        "Strategy_Signature", campaign_signature"""
+        "Strategy_Signature" """
     try:
         return _optimize_memory(pd.read_sql(f"SELECT {OPS_COLS} FROM ops_telemarketing_snapshots_materialized", engine))
     except Exception:
@@ -927,8 +930,13 @@ with st.sidebar:
         
         calc_start = None
         calc_end = max_date
-        if preset == "Last 7 Days":
+        if preset == "Yesterday":
+            calc_end = max_date - pd.Timedelta(days=1)
+            calc_start = calc_end
+        elif preset == "Last 7 Days":
             calc_start = calc_end - pd.Timedelta(days=7)
+        elif preset == "Last 14 Days":
+            calc_start = calc_end - pd.Timedelta(days=14)
         elif preset == "Last 30 Days":
             calc_start = calc_end - pd.Timedelta(days=30)
         elif preset == "Last 90 Days":
@@ -955,7 +963,7 @@ with st.sidebar:
         st.session_state["date_preset"] = "Last 30 Days"
         update_slider()
 
-    options = ["Custom", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
+    options = ["Custom", "Yesterday", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
     st.sidebar.radio("Quick Select", options, horizontal=False, key="date_preset", on_change=update_slider)
 
     if "date_slider_val" not in st.session_state:
@@ -4000,51 +4008,111 @@ if "📞 Operations Command" in tab_map:
                 # Calculate number of days in the current slice to scale the monthly SLA
                 num_days = ops_df['ops_date'].nunique() if 'ops_date' in ops_df.columns else 1
                 sla_scale_factor = num_days / 30.0
-                # Aggregate actuals to match Volume SLAs
-                actuals = ops_df.groupby(["ops_client", "ops_brand", "ops_lifecycle"]).agg(
-                    Actual_Records=("Records", "sum")
-                ).reset_index()
-                
-                # Merge uploaded data with Volume rules
-                merged_vol = pd.merge(
-                    actuals, vol_df, 
-                    left_on=["ops_client", "ops_brand", "ops_lifecycle"], 
-                    right_on=["client_name", "brand_code", "lifecycle"], 
-                    how="inner"
-                )
-                
-                if not merged_vol.empty:
-                    # Build per-brand cards: group lifecycles under each brand
-                    from itertools import groupby as _groupby
-                    brand_data = {}
-                    for _, row in merged_vol.sort_values(['client_name', 'brand_code', 'lifecycle']).iterrows():
-                        target = max(1, int(row["monthly_minimum_records"] * sla_scale_factor))
-                        actual = int(row["Actual_Records"])
-                        pct = min(actual / target, 1.0) if target > 0 else 0
-                        key = (row['client_name'], row['brand_code'])
-                        if key not in brand_data:
-                            brand_data[key] = {'lifecycles': [], 'total_actual': 0, 'total_target': 0}
-                        brand_data[key]['lifecycles'].append({'lc': row['lifecycle'], 'actual': actual, 'target': target, 'pct': pct})
-                        brand_data[key]['total_actual'] += actual
-                        brand_data[key]['total_target'] += target
-                    
-                    # Render 3-column grid of brand cards
-                    brand_keys = list(brand_data.keys())
-                    for row_start in range(0, len(brand_keys), 3):
-                        row_keys = brand_keys[row_start:row_start + 3]
-                        cols = st.columns(3)
-                        for i, (client, brand) in enumerate(row_keys):
-                            bd = brand_data[(client, brand)]
-                            overall_pct = min(bd['total_actual'] / bd['total_target'], 1.0) if bd['total_target'] > 0 else 0
-                            status = "🟢" if overall_pct >= 0.9 else ("🟡" if overall_pct >= 0.5 else "🔴")
+
+                # --- Build CLIENT-level cards with brands nested inside ---
+                # 1. Aggregate ops data by client -> brand -> lifecycle
+                agg_cols = {'Records': 'sum', 'KPI2-Login': 'sum', 'KPI1-Conv.': 'sum', 'Calls': 'sum'}
+                # SMS metrics (sa=sent, sd=delivered, sf=failed, sp=pending)
+                for sc in ['sa', 'sd', 'sf', 'sp']:
+                    if sc in ops_df.columns: agg_cols[sc] = 'sum'
+                # Email metrics (ev=sent, es=sent2, ed=delivered, ef=failed, eo=opened, ec=clicked)
+                for ec_col in ['ev', 'es', 'ed', 'ef', 'eo', 'ec']:
+                    if ec_col in ops_df.columns: agg_cols[ec_col] = 'sum'
+                # Call delivery metrics
+                for dc in ['D+', 'D', 'D-']:
+                    if dc in ops_df.columns: agg_cols[dc] = 'sum'
+
+                client_brand_lc = ops_df.groupby(['ops_client', 'ops_brand', 'extracted_lifecycle']).agg(agg_cols).reset_index()
+
+                # 2. Build nested dict: client -> {brands: {brand -> {lifecycles, metrics}}}
+                client_cards = {}
+                for _, row in client_brand_lc.iterrows():
+                    client = row['ops_client']
+                    brand = row['ops_brand']
+                    lc = row['extracted_lifecycle']
+                    if lc == 'UNKNOWN': continue
+
+                    if client not in client_cards:
+                        client_cards[client] = {'brands': {}, 'total_records': 0, 'total_logins': 0, 'total_conv': 0,
+                                                'total_calls': 0, 'total_sms': 0, 'total_emails': 0,
+                                                'total_d_plus': 0, 'total_d': 0, 'total_d_minus': 0,
+                                                'total_sd': 0, 'total_sms_total': 0,
+                                                'total_ed': 0, 'total_ef': 0, 'total_eo': 0,
+                                                'lifecycles': set()}
+                    cc = client_cards[client]
+                    if brand not in cc['brands']:
+                        cc['brands'][brand] = {'lifecycles': set(), 'records': 0}
+                    cc['brands'][brand]['lifecycles'].add(lc)
+                    cc['brands'][brand]['records'] += int(row.get('Records', 0))
+                    cc['lifecycles'].add(lc)
+                    cc['total_records'] += int(row.get('Records', 0))
+                    cc['total_logins'] += int(row.get('KPI2-Login', 0))
+                    cc['total_conv'] += int(row.get('KPI1-Conv.', 0))
+                    cc['total_calls'] += int(row.get('Calls', 0))
+                    # SMS = sa (sent)
+                    cc['total_sms'] += int(row.get('sa', 0))
+                    # Emails = ev (sent/volume)
+                    cc['total_emails'] += int(row.get('ev', 0))
+                    # Call delivery
+                    cc['total_d_plus'] += int(row.get('D+', 0))
+                    cc['total_d'] += int(row.get('D', 0))
+                    cc['total_d_minus'] += int(row.get('D-', 0))
+                    # SMS delivery
+                    cc['total_sd'] += int(row.get('sd', 0))
+                    sms_total = int(row.get('sd', 0)) + int(row.get('sf', 0)) + int(row.get('sp', 0))
+                    cc['total_sms_total'] += sms_total
+                    # Email delivery & open
+                    cc['total_ed'] += int(row.get('ed', 0))
+                    cc['total_ef'] += int(row.get('ef', 0))
+                    cc['total_eo'] += int(row.get('eo', 0))
+
+                if client_cards:
+                    # Render 2-column grid of client cards
+                    client_keys = list(client_cards.keys())
+                    for row_start in range(0, len(client_keys), 2):
+                        row_keys = client_keys[row_start:row_start + 2]
+                        cols = st.columns(2)
+                        for i, client in enumerate(row_keys):
+                            cc = client_cards[client]
                             with cols[i]:
-                                st.markdown(f"{status} **{brand}** · {client}")
-                                st.progress(overall_pct)
-                                st.caption(f"**{bd['total_actual']:,} / {bd['total_target']:,}** ({num_days}d)")
-                                for lc in bd['lifecycles']:
-                                    lc_icon = "✅" if lc['pct'] >= 0.9 else "⚠️"
-                                    st.caption(f"  {lc_icon} {lc['lc']}: {lc['actual']:,} / {lc['target']:,}")
-                    st.markdown("---")
+                                st.markdown(f"#### 🏢 {client}")
+                                brand_names = sorted(cc['brands'].keys())
+                                lifecycle_tags = ", ".join(sorted(cc['lifecycles']))
+                                st.caption(f"**Brands**: {', '.join(brand_names)}  |  **Active Lifecycles**: {lifecycle_tags}")
+
+                                # Volume / Logins / Conversions
+                                m1, m2, m3 = st.columns(3)
+                                m1.metric("📋 Volume", f"{cc['total_records']:,}")
+                                m2.metric("🔑 Logins", f"{cc['total_logins']:,}")
+                                m3.metric("✅ Conversions", f"{cc['total_conv']:,}")
+
+                                # Calls / SMS / Emails
+                                m4, m5, m6 = st.columns(3)
+                                m4.metric("📞 Calls", f"{cc['total_calls']:,}")
+                                m5.metric("💬 SMS", f"{cc['total_sms']:,}")
+                                m6.metric("📧 Emails", f"{cc['total_emails']:,}")
+
+                                # Delivery Rates
+                                total_call_dials = cc['total_d_plus'] + cc['total_d'] + cc['total_d_minus']
+                                call_d_str = f"D: {cc['total_d']:,}  D+: {cc['total_d_plus']:,}  D-: {cc['total_d_minus']:,}"
+                                sms_del_pct = (cc['total_sd'] / cc['total_sms_total'] * 100) if cc['total_sms_total'] > 0 else 0
+                                email_total = cc['total_ed'] + cc['total_ef']
+                                email_del_pct = (cc['total_ed'] / email_total * 100) if email_total > 0 else 0
+                                email_open_pct = (cc['total_eo'] / cc['total_ed'] * 100) if cc['total_ed'] > 0 else 0
+
+                                st.caption(f"**Call Delivery**: {call_d_str}")
+                                d1, d2, d3 = st.columns(3)
+                                d1.metric("SMS Delivery %", f"{sms_del_pct:.1f}%")
+                                d2.metric("Email Delivery %", f"{email_del_pct:.1f}%")
+                                d3.metric("Email Open %", f"{email_open_pct:.1f}%")
+
+                                # Brand breakdown
+                                with st.expander(f"📊 Brand Breakdown ({len(brand_names)} brands)"):
+                                    for bn in brand_names:
+                                        bd = cc['brands'][bn]
+                                        lcs = ", ".join(sorted(bd['lifecycles']))
+                                        st.caption(f"**{bn}** — {bd['records']:,} records — Lifecycles: {lcs}")
+                                st.markdown("---")
                 else:
                     st.info("No active Volume SLAs match the currently loaded operations data. Add them in System Settings.")
             else:
@@ -4103,8 +4171,9 @@ if "📞 Operations Command" in tab_map:
             pie_col1, pie_col2, pie_col3 = st.columns(3)
 
             import plotly.express as px
+            import plotly.graph_objects as go
             if not ops_df.empty:
-                # Calculate aggregates for pies
+                # Calculate aggregates for bar charts
                 tot_d_plus = ops_df['D+'].sum() if 'D+' in ops_df.columns else 0
                 tot_d_minus = ops_df['D-'].sum() if 'D-' in ops_df.columns else 0
                 tot_d_neutral = ops_df['D'].sum() if 'D' in ops_df.columns else 0
@@ -4119,18 +4188,20 @@ if "📞 Operations Command" in tab_map:
 
                 with pie_col1:
                     st.markdown("**Overall Outcomes**")
-                    pie_df1 = pd.DataFrame({'Outcome': ['Deliveries', 'No Answer', 'Issues'], 'Value': [tot_deliveries, tot_na, tot_issues]})
-                    fig1 = px.pie(pie_df1, names='Outcome', values='Value', hole=0.4, color='Outcome', 
-                                  color_discrete_map={'Deliveries': '#22c55e', 'No Answer': '#eab308', 'Issues': '#ef4444'})
-                    fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                    bar_df1 = pd.DataFrame({'Outcome': ['Deliveries', 'No Answer', 'Issues'], 'Value': [tot_deliveries, tot_na, tot_issues]})
+                    fig1 = go.Figure(go.Bar(x=bar_df1['Value'], y=bar_df1['Outcome'], orientation='h',
+                        marker_color=['#22c55e', '#eab308', '#ef4444'],
+                        text=[f"{v:,.0f}" for v in bar_df1['Value']], textposition='auto'))
+                    fig1.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
                     st.plotly_chart(fig1, width='stretch')
 
                 with pie_col2:
                     st.markdown("**Deliveries Breakdown**")
-                    pie_df2 = pd.DataFrame({'Outcome': ['D+', 'D', 'D-'], 'Value': [tot_d_plus, tot_d_neutral, tot_d_minus]})
-                    fig2 = px.pie(pie_df2, names='Outcome', values='Value', hole=0.4, color='Outcome',
-                                  color_discrete_map={'D+': '#22c55e', 'D': '#16a34a', 'D-': '#86efac'})
-                    fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                    bar_df2 = pd.DataFrame({'Outcome': ['D+', 'D', 'D-'], 'Value': [tot_d_plus, tot_d_neutral, tot_d_minus]})
+                    fig2 = go.Figure(go.Bar(x=bar_df2['Value'], y=bar_df2['Outcome'], orientation='h',
+                        marker_color=['#22c55e', '#16a34a', '#86efac'],
+                        text=[f"{v:,.0f}" for v in bar_df2['Value']], textposition='auto'))
+                    fig2.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
                     st.plotly_chart(fig2, width='stretch')
 
                 with pie_col3:
@@ -4138,10 +4209,11 @@ if "📞 Operations Command" in tab_map:
                     issue_names = ['WN', 'DNC', 'DX', 'T']
                     issue_vals = [tot_wn, tot_dnc, tot_dx, tot_t]
                     i_names, i_vals = zip(*[(n, v) for n, v in zip(issue_names, issue_vals) if v > 0]) if sum(issue_vals) > 0 else (['None'], [1])
-                    pie_df3 = pd.DataFrame({'Outcome': list(i_names), 'Value': list(i_vals)})
-                    fig3 = px.pie(pie_df3, names='Outcome', values='Value', hole=0.4, color='Outcome',
-                                  color_discrete_map={'WN': '#ef4444', 'DNC': '#dc2626', 'DX': '#b91c1c', 'T': '#991b1b', 'None': '#333333'})
-                    fig3.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41")
+                    bar_df3 = pd.DataFrame({'Outcome': list(i_names), 'Value': list(i_vals)})
+                    fig3 = go.Figure(go.Bar(x=bar_df3['Value'], y=bar_df3['Outcome'], orientation='h',
+                        marker_color=['#ef4444', '#dc2626', '#b91c1c', '#991b1b'][:len(i_names)],
+                        text=[f"{v:,.0f}" for v in i_vals], textposition='auto'))
+                    fig3.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
                     st.plotly_chart(fig3, width='stretch')
 
             st.markdown("---")
@@ -4440,6 +4512,68 @@ if "📞 Operations Command" in tab_map:
                     }
                 )
 
+            # --- 📋 Daily Campaign Detail (Non-Aggregated) ---
+            st.markdown("---")
+            st.markdown("### 📋 Daily Campaign Detail")
+            st.markdown("*Raw campaign rows as received from the daily pull — no date aggregation.*")
+
+            if not ops_df.empty:
+                raw_req_cols = ["Records", "Calls", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "sp", "ev", "es", "ed", "ef", "eo", "ec", "D"]
+                
+                # Build a per-campaign-row view (no groupby)
+                raw_detail = ops_df.copy()
+                for c in raw_req_cols:
+                    if c not in raw_detail.columns:
+                        raw_detail[c] = 0
+
+                # Net Records
+                raw_detail["Net_Records"] = (raw_detail["Records"] - raw_detail.get("hlrv", 0) - raw_detail.get("twoxrv", 0)).clip(lower=1)
+                
+                # Completion %
+                raw_detail["Gross_Completion_%"] = (raw_detail["Calls"] / raw_detail["Records"].replace(0, 1)).clip(0, 1) * 100
+                raw_detail["Net_Completion_%"] = (raw_detail["Calls"] / raw_detail["Net_Records"]).clip(0, 1) * 100
+                
+                # Quality Matrix
+                raw_detail["Deliveries"] = raw_detail["D+"] + raw_detail["d_neutral"] + raw_detail["D-"]
+                raw_detail["Issues"] = raw_detail["AM"] + raw_detail["DNC"] + raw_detail["DX"] + raw_detail["WN"] + raw_detail["T"]
+                raw_detail["Deliveries_%"] = (raw_detail["Deliveries"] / raw_detail["Calls"].replace(0, 1)) * 100
+                raw_detail["NA_%"] = (raw_detail["NA"] / raw_detail["Calls"].replace(0, 1)) * 100
+                raw_detail["Issues_%"] = (raw_detail["Issues"] / raw_detail["Calls"].replace(0, 1)) * 100
+                
+                # Email & SMS funnel
+                raw_detail['Email Delivered'] = (raw_detail['ed'] / (raw_detail['ed'] + raw_detail['ef']).replace(0, float('nan')) * 100).fillna(0)
+                raw_detail['Email Open'] = (raw_detail['eo'] / raw_detail['ed'].replace(0, float('nan')) * 100).fillna(0)
+                raw_detail['Email Clicked'] = (raw_detail['ec'] / raw_detail['eo'].replace(0, float('nan')) * 100).fillna(0)
+                raw_detail['SMS Delivered'] = (raw_detail['sd'] / (raw_detail['sd'] + raw_detail['sp'] + raw_detail['sf']).replace(0, float('nan')) * 100).fillna(0)
+
+                # Select display columns (use Campaign Name as-is from the daily pull)
+                raw_display_cols = ['Campaign Name', 'ops_date', 'Gross_Completion_%', 'Net_Completion_%', 'Calls', 'Deliveries_%', 'NA_%', 'Issues_%', 'Email Delivered', 'Email Open', 'Email Clicked', 'SMS Delivered']
+                raw_display_cols = [c for c in raw_display_cols if c in raw_detail.columns]
+                
+                raw_display = raw_detail[raw_display_cols].rename(columns={
+                    'Gross_Completion_%': 'Gross %',
+                    'Net_Completion_%': 'Net %',
+                    'Deliveries_%': 'Deliveries %',
+                    'NA_%': 'No Answers %',
+                    'Issues_%': 'Issues %',
+                    'ops_date': 'Date',
+                }).sort_values(by='Date', ascending=False) if 'ops_date' in raw_detail.columns else raw_detail[raw_display_cols]
+
+                st.dataframe(
+                    raw_display,
+                    width='stretch', hide_index=True,
+                    column_config={
+                        "Gross %": st.column_config.ProgressColumn("Gross %", format="%.1f%%", min_value=0, max_value=100),
+                        "Net %": st.column_config.ProgressColumn("Net %", format="%.1f%%", min_value=0, max_value=100),
+                        "Deliveries %": st.column_config.NumberColumn("Deliveries %", format="%.1f%%"),
+                        "No Answers %": st.column_config.NumberColumn("No Answers %", format="%.1f%%"),
+                        "Issues %": st.column_config.NumberColumn("Issues %", format="%.1f%%"),
+                        "Email Delivered": st.column_config.NumberColumn("Email Del %", format="%.1f%%"),
+                        "Email Open": st.column_config.NumberColumn("Email Open %", format="%.1f%%"),
+                        "Email Clicked": st.column_config.NumberColumn("Email Click %", format="%.1f%%"),
+                        "SMS Delivered": st.column_config.NumberColumn("SMS Del %", format="%.1f%%"),
+                    }
+                )
 
             # --- 📦 Client SLA Volume Fulfillment ---
             st.markdown("---")
@@ -4457,8 +4591,8 @@ if "📞 Operations Command" in tab_map:
                 # Filter out UNKNOWN lifecycles as they don't count towards these specific SLAs
                 
                 if "extracted_lifecycle" in ops_df.columns:
-                    # Isolate the data first
-                    sla_ops_target = ops_df[ops_df["extracted_lifecycle"] != "UNKNOWN"]
+                    # Only WB and RND lifecycles have active SLA requirements
+                    sla_ops_target = ops_df[ops_df["extracted_lifecycle"].isin(["WB", "RND"])]
                     
                     if not sla_ops_target.empty:
                         # Calculate number of days in the current slice to scale the monthly SLA
@@ -4526,56 +4660,8 @@ if "📞 Operations Command" in tab_map:
                     st.info("No recognizable SLA lifecycles (WB, ACQ, RET, RND) found in the current dataset.")
 
 
-            # --- Campaign Comparison Matrix ---
-            st.markdown("---")
-            st.markdown("### 🔍 Campaign Comparison Matrix")
-            if not ops_df.empty:
-                group_by = st.selectbox("Compare Timeframe By:", ["Month", "Week", "Overall"])
-                
-                pivot_cols = ['Base Campaign']
-                
-                # Perform temporal extractions dynamically inside the groupby sequence instead of copying/augmenting 350,000 rows
-                if group_by == "Week":
-                    if 'ops_date' in ops_df.columns:
-                        pivot_cols.append(pd.to_datetime(ops_df['ops_date']).dt.isocalendar().week.rename('Week'))
-                    else:
-                        pivot_cols.append(pd.Series([1]*len(ops_df), name='Week'))
-                elif group_by == "Month":
-                    if 'ops_date' in ops_df.columns:
-                        pivot_cols.append(pd.to_datetime(ops_df['ops_date']).dt.month.rename('Month'))
-                    else:
-                        pivot_cols.append(pd.Series([1]*len(ops_df), name='Month'))
-                        
-                matrix = ops_df.groupby(pivot_cols).agg({
-                    'Records': 'sum',
-                    'Calls': 'sum',
-                    'KPI1-Conv.': 'sum',
-                    'Total_Campaign_Cost': 'sum',
-                    'D Ratio': 'mean'
-                }).reset_index()
-                
-                matrix['True_CAC'] = matrix['Total_Campaign_Cost'] / matrix['KPI1-Conv.']
-                matrix['True_CAC'] = matrix['True_CAC'].replace([float('inf'), -float('inf')], 0).fillna(0)
-                matrix['D Ratio'] = matrix['D Ratio'] * 100
-                
-                sort_cols = ['Base Campaign']
-                if group_by != "Overall":
-                    sort_cols.append(group_by)
-                
-                st.dataframe(
-                    matrix.sort_values(by=sort_cols),
-                    width='stretch', hide_index=True,
-                    column_config={
-                        "Records": st.column_config.NumberColumn("Total Records", format="%d"),
-                        "Total_Campaign_Cost": st.column_config.NumberColumn("Total Spend", format="$%.2f"),
-                        "True_CAC": st.column_config.NumberColumn("True CAC", format="$%.2f"),
-                        "D Ratio": st.column_config.NumberColumn("Avg Contact Rate", format="%.2f%%")
-                    }
-                )
-            else:
-                st.info("No campaign data available for comparison.")
+            # Campaign Comparison Matrix — REMOVED per user request (v14.2)
 
-                
             st.markdown("---")
             st.markdown("##### 📋 Campaign True Cost Ledger")
             ledger_agg_cols = {'Records': 'sum', 'Calls': 'sum', 'Total_Campaign_Cost': 'sum', 'KPI1-Conv.': 'sum'}
