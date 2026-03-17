@@ -746,11 +746,7 @@ init_db()
 
 # --- PERSISTENT SESSIONS ---
 import extra_streamlit_components as stx
-@st.cache_resource(show_spinner=False)
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+cookie_manager = stx.CookieManager()
 
 # --- GLOBAL STATE HYDRATION (DB to RAM) ---
 # This ensures all global dropdowns and legacy tabs populate instantly from the persistent RAM cache
