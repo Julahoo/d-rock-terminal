@@ -550,10 +550,7 @@ def fetch_ops_snapshots():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl="15m", show_spinner=False)
-def _cached_sidebar_filters():
-    raw_ops = fetch_ops_data()
-    raw_fin = fetch_financial_data()
+def _generate_sidebar_filters(raw_ops, raw_fin):
     
     db_clients = set()
     if not raw_ops.empty and 'ops_client' in raw_ops.columns: db_clients.update(raw_ops['ops_client'].unique())
@@ -586,11 +583,8 @@ def _cached_sidebar_filters():
         avail_engagements
     )
 
-@st.cache_data(ttl="15m", show_spinner=False)
-def _cached_global_date_boundaries():
+def _generate_global_date_boundaries(raw_ops, raw_fin):
     import pandas as pd
-    raw_ops = fetch_ops_data()
-    raw_fin = fetch_financial_data()
     valid_mins, valid_maxs = [], []
     
     if not raw_ops.empty and 'ops_date' in raw_ops.columns:
@@ -854,12 +848,12 @@ with st.sidebar:
     # --- MASSIVE PERFORMANCE BOOST ---
     # Fetch unique categories directly from the isolated memory cache instead of making Pandas 
     # extract distinct rows from 350,000+ string arrays on every generic UI button click.
-    _mem_mb("BEFORE _cached_sidebar_filters")
+    _mem_mb("BEFORE _generate_sidebar_filters")
     (
         db_clients, sorted_brands, avail_countries_raw, avail_products, 
         avail_languages, avail_lifecycles, avail_segments, avail_sublifecycles, avail_engagements
-    ) = _cached_sidebar_filters()
-    _mem_mb("AFTER _cached_sidebar_filters")
+    ) = _generate_sidebar_filters(raw_ops, st.session_state.get("financial_df", pd.DataFrame()))
+    _mem_mb("AFTER _generate_sidebar_filters")
 
     allowed = st.session_state.get("allowed_clients", ["All"])
     if "All" not in allowed:
@@ -941,9 +935,9 @@ with st.sidebar:
 
     # 5. Elite Date Range Quick-Select Helper
     # Fetch from ultra-fast cached boundaries instead of coercing 350,000 strings into datetime vectors
-    _mem_mb("BEFORE _cached_global_date_boundaries")
-    min_db_date, max_date = _cached_global_date_boundaries()
-    _mem_mb("AFTER _cached_global_date_boundaries")
+    _mem_mb("BEFORE _generate_global_date_boundaries")
+    min_db_date, max_date = _generate_global_date_boundaries(raw_ops, st.session_state.get("financial_df", pd.DataFrame()))
+    _mem_mb("AFTER _generate_global_date_boundaries")
 
     # Streamlit slider min_value must be STRICTLY less than max_value
     if min_db_date.date() >= max_date.date():
