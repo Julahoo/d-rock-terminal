@@ -824,11 +824,11 @@ with st.sidebar:
         st.session_state["raw_pulse_df"] = pd.DataFrame()
 
     if raw_ops.empty and raw_fin.empty:
-        st.sidebar.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
+        st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
 
     # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🌍 GLOBAL FILTERS")
+    st.markdown("---")
+    st.markdown("### 🌍 GLOBAL FILTERS")
 
     # --- MASSIVE PERFORMANCE BOOST ---
     # Fetch unique categories directly from the isolated memory cache instead of making Pandas 
@@ -969,13 +969,13 @@ with st.sidebar:
         update_slider()
 
     options = ["Custom", "Yesterday", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
-    st.sidebar.radio("Quick Select", options, horizontal=False, key="date_preset", on_change=update_slider)
+    st.radio("Quick Select", options, horizontal=False, key="date_preset", on_change=update_slider)
 
     if "date_slider_val" not in st.session_state:
         st.session_state["date_slider_val"] = (min_db_date.date(), max_date.date())
 
-    st.sidebar.markdown("##### 📅 Analysis Window")
-    _aw_c1, _aw_c2 = st.sidebar.columns(2)
+    st.markdown("##### 📅 Analysis Window")
+    _aw_c1, _aw_c2 = st.columns(2)
     with _aw_c1:
         start_date_val = st.date_input(
             "Start",
@@ -1024,8 +1024,8 @@ with st.sidebar:
     from src.report_queue import ReportQueue
     _rq = ReportQueue.get_instance()
     
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📋 Report Queue")
+    st.markdown("---")
+    st.markdown("### 📋 Report Queue")
     
     _available_reports = {
         "Full Financial Export": "full_financial_export",
@@ -1034,15 +1034,15 @@ with st.sidebar:
         "VIP Churn Radar": "vip_churn_radar",
     }
     
-    _rq_selection = st.sidebar.selectbox("📊 Report Type", list(_available_reports.keys()))
-    _rq_submit = st.sidebar.button("🚀 Request Report", help="Request this report in the background", width='stretch')
+    _rq_selection = st.selectbox("📊 Report Type", list(_available_reports.keys()))
+    _rq_submit = st.button("🚀 Request Report", help="Request this report in the background", use_container_width=True)
     
     if _rq_submit:
         job_id = _rq.submit(
             _available_reports[_rq_selection],
             display_name=_rq_selection
         )
-        st.sidebar.success(f"✅ Queued: {_rq_selection} (#{job_id})")
+        st.success(f"✅ Queued: {_rq_selection} (#{job_id})")
     
     # Show active/recent jobs
     _rq_jobs = _rq.get_all_jobs()
@@ -1050,12 +1050,12 @@ with st.sidebar:
         for _j in _rq_jobs[:5]:
             _status_icon = {"pending": "⏳", "running": "🔄", "done": "✅", "error": "❌"}.get(_j["status"], "❓")
             _time_str = _j["completed_at"] or _j["requested_at"]
-            st.sidebar.caption(f"{_status_icon} {_j['display_name']} — {_time_str}")
+            st.caption(f"{_status_icon} {_j['display_name']} — {_time_str}")
             # Offer download button for completed jobs with bytes results
             if _j["status"] == "done":
                 _result = _rq.get_result(_j["id"])
                 if _result is not None and isinstance(_result, bytes):
-                    st.sidebar.download_button(
+                    st.download_button(
                         f"📥 Download {_j['display_name']}",
                         data=_result,
                         file_name=f"{_j['display_name'].replace(' ', '_')}.xlsx",
@@ -1070,11 +1070,11 @@ with st.sidebar:
 
     # --- BOTTOM SIDEBAR: AUTHENTICATION ---
     # Use vertical space to push this to the bottom of the sidebar visually
-    st.sidebar.markdown("<br>" * 5, unsafe_allow_html=True) 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(f"👤 **Role:** {st.session_state['user_role']}")
+    st.markdown("<br>" * 5, unsafe_allow_html=True) 
+    st.markdown("---")
+    st.markdown(f"👤 **Role:** {st.session_state['user_role']}")
     
-    if st.sidebar.button("🚪 Logout", width='stretch'):
+    if st.button("🚪 Logout", use_container_width=True):
         st.session_state["authenticated"] = False
         st.session_state["user_role"] = None
         st.session_state["user_name"] = None
