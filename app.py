@@ -813,33 +813,24 @@ with st.sidebar:
     view_mode = st.selectbox("🧭 Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
-    # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
-    raw_ops = fetch_ops_data()  # Always needed (sidebar filters, Dashboard, Operations)
-    st.session_state["raw_ops_df"] = raw_ops
+    # MEMORY OPTIMIZATION: Only store ONE copy in session_state (not raw + filtered duplicates).
+    # @st.cache_data already shares data across sessions; session_state is per-user overhead.
+    raw_ops = fetch_ops_data()  # Always needed (sidebar filters, Operations)
     st.session_state["ops_df"] = raw_ops
 
     # Financial data: only needed by Financial and Admin views (NOT Operations)
     if view_mode in ["🏦 Financial", "⚙️ Admin"]:
-        raw_fin = fetch_financial_data()
-    else:
-        raw_fin = st.session_state.get("raw_fin_df", pd.DataFrame())
-    st.session_state["raw_fin_df"] = raw_fin
-    st.session_state["financial_df"] = raw_fin
+        st.session_state["financial_df"] = fetch_financial_data()
+    elif "financial_df" not in st.session_state:
+        st.session_state["financial_df"] = pd.DataFrame()
 
-    # Snapshots: only needed by Operations Command
-    if view_mode in ["📞 Operations", "⚙️ Admin"]:
-        raw_ops_snapshots = fetch_ops_snapshots_data()
-    else:
-        raw_ops_snapshots = st.session_state.get("raw_ops_snapshots_df", pd.DataFrame())
-    st.session_state["raw_ops_snapshots_df"] = raw_ops_snapshots
+    # Snapshots: only needed by Operations Historical Benchmarks (heavy — skip for initial load)
+    if view_mode in ["📞 Operations"]:
+        st.session_state["snap_df"] = fetch_ops_snapshots_data()
+    elif "snap_df" not in st.session_state:
+        st.session_state["snap_df"] = pd.DataFrame()
 
-    # Pulse: only needed by Dashboard
-    if view_mode == "📊 Dashboard":
-        st.session_state["raw_pulse_df"] = fetch_dashboard_pulse_data()
-    elif "raw_pulse_df" not in st.session_state:
-        st.session_state["raw_pulse_df"] = pd.DataFrame()
-
-    if raw_ops.empty and raw_fin.empty:
+    if raw_ops.empty and st.session_state.get("financial_df", pd.DataFrame()).empty:
         st.warning("⚠️ The database is currently empty. Please navigate to the 🗄️ Operations Ingestion tab and upload your CSV files to initialize the schema.")
 
     # --- 2. SIDEBAR GLOBAL FILTERS & RBAC ---
