@@ -2115,29 +2115,7 @@ def _render_fixed_benchmark(df, prior_half="H2 2025"):
     c_sd = safe_pct(c['sd'], c['ss']); p_sd = safe_pct(p['sd'], p['ss'])
     c_sf = safe_pct(c['sf'], c['ss']); p_sf = safe_pct(p['sf'], p['ss'])
 
-    # ── LAYER 1: KPI SUMMARY CARDS ──
-    kc1, kc2, kc3, kc4 = st.columns(4)
-    with kc1:
-        st.markdown("##### 📞 Volume")
-        st.metric("Records", fmt_num(c['records']), calc_delta(c['records'], p['records']))
-        st.caption(f"Logins: {fmt_num(c['kpi2_logins'])} ({calc_delta(c['kpi2_logins'], p['kpi2_logins'])})")
-        st.caption(f"Conv: {fmt_num(c['conversions'])} ({calc_delta(c['conversions'], p['conversions'])})")
-    with kc2:
-        st.markdown("##### ☎️ Call Efficiency")
-        st.metric("Calls Delivered %", fmt_pct(c_d), calc_delta(c_d, p_d, True))
-        st.caption(f"No Answer %: {fmt_pct(c_na)} ({calc_delta(c_na, p_na, True)})")
-        st.caption(f"Invalid %: {fmt_pct(c_i)} ({calc_delta(c_i, p_i, True)})")
-    with kc3:
-        st.markdown("##### 📧 Email Health")
-        st.metric("Email Delivered %", fmt_pct(c_ed), calc_delta(c_ed, p_ed, True))
-        st.caption(f"Email Opened %: {fmt_pct(c_eo)} ({calc_delta(c_eo, p_eo, True)})")
-        st.caption(f"Email Clicked %: {fmt_pct(c_ec)} ({calc_delta(c_ec, p_ec, True)})")
-    with kc4:
-        st.markdown("##### 📱 SMS Health")
-        st.metric("SMS Delivered %", fmt_pct(c_sd), calc_delta(c_sd, p_sd, True))
-        st.caption(f"SMS Failed %: {fmt_pct(c_sf)} ({calc_delta(c_sf, p_sf, True)})")
-
-    st.markdown("---")
+    # Layer 1 KPI cards removed per user request — benchmarks moved to SLA client cards
 
     # ── LAYER 2: BENCHMARK TABLE ──
     rows = []
@@ -4041,6 +4019,8 @@ if "📞 Operations Command" in tab_map:
                     ops_sla = ops_df
 
                 client_agg = ops_sla.groupby('ops_client').agg(agg_cols).reset_index()
+                # Remove UNKNOWN client — these are unmapped campaigns
+                client_agg = client_agg[client_agg['ops_client'] != 'UNKNOWN']
                 # Get active lifecycles per client
                 if lc_col:
                     client_lcs = ops_sla.groupby('ops_client')[lc_col].apply(lambda x: sorted(x.unique())).to_dict()
@@ -4048,6 +4028,67 @@ if "📞 Operations Command" in tab_map:
                     client_lcs = {}
 
                 if not client_agg.empty:
+                    # --- Compute H1/H2 Benchmarks from SNAPSHOTS for Client Cards ---
+                    from datetime import datetime as _dt
+                    _now = _dt.now()
+                    _cur_year = _now.year
+                    # Determine which half we're in now, and which prior half to compare
+                    if _now.month <= 6:
+                        _prior_start, _prior_end = f"{_cur_year - 1}-01-01", f"{_cur_year - 1}-06-30"
+                        _bench_label = f"H1 {_cur_year - 1}"
+                    else:
+                        _prior_start, _prior_end = f"{_cur_year - 1}-07-01", f"{_cur_year - 1}-12-31"
+                        _bench_label = f"H2 {_cur_year - 1}"
+
+                    # Load snapshots for benchmark (lowercase columns — snapshots are NOT renamed)
+                    _snap_bench = {}
+                    try:
+                        if "snap_df" in st.session_state and not st.session_state["snap_df"].empty:
+                            _snap = st.session_state["snap_df"].copy()
+                        else:
+                            _snap = fetch_ops_snapshots_data()
+                        if not _snap.empty and 'ops_date' in _snap.columns:
+                            _snap['ops_date'] = pd.to_datetime(_snap['ops_date'], errors='coerce')
+                            _snap_period = _snap[(_snap['ops_date'] >= _prior_start) & (_snap['ops_date'] <= _prior_end)]
+                            if not _snap_period.empty:
+                                _snap_days = _snap_period['ops_date'].nunique()
+                                if _snap_days > 0:
+                                    _snap_agg_cols = {'records': 'sum', 'kpi2_logins': 'sum', 'conversions': 'sum',
+                                                      'calls': 'sum'}
+                                    for _sc in ['sa', 'sd', 'sf', 'sp', 'ev', 'es', 'ed', 'ef', 'eo', 'ec']:
+                                        if _sc in _snap.columns: _snap_agg_cols[_sc] = 'sum'
+                                    _snap_client = _snap_period.groupby('ops_client').agg(_snap_agg_cols).reset_index()
+                                    for _, _sr in _snap_client.iterrows():
+                                        _cl = _sr['ops_client']
+                                        _scale = num_days / _snap_days
+                                        _snap_bench[_cl] = {
+                                            'records': int(_sr.get('records', 0) * _scale),
+                                            'logins': int(_sr.get('kpi2_logins', 0) * _scale),
+                                            'conv': int(_sr.get('conversions', 0) * _scale),
+                                            'calls': int(_sr.get('calls', 0) * _scale),
+                                            'sms': int(_sr.get('sa', 0) * _scale),
+                                            'emails': int(_sr.get('ev', 0) * _scale),
+                                            'sd': int(_sr.get('sd', 0) * _scale),
+                                            'sf': int(_sr.get('sf', 0) * _scale),
+                                            'sp': int(_sr.get('sp', 0) * _scale),
+                                            'ed': int(_sr.get('ed', 0) * _scale),
+                                            'ef': int(_sr.get('ef', 0) * _scale),
+                                            'eo': int(_sr.get('eo', 0) * _scale),
+                                        }
+                    except Exception:
+                        _snap_bench = {}
+
+                    def _delta_str(curr, bench, is_pct=False):
+                        """Format delta string for st.metric."""
+                        if bench == 0: return None
+                        if is_pct:
+                            diff = curr - bench
+                            return f"{diff:+.1f}pp"
+                        else:
+                            pct = ((curr - bench) / bench) * 100
+                            return f"{pct:+.1f}%"
+
+                    st.caption(f"*Benchmarks vs. **{_bench_label}** daily average × {num_days} days*")
                     # Render 2-column grid of client cards
                     client_list = client_agg['ops_client'].tolist()
                     for row_start in range(0, len(client_list), 2):
@@ -4055,6 +4096,7 @@ if "📞 Operations Command" in tab_map:
                         cols = st.columns(2)
                         for i, client in enumerate(row_clients):
                             cr = client_agg[client_agg['ops_client'] == client].iloc[0]
+                            bm = _snap_bench.get(client, {})
                             with cols[i]:
                                 st.markdown(f"#### 🏢 {client}")
                                 # Use client_mapping for registered brands
@@ -4065,17 +4107,23 @@ if "📞 Operations Command" in tab_map:
                                 else:
                                     st.caption(f"**Active Lifecycles**: {', '.join(lifecycles)}")
 
-                                # Volume / Logins / Conversions
+                                # Volume / Logins / Conversions (with benchmark deltas)
+                                _vol = int(cr.get('Records', 0))
+                                _log = int(cr.get('KPI2-Login', 0))
+                                _con = int(cr.get('KPI1-Conv.', 0))
                                 m1, m2, m3 = st.columns(3)
-                                m1.metric("📋 Volume", f"{int(cr.get('Records', 0)):,}")
-                                m2.metric("🔑 Logins", f"{int(cr.get('KPI2-Login', 0)):,}")
-                                m3.metric("✅ Conversions", f"{int(cr.get('KPI1-Conv.', 0)):,}")
+                                m1.metric("📋 Volume", f"{_vol:,}", delta=_delta_str(_vol, bm.get('records', 0)))
+                                m2.metric("🔑 Logins", f"{_log:,}", delta=_delta_str(_log, bm.get('logins', 0)))
+                                m3.metric("✅ Conversions", f"{_con:,}", delta=_delta_str(_con, bm.get('conv', 0)))
 
-                                # Calls / SMS / Emails
+                                # Calls / SMS / Emails (with benchmark deltas)
+                                _cal = int(cr.get('Calls', 0))
+                                _sms = int(cr.get('sa', 0))
+                                _eml = int(cr.get('ev', 0))
                                 m4, m5, m6 = st.columns(3)
-                                m4.metric("📞 Calls", f"{int(cr.get('Calls', 0)):,}")
-                                m5.metric("💬 SMS", f"{int(cr.get('sa', 0)):,}")
-                                m6.metric("📧 Emails", f"{int(cr.get('ev', 0)):,}")
+                                m4.metric("📞 Calls", f"{_cal:,}", delta=_delta_str(_cal, bm.get('calls', 0)))
+                                m5.metric("💬 SMS", f"{_sms:,}", delta=_delta_str(_sms, bm.get('sms', 0)))
+                                m6.metric("📧 Emails", f"{_eml:,}", delta=_delta_str(_eml, bm.get('emails', 0)))
 
                                 # Delivery Rates
                                 d_plus = int(cr.get('D+', 0))
@@ -4096,11 +4144,20 @@ if "📞 Operations Command" in tab_map:
                                 email_del_pct = (ed_v / email_total * 100) if email_total > 0 else 0
                                 email_open_pct = (eo_v / ed_v * 100) if ed_v > 0 else 0
 
+                                # Benchmark delivery rates
+                                _bm_sd = bm.get('sd', 0); _bm_sf = bm.get('sf', 0); _bm_sp = bm.get('sp', 0)
+                                _bm_sms_t = _bm_sd + _bm_sf + _bm_sp
+                                _bm_sms_pct = (_bm_sd / _bm_sms_t * 100) if _bm_sms_t > 0 else 0
+                                _bm_ed = bm.get('ed', 0); _bm_ef = bm.get('ef', 0); _bm_eo = bm.get('eo', 0)
+                                _bm_email_t = _bm_ed + _bm_ef
+                                _bm_email_pct = (_bm_ed / _bm_email_t * 100) if _bm_email_t > 0 else 0
+                                _bm_open_pct = (_bm_eo / _bm_ed * 100) if _bm_ed > 0 else 0
+
                                 st.caption(f"**Call Delivery**: {call_d_str}")
                                 d1, d2, d3 = st.columns(3)
-                                d1.metric("SMS Delivery %", f"{sms_del_pct:.1f}%")
-                                d2.metric("Email Delivery %", f"{email_del_pct:.1f}%")
-                                d3.metric("Email Open %", f"{email_open_pct:.1f}%")
+                                d1.metric("SMS Delivery %", f"{sms_del_pct:.1f}%", delta=_delta_str(sms_del_pct, _bm_sms_pct, True))
+                                d2.metric("Email Delivery %", f"{email_del_pct:.1f}%", delta=_delta_str(email_del_pct, _bm_email_pct, True))
+                                d3.metric("Email Open %", f"{email_open_pct:.1f}%", delta=_delta_str(email_open_pct, _bm_open_pct, True))
 
                                 # Brand breakdown from registered brands only
                                 if registered_brands:
