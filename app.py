@@ -4157,48 +4157,8 @@ if "📞 Operations Command" in tab_map:
                                 m2.metric("🔑 Logins", f"{_log:,}", delta=_delta_str(_log, bm.get('logins', 0)))
                                 m3.metric("✅ Conversions", f"{_con:,}", delta=_delta_str(_con, bm.get('conv', 0)))
 
-                                # Calls / SMS / Emails (with benchmark deltas)
-                                _cal = int(cr.get('Calls', 0))
-                                _sms = int(cr.get('sa', 0))
-                                _eml = int(cr.get('ev', 0))
-                                m4, m5, m6 = st.columns(3)
-                                m4.metric("📞 Calls", f"{_cal:,}", delta=_delta_str(_cal, bm.get('calls', 0)))
-                                m5.metric("💬 SMS", f"{_sms:,}", delta=_delta_str(_sms, bm.get('sms', 0)))
-                                m6.metric("📧 Emails", f"{_eml:,}", delta=_delta_str(_eml, bm.get('emails', 0)))
 
-                                # Delivery Rates
-                                d_plus = int(cr.get('D+', 0))
-                                d_val = int(cr.get('D', 0))
-                                d_minus = int(cr.get('D-', 0))
-                                call_d_str = f"D: {d_val:,}  D+: {d_plus:,}  D-: {d_minus:,}"
-
-                                sd_v = int(cr.get('sd', 0))
-                                sf_v = int(cr.get('sf', 0))
-                                sp_v = int(cr.get('sp', 0))
-                                sms_total = sd_v + sf_v + sp_v
-                                sms_del_pct = (sd_v / sms_total * 100) if sms_total > 0 else 0
-
-                                ed_v = int(cr.get('ed', 0))
-                                ef_v = int(cr.get('ef', 0))
-                                eo_v = int(cr.get('eo', 0))
-                                email_total = ed_v + ef_v
-                                email_del_pct = (ed_v / email_total * 100) if email_total > 0 else 0
-                                email_open_pct = (eo_v / ed_v * 100) if ed_v > 0 else 0
-
-                                # Benchmark delivery rates
-                                _bm_sd = bm.get('sd', 0); _bm_sf = bm.get('sf', 0); _bm_sp = bm.get('sp', 0)
-                                _bm_sms_t = _bm_sd + _bm_sf + _bm_sp
-                                _bm_sms_pct = (_bm_sd / _bm_sms_t * 100) if _bm_sms_t > 0 else 0
-                                _bm_ed = bm.get('ed', 0); _bm_ef = bm.get('ef', 0); _bm_eo = bm.get('eo', 0)
-                                _bm_email_t = _bm_ed + _bm_ef
-                                _bm_email_pct = (_bm_ed / _bm_email_t * 100) if _bm_email_t > 0 else 0
-                                _bm_open_pct = (_bm_eo / _bm_ed * 100) if _bm_ed > 0 else 0
-
-                                st.caption(f"**Call Delivery**: {call_d_str}")
-                                d1, d2, d3 = st.columns(3)
-                                d1.metric("SMS Delivery %", f"{sms_del_pct:.1f}%", delta=_delta_str(sms_del_pct, _bm_sms_pct, True))
-                                d2.metric("Email Delivery %", f"{email_del_pct:.1f}%", delta=_delta_str(email_del_pct, _bm_email_pct, True))
-                                d3.metric("Email Open %", f"{email_open_pct:.1f}%", delta=_delta_str(email_open_pct, _bm_open_pct, True))
+                                # Calls/SMS/Emails & delivery rates — REMOVED per user request
 
                                 # Brand breakdown from registered brands only
                                 if registered_brands:
