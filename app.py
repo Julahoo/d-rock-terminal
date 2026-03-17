@@ -4680,7 +4680,7 @@ if "📞 Operations Command" in tab_map:
                 }).sort_values(by='Date', ascending=False) if 'ops_date' in raw_detail.columns else raw_detail[raw_display_cols]
 
                 st.dataframe(
-                    raw_display,
+                    raw_display.head(1000),
                     width='stretch', hide_index=True,
                     column_config={
                         "Gross %": st.column_config.ProgressColumn("Gross %", format="%.1f%%", min_value=0, max_value=100),
