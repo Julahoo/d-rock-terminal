@@ -791,8 +791,8 @@ with st.sidebar:
     if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
         nav_options.append("⚙️ Admin")
 
-    st.sidebar.markdown("---")
-    view_mode = st.sidebar.radio("🧭 Go to:", nav_options)
+    st.markdown("---")
+    view_mode = st.radio("🧭 Go to:", nav_options)
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # Only fetch datasets the current view_mode actually renders, saving 1-3s on cold cache.
