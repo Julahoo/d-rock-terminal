@@ -741,7 +741,7 @@ except Exception as e:
 # ── Matrix theme: neon glow CSS ──────────────────────────────────────────
 # Matrix neon glow CSS has been optimized and consolidated into _MATERIAL_CSS at the top of the file
 
-st.title("📊 D-ROCK DASHBOARD V2.0")
+st.title("📊 D-ROCK DASHBOARD")
 st.markdown("*Enterprise Business Intelligence & Operations Command*")
 st.markdown("---")
 
