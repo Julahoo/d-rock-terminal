@@ -730,6 +730,10 @@ st.set_page_config(
 # Initialize persistent database tables
 init_db()
 
+# --- PERSISTENT SESSIONS ---
+from streamlit_cookies_controller import CookieController
+controller = CookieController()
+
 # --- GLOBAL STATE HYDRATION (DB to RAM) ---
 # This ensures all global dropdowns and legacy tabs populate instantly from the persistent RAM cache
 try:
@@ -757,10 +761,18 @@ st.markdown("---")
 # ── 🔐 Enterprise Authentication & Data Security RBAC ──────────────────
 
 if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-    st.session_state["user_role"] = None
-    st.session_state["user_name"] = None
-    st.session_state["allowed_clients"] = []
+    # Check cookies first
+    auth_cookie = controller.get("auth_session")
+    if auth_cookie and isinstance(auth_cookie, dict):
+        st.session_state["authenticated"] = True
+        st.session_state["user_role"] = auth_cookie.get("role")
+        st.session_state["user_name"] = auth_cookie.get("name")
+        st.session_state["allowed_clients"] = auth_cookie.get("allowed_clients", [])
+    else:
+        st.session_state["authenticated"] = False
+        st.session_state["user_role"] = None
+        st.session_state["user_name"] = None
+        st.session_state["allowed_clients"] = []
 
 if not st.session_state["authenticated"]:
     st.markdown("---")
@@ -794,6 +806,17 @@ if not st.session_state["authenticated"]:
                             raw_clients = user_record["allowed_clients"]
                             st.session_state["allowed_clients"] = json.loads(raw_clients) if isinstance(raw_clients, str) else raw_clients
                             
+                            # Set persistent cookie for 1 day
+                            controller.set(
+                                "auth_session", 
+                                {
+                                    "name": st.session_state["user_name"],
+                                    "role": st.session_state["user_role"],
+                                    "allowed_clients": st.session_state["allowed_clients"]
+                                },
+                                max_age=86400 # 1 day
+                            )
+                            
                             st.rerun()
                         else:
                             st.error("❌ Invalid username or password.")
@@ -809,6 +832,12 @@ if "data_loaded" not in st.session_state:
 #  Data Control Room & Pipeline Execution
 # ═══════════════════════════════════════════════════════════════════════════
 with st.sidebar:
+    # Logout Button
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.clear()
+        controller.remove("auth_session")
+        st.rerun()
+        
     st.markdown("### 🦅 CallsU Command")
 
     nav_options = []
