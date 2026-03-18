@@ -4748,6 +4748,13 @@ if "📞 Operations Command" in tab_map:
                 b_df = st.session_state["benchmarks_df"].copy()
                 b_df.rename(columns={'brand': 'ops_brand'}, inplace=True)
                 
+                # Slicer: Only use a single benchmark period to prevent 1-to-N Cartesian merge duplication
+                if 'benchmark_period' in b_df.columns:
+                    available_periods = [p for p in b_df['benchmark_period'].unique() if pd.notna(p)]
+                    target_period = "H2 2025" if "H2 2025" in available_periods else (available_periods[0] if available_periods else None)
+                    if target_period:
+                        b_df = b_df[b_df['benchmark_period'] == target_period]
+                
                 # We need to make sure the merge keys exist in ledger_df
                 merge_keys = ['ops_brand'] + [c for c in sig_cols if c in ledger_df.columns]
                 

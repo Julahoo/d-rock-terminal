@@ -12,8 +12,10 @@
 - **Fix 2:** Engineered a `st.session_state["logout_triggered"]` two-pass intercept. When clicked, it issues the Javascript command, enforces a strict `time.sleep(1)` Python thread pause to guarantee network arrival, and *then* fires `st.rerun()`.
 - **Problem 3 (The Payload Explosion):** Users requesting `90 Days` in the Operations tab triggered a `MessageSizeError`. The server crashed trying to cram over 400 Megabytes of 350,000 raw unaggregated DB rows straight into the user's DOM.
 - **Fix 3:** Engineered true Server-Side Pagination using a math-based `st.number_input`. Both the `Daily Campaign Detail` and the `Campaign True Cost Ledger` grids now strictly slice `display_chunk = df.iloc[start:end]` to transmit exactly 1000 records at a time. The data remains 100% complete and fully aggregated at the top of the dashboard, but the rendering payload remains under 5MB at all times.
+- **Problem 4 (Cartesian Merge Duplication):** The `Campaign True Cost Ledger` rows duplicated 30x, then 2x. Reason: the `ledger_df` dropped its `signature` headers during Pandas grouping, causing a 1-to-N cross-join. Secondly, the benchmark DataFrame contained both H1 2025 and H2 2025 periods, causing the campaign rows to attach to both periods simultaneously.
+- **Fix 4:** Restored `[country, lifecycle, segment, engagement]` to the True Cost `groupby()`. Applied a `benchmark_period == 'H2 2025'` dataframe slicer before the final `pd.merge()`, guaranteeing a pristine 1-to-1 exact match.
 - **UI Polish:** Entirely annihilated the global `D-ROCK DASHBOARD` header text block from the app to resolve "cheap flickering" on state transitions. Removed duplicate sidebar logout buttons.
-- **Commit Hash:** `8fece0d`
+- **Commit Hash:** `8fece0d` and `e9b897f`
 
 ### [Fix - 7-Issue Operations Command Batch] - 2026-03-17 - COMPLETED
 - **Commit:** `4900e10`
