@@ -4679,8 +4679,24 @@ if "📞 Operations Command" in tab_map:
                     'ops_date': 'Date',
                 }).sort_values(by='Date', ascending=False) if 'ops_date' in raw_detail.columns else raw_detail[raw_display_cols]
 
+                # --- SERVER-SIDE PAGINATION ---
+                page_size_detail = 1000
+                total_detail_pages = max(1, (len(raw_display) + page_size_detail - 1) // page_size_detail)
+                
+                c_pag1, c_pag2, c_pag3 = st.columns([1, 2, 1])
+                with c_pag2:
+                    st.markdown(f"**Total Records:** `{len(raw_display):,}` | **Showing:** `{page_size_detail}` per page")
+                    current_page_detail = st.number_input(
+                        "Page", min_value=1, max_value=total_detail_pages, value=1, step=1, key="pag_daily_detail"
+                    )
+                
+                # Slice the dataframe for the current page
+                start_idx_detail = (current_page_detail - 1) * page_size_detail
+                end_idx_detail = start_idx_detail + page_size_detail
+                display_chunk = raw_display.iloc[start_idx_detail:end_idx_detail]
+
                 st.dataframe(
-                    raw_display.head(1000),
+                    display_chunk,
                     width='stretch', hide_index=True,
                     column_config={
                         "Gross %": st.column_config.ProgressColumn("Gross %", format="%.1f%%", min_value=0, max_value=100),
@@ -4747,10 +4763,26 @@ if "📞 Operations Command" in tab_map:
             # Drop signature columns for clean display
             final_display_df = ledger_df.drop(columns=[c for c in sig_cols + ['D', 'NA', 'AM', 'DNC', 'DX', 'WN', 'T', 'KPI1-Conv.'] if c in ledger_df.columns]).sort_values("True_CAC", ascending=False)
 
+            # --- SERVER-SIDE PAGINATION ---
+            page_size_ledger = 1000
+            total_ledger_pages = max(1, (len(final_display_df) + page_size_ledger - 1) // page_size_ledger)
+            
+            c_pag1_l, c_pag2_l, c_pag3_l = st.columns([1, 2, 1])
+            with c_pag2_l:
+                st.markdown(f"**Total Records:** `{len(final_display_df):,}` | **Showing:** `{page_size_ledger}` per page")
+                current_page_ledger = st.number_input(
+                    "Page", min_value=1, max_value=total_ledger_pages, value=1, step=1, key="pag_true_cost_ledger"
+                )
+            
+            # Slice the dataframe for the current page
+            start_idx_ledger = (current_page_ledger - 1) * page_size_ledger
+            end_idx_ledger = start_idx_ledger + page_size_ledger
+            display_ledger_chunk = final_display_df.iloc[start_idx_ledger:end_idx_ledger]
+
             # Phase 14.1: Bypass Pandas Styler entirely — it crashes at >1.5M cells.
             # Use Streamlit's native column_config formatting instead (no cell limit).
             st.dataframe(
-                final_display_df,
+                display_ledger_chunk,
                 width='stretch', hide_index=True,
                 column_config={
                     "Records": st.column_config.NumberColumn("New Data", format="%d"),
