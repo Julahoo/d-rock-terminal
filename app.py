@@ -989,8 +989,8 @@ with st.sidebar:
         max_date = min_db_date + pd.Timedelta(days=1)
 
     def update_slider():
-        preset = st.session_state["date_preset"]
-        if preset == "Custom": return
+        preset = st.session_state.get("date_preset")
+        if not preset or preset == "Custom": return
         
         calc_start = None
         calc_end = max_date
