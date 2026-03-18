@@ -4748,18 +4748,32 @@ if "📞 Operations Command" in tab_map:
                 b_df = st.session_state["benchmarks_df"].copy()
                 b_df.rename(columns={'brand': 'ops_brand'}, inplace=True)
                 
-                # Slicer: Only use a single benchmark period to prevent 1-to-N Cartesian merge duplication
-                if 'benchmark_period' in b_df.columns:
-                    available_periods = [p for p in b_df['benchmark_period'].unique() if pd.notna(p)]
-                    target_period = "H2 2025" if "H2 2025" in available_periods else (available_periods[0] if available_periods else None)
-                    if target_period:
-                        b_df = b_df[b_df['benchmark_period'] == target_period]
-                
                 # We need to make sure the merge keys exist in ledger_df
                 merge_keys = ['ops_brand'] + [c for c in sig_cols if c in ledger_df.columns]
                 
-                ledger_df = pd.merge(ledger_df, b_df[merge_keys + ['avg_daily_true_cac']],
-                                     on=merge_keys, how='left')
+                if 'benchmark_period' in b_df.columns:
+                    # Apples-to-Apples Baseline: Extract month from ops_date and target the prior year's H1 or H2
+                    ledger_temp_dates = pd.to_datetime(ledger_df['ops_date'])
+                    ledger_df['target_benchmark_half'] = (
+                        ledger_temp_dates.dt.month.map(lambda x: "H1" if x <= 6 else "H2") + 
+                        " " + 
+                        (ledger_temp_dates.dt.year - 1).astype(str)
+                    )
+                    
+                    # Merge on the combined signature array + the exact target half-year period
+                    ledger_df = pd.merge(
+                        ledger_df, 
+                        b_df[merge_keys + ['benchmark_period', 'avg_daily_true_cac']],
+                        left_on=merge_keys + ['target_benchmark_half'],
+                        right_on=merge_keys + ['benchmark_period'],
+                        how='left'
+                    )
+                    # Clean up the merge artifacts
+                    ledger_df.drop(columns=['target_benchmark_half', 'benchmark_period'], inplace=True, errors='ignore')
+                else:
+                    ledger_df = pd.merge(ledger_df, b_df[merge_keys + ['avg_daily_true_cac']],
+                                         on=merge_keys, how='left')
+                                         
                 ledger_df.rename(columns={'avg_daily_true_cac': 'Benchmark CAC'}, inplace=True)
                 ledger_df['Benchmark CAC'] = ledger_df['Benchmark CAC'].fillna(0)
                 ledger_df['CAC Delta'] = ledger_df['True_CAC'] - ledger_df['Benchmark CAC']
