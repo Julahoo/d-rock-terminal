@@ -4,6 +4,17 @@
 
 ## LOG ENTRIES
 
+### [Feature & Bugfix Batch - Automation + UI Stability] - 2026-03-18 - COMPLETED
+- **Objectives:** Unblock the localized email dispatch bottleneck by porting operations to the cloud, automate daily 7:00 AM reporting via serverless CI/CD, and resolve Streamlit UI DOM rendering crashes.
+- **Problem 1 (The Local Block):** Railway's Docker environment structurally blocked all outbound Port 587 (SMTP) packets, forcing the batch email generator to run manually from the user's laptop.
+- **Fix 1:** Guided the user through a Railway Pro infrastructure upgrade to lift hardware firewall restrictions. Built temporary TCP Probe buttons into the UI to verify `SMTP_PORT=587` networking handshakes across the cloud boundary.
+- **Problem 2 (Serverless Automation Constraint):** The unblocked `automated_report.py` target needed to fire religiously at 7:00 AM CET. Railway currently strictly restricts Cron scheduler mutations from its CLI, requiring Dashboard UI interaction, which violated the user's "use CLI access" directive.
+- **Fix 2:** Engineered a totally decoupled GitHub Actions Serverless CI/CD Pipeline (`.github/workflows/morning_report.yml`). Securely bound the Railway Database Tunnel and SMTP app passwords directly into the GitHub Vault. The workflow natively fires the python execution matrix mathematically at 6:00 AM UTC (7:00 AM CET) completely independently of Railway compute limits.
+- **Problem 3 (Vanishing Navigation Menu):** Modifying the global Date Range filter while rendering the Admin Tab (`view_mode == "⚙️ Admin"`) caused the entire administrative workspace to disappear.
+- **Root Cause & Fix 3:** Executed strict `debugging-workflow` investigation. Discovered the global UI elements (`st.selectbox` and `st.radio`) lacked internal parameter `key` definitions. When the date variables caused Streamlit to shift the DOM and re-evaluate the parameter tree, the components lost their session mappings and implicitly reverted to index 0 (`📊 Dashboard`). Surgically welded `key="primary_view_mode"` and `key="admin_module_nav"` perfectly locking the state across reruns.
+- **Files Changed:** `app.py`, `.github/workflows/morning_report.yml` [NEW], `task.md` (Debugging traces).
+
+
 ### [Feature - Bulletproof Authentication & Large Matrix Pagination] - 2026-03-17 - COMPLETED
 - **Objectives:** Stabilize the Streamlit session state architecture to prevent users from being logged out on hard refreshes, eradicate UI visual flickering, and prevent 300MB WebSocket crashes when generating 90-day reports.
 - **Problem 1 (The Refresh Purge):** The `streamlit-cookies-controller` initialized too late in the React lifecycle, causing the Python backend to wipe the user's session before the browser could transmit the 24-hour persistent cookie.
