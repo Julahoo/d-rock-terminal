@@ -4224,7 +4224,18 @@ if "📞 Operations Command" in tab_map:
 
                     st.caption(f"*Benchmarks vs. **{_bench_label}** daily average × {num_days} days*")
                     # Render 2-column grid of client cards
+                    hierarchy = [
+                        "Reliato",
+                        "Limitless",
+                        "Simplicity",
+                        "LeoVegas Group",
+                        "Offside",
+                        "PowerPlay",
+                        "Magico Games/Interspin",
+                        "Rhino"
+                    ]
                     client_list = client_agg['ops_client'].tolist()
+                    client_list.sort(key=lambda c: hierarchy.index(c) if c in hierarchy else 999)
                     for row_start in range(0, len(client_list), 2):
                         row_clients = client_list[row_start:row_start + 2]
                         cols = st.columns(2)
@@ -4319,56 +4330,7 @@ if "📞 Operations Command" in tab_map:
             o5.metric("Global True CAC", f"${true_cac:,.2f}")
             
             st.markdown("---")
-            st.markdown("### 📊 Campaign Performance Distributions")
-            pie_col1, pie_col2, pie_col3 = st.columns(3)
 
-            import plotly.express as px
-            import plotly.graph_objects as go
-            if not ops_df.empty:
-                # Calculate aggregates for bar charts
-                tot_d_plus = ops_df['D+'].sum() if 'D+' in ops_df.columns else 0
-                tot_d_minus = ops_df['D-'].sum() if 'D-' in ops_df.columns else 0
-                tot_d_neutral = ops_df['D'].sum() if 'D' in ops_df.columns else 0
-                tot_deliveries = tot_d_plus + tot_d_minus + tot_d_neutral
-
-                tot_na = ops_df['NA'].sum() if 'NA' in ops_df.columns else 0
-                tot_wn = ops_df['WN'].sum() if 'WN' in ops_df.columns else 0
-                tot_dnc = ops_df['DNC'].sum() if 'DNC' in ops_df.columns else 0
-                tot_dx = ops_df['DX'].sum() if 'DX' in ops_df.columns else 0
-                tot_t = ops_df['T'].sum() if 'T' in ops_df.columns else 0
-                tot_issues = tot_wn + tot_dnc + tot_dx + tot_t
-
-                with pie_col1:
-                    st.markdown("**Overall Outcomes**")
-                    bar_df1 = pd.DataFrame({'Outcome': ['Deliveries', 'No Answer', 'Issues'], 'Value': [tot_deliveries, tot_na, tot_issues]})
-                    fig1 = go.Figure(go.Bar(x=bar_df1['Value'], y=bar_df1['Outcome'], orientation='h',
-                        marker_color=['#22c55e', '#eab308', '#ef4444'],
-                        text=[f"{v:,.0f}" for v in bar_df1['Value']], textposition='auto'))
-                    fig1.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
-                    st.plotly_chart(fig1, width='stretch')
-
-                with pie_col2:
-                    st.markdown("**Deliveries Breakdown**")
-                    bar_df2 = pd.DataFrame({'Outcome': ['D+', 'D', 'D-'], 'Value': [tot_d_plus, tot_d_neutral, tot_d_minus]})
-                    fig2 = go.Figure(go.Bar(x=bar_df2['Value'], y=bar_df2['Outcome'], orientation='h',
-                        marker_color=['#22c55e', '#16a34a', '#86efac'],
-                        text=[f"{v:,.0f}" for v in bar_df2['Value']], textposition='auto'))
-                    fig2.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
-                    st.plotly_chart(fig2, width='stretch')
-
-                with pie_col3:
-                    st.markdown("**Issues Breakdown**")
-                    issue_names = ['WN', 'DNC', 'DX', 'T']
-                    issue_vals = [tot_wn, tot_dnc, tot_dx, tot_t]
-                    i_names, i_vals = zip(*[(n, v) for n, v in zip(issue_names, issue_vals) if v > 0]) if sum(issue_vals) > 0 else (['None'], [1])
-                    bar_df3 = pd.DataFrame({'Outcome': list(i_names), 'Value': list(i_vals)})
-                    fig3 = go.Figure(go.Bar(x=bar_df3['Value'], y=bar_df3['Outcome'], orientation='h',
-                        marker_color=['#ef4444', '#dc2626', '#b91c1c', '#991b1b'][:len(i_names)],
-                        text=[f"{v:,.0f}" for v in i_vals], textposition='auto'))
-                    fig3.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
-                    st.plotly_chart(fig3, width='stretch')
-
-            st.markdown("---")
             
             st.markdown("### 📈 Daily SLA Trends & Performance")
             
@@ -4867,6 +4829,56 @@ if "📞 Operations Command" in tab_map:
                 }
             )
             _mem_mb("END True Cost Ledger")
+
+            st.markdown("---")
+            st.markdown("### 📊 Campaign Performance Distributions")
+            pie_col1, pie_col2, pie_col3 = st.columns(3)
+
+            import plotly.express as px
+            import plotly.graph_objects as go
+            if not ops_df.empty:
+                # Calculate aggregates for bar charts
+                tot_d_plus = ops_df['D+'].sum() if 'D+' in ops_df.columns else 0
+                tot_d_minus = ops_df['D-'].sum() if 'D-' in ops_df.columns else 0
+                tot_d_neutral = ops_df['D'].sum() if 'D' in ops_df.columns else 0
+                tot_deliveries = tot_d_plus + tot_d_minus + tot_d_neutral
+
+                tot_na = ops_df['NA'].sum() if 'NA' in ops_df.columns else 0
+                tot_wn = ops_df['WN'].sum() if 'WN' in ops_df.columns else 0
+                tot_dnc = ops_df['DNC'].sum() if 'DNC' in ops_df.columns else 0
+                tot_dx = ops_df['DX'].sum() if 'DX' in ops_df.columns else 0
+                tot_t = ops_df['T'].sum() if 'T' in ops_df.columns else 0
+                tot_issues = tot_wn + tot_dnc + tot_dx + tot_t
+
+                with pie_col1:
+                    st.markdown("**Overall Outcomes**")
+                    bar_df1 = pd.DataFrame({'Outcome': ['Deliveries', 'No Answer', 'Issues'], 'Value': [tot_deliveries, tot_na, tot_issues]})
+                    fig1 = go.Figure(go.Bar(x=bar_df1['Value'], y=bar_df1['Outcome'], orientation='h',
+                        marker_color=['#22c55e', '#eab308', '#ef4444'],
+                        text=[f"{v:,.0f}" for v in bar_df1['Value']], textposition='auto'))
+                    fig1.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
+                    st.plotly_chart(fig1, width='stretch')
+
+                with pie_col2:
+                    st.markdown("**Deliveries Breakdown**")
+                    bar_df2 = pd.DataFrame({'Outcome': ['D+', 'D', 'D-'], 'Value': [tot_d_plus, tot_d_neutral, tot_d_minus]})
+                    fig2 = go.Figure(go.Bar(x=bar_df2['Value'], y=bar_df2['Outcome'], orientation='h',
+                        marker_color=['#22c55e', '#16a34a', '#86efac'],
+                        text=[f"{v:,.0f}" for v in bar_df2['Value']], textposition='auto'))
+                    fig2.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
+                    st.plotly_chart(fig2, width='stretch')
+
+                with pie_col3:
+                    st.markdown("**Issues Breakdown**")
+                    issue_names = ['WN', 'DNC', 'DX', 'T']
+                    issue_vals = [tot_wn, tot_dnc, tot_dx, tot_t]
+                    i_names, i_vals = zip(*[(n, v) for n, v in zip(issue_names, issue_vals) if v > 0]) if sum(issue_vals) > 0 else (['None'], [1])
+                    bar_df3 = pd.DataFrame({'Outcome': list(i_names), 'Value': list(i_vals)})
+                    fig3 = go.Figure(go.Bar(x=bar_df3['Value'], y=bar_df3['Outcome'], orientation='h',
+                        marker_color=['#ef4444', '#dc2626', '#b91c1c', '#991b1b'][:len(i_names)],
+                        text=[f"{v:,.0f}" for v in i_vals], textposition='auto'))
+                    fig3.update_layout(margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=False), height=180)
+                    st.plotly_chart(fig3, width='stretch')
         else:
             st.warning("⚠️ **No Operations Data Loaded**.")
             st.info("Please navigate to the **🗄️ Operations Ingestion** tab and upload your daily `CSV/XLSX` reports or trigger a CallsU API sync.")
