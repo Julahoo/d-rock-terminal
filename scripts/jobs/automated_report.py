@@ -61,9 +61,9 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     )
     
     img_bytes = fig.to_image(format="png", engine="kaleido")
-    
     # Use Content-ID instead of massive inline Base64 strings to bypass Gmail strict sizing logic
-    image_cid = make_msgid()
+    # Explicitly enforce the domain to prevent Google from dropping Railway's internal localized server names as DMARC spoofing
+    image_cid = make_msgid(domain='iwinback.com')
     
     trend = "⬆️ UP" if avg_7 >= avg_30 else "⬇️ DOWN"
     
@@ -188,14 +188,11 @@ def generate_morning_briefing():
     for img in chart_images:
         html_part.add_related(img['bytes'], maintype='image', subtype='png', cid=img['cid'])
     
-    try:
-        with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        print("✅ Live Sample Email successfully dispatched to dani.fabregas@iwinback.com!")
-    except Exception as e:
-        print(f"❌ Failed to dispatch email via SMTP: {e}")
+    with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+    print("✅ Live Sample Email successfully dispatched to dani.fabregas@iwinback.com!")
 
 if __name__ == "__main__":
     generate_morning_briefing()
