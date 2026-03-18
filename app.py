@@ -4431,6 +4431,7 @@ if "📞 Operations Command" in tab_map:
                                 
                         fig_trend_vol = px.line(df_filtered, x='ops_date', y=vol_y_cols, 
                                                 labels={'value': 'Volume', 'ops_date': 'Date', 'variable': 'Metric'}, title="Global Volume Trends")
+                        fig_trend_vol.update_traces(mode='lines+markers', hovertemplate='<b>%{x}</b><br>%{y:,.0f}<extra></extra>')
                         fig_trend_vol.update_layout(
                             paper_bgcolor="rgba(0,0,0,0)", 
                             plot_bgcolor="rgba(0,0,0,0)", 
@@ -4460,9 +4461,9 @@ if "📞 Operations Command" in tab_map:
                             import plotly.graph_objects as go
                             fig_raw = go.Figure()
                             if 'KPI1-Conv.' in df_filtered.columns:
-                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.6)'))
+                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI1-Conv.'], name="Conversions", marker_color='rgba(34, 197, 94, 0.6)', hovertemplate='<b>%{x}</b><br>Conversions: %{y:,}<extra></extra>'))
                             if 'KPI2-Login' in df_filtered.columns:
-                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.6)'))
+                                fig_raw.add_trace(go.Bar(x=df_filtered['ops_date'], y=df_filtered['KPI2-Login'], name="Logins", marker_color='rgba(234, 179, 8, 0.6)', hovertemplate='<b>%{x}</b><br>Logins: %{y:,}<extra></extra>'))
                             fig_raw.update_layout(
                                 title="Raw KPI Volume",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
@@ -4480,7 +4481,7 @@ if "📞 Operations Command" in tab_map:
                         with tc2:
                             fig_li = go.Figure()
                             if 'KPI2-Login' in df_filtered.columns:
-                                fig_li.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='Login: %{y:.2f}%<extra></extra>'))
+                                fig_li.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Logins%'], name="Login %", mode='lines+markers', line=dict(color='#eab308'), hovertemplate='<b>%{x}</b><br>Login: %{y:.2f}%<extra></extra>'))
                                 avg_login = df_filtered['Logins%'].mean()
                                 fig_li.add_hline(y=avg_login, line_dash="dot", line_color="#fbbf24", opacity=0.5, annotation_text=f"Avg: {avg_login:.2f}%", annotation_position="bottom right", annotation_font_color="#fbbf24")
                             if target_li is not None:
@@ -4500,7 +4501,7 @@ if "📞 Operations Command" in tab_map:
                         # Chart 3: Conversion % Trend
                         with tc3:
                             fig_conv = go.Figure()
-                            fig_conv.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conv %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='Conv: %{y:.2f}%<extra></extra>'))
+                            fig_conv.add_trace(go.Scatter(x=df_filtered['ops_date'], y=df_filtered['Conv%'], name="Conv %", mode='lines+markers', line=dict(color='#22c55e'), hovertemplate='<b>%{x}</b><br>Conv: %{y:.2f}%<extra></extra>'))
                             avg_conv = df_filtered['Conv%'].mean()
                             fig_conv.add_hline(y=avg_conv, line_dash="dot", line_color="#4ade80", opacity=0.5, annotation_text=f"Avg: {avg_conv:.2f}%", annotation_position="bottom right", annotation_font_color="#4ade80")
                             if target_conv is not None:
