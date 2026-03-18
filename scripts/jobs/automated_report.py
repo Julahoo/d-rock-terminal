@@ -61,13 +61,16 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     )
     
     img_bytes = fig.to_image(format="png", engine="kaleido")
-    encoded = base64.b64encode(img_bytes).decode('utf-8')
+    
+    # Use Content-ID instead of massive inline Base64 strings to bypass Gmail strict sizing logic
+    image_cid = make_msgid()
+    chart_images.append({'bytes': img_bytes, 'cid': image_cid})
     
     trend = "⬆️ UP" if avg_7 >= avg_30 else "⬇️ DOWN"
     
     html = f'''
     <div style="margin-bottom: 20px; font-family: sans-serif;">
-        <img src="data:image/png;base64,{encoded}" alt="{title}" style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
+        <img src="cid:{image_cid[1:-1]}" alt="{title}" style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
         <table style="width: 100%; text-align: center; border-collapse: collapse; margin-top: 5px; background: #f9f9f9;">
             <tr>
                 <td style="padding: 5px; border: 1px solid #ddd;">30-Day Avg: <b>{avg_30:,.0f}</b></td>
@@ -77,7 +80,7 @@ def create_chart_base64(df, date_col, metric_col, title, color):
         </table>
     </div>
     '''
-    return html
+    return html, {'bytes': img_bytes, 'cid': image_cid}
 
 def generate_morning_briefing():
     """Generates the HTML email and dispatches it via SMTP."""
@@ -92,6 +95,8 @@ def generate_morning_briefing():
 
     end_date = datetime.now().date() - timedelta(days=1)
     start_date = end_date - timedelta(days=29) # 30 days total
+    
+    chart_images = []
     
     print(f"📊 Fetching data from {start_date} to {end_date}...")
     df = fetch_data(start_date, end_date)
@@ -149,11 +154,19 @@ def generate_morning_briefing():
             html_body += f'<h3 style="color: #34495e; background: #ecf0f1; padding: 8px; border-radius: 4px;">Lifecycle: {lc}</h3>'
             
             # 1. Volume
-            html_body += create_chart_base64(lc_df, 'ops_date', 'records', f"{client} {lc} - Volume", "#3498db")
+            vol_html, vol_img = create_chart_base64(lc_df, 'ops_date', 'records', f"{client} {lc} - Volume", "#3498db")
+            html_body += vol_html
+            chart_images.append(vol_img)
+            
             # 2. Logins
-            html_body += create_chart_base64(lc_df, 'ops_date', 'logins', f"{client} {lc} - Logins", "#2ecc71")
+            log_html, log_img = create_chart_base64(lc_df, 'ops_date', 'logins', f"{client} {lc} - Logins", "#2ecc71")
+            html_body += log_html
+            chart_images.append(log_img)
+            
             # 3. Conversions
-            html_body += create_chart_base64(lc_df, 'ops_date', 'conversions', f"{client} {lc} - Conversions", "#9b59b6")
+            con_html, con_img = create_chart_base64(lc_df, 'ops_date', 'conversions', f"{client} {lc} - Conversions", "#9b59b6")
+            html_body += con_html
+            chart_images.append(con_img)
             
     html_body += '''
         </div>
@@ -170,6 +183,11 @@ def generate_morning_briefing():
     
     msg.set_content("Please enable HTML to view this report.")
     msg.add_alternative(html_body, subtype='html')
+    
+    # Securely append all generated PNGs as legitimate CID elements rather than string blobs
+    html_part = msg.get_payload()[1]
+    for img in chart_images:
+        html_part.add_related(img['bytes'], maintype='image', subtype='png', cid=img['cid'])
     
     try:
         with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
