@@ -4529,7 +4529,7 @@ if "📞 Operations Command" in tab_map:
             st.markdown("*Insight: Analyzes the raw list quality vs. the dial floor execution. Isolates script fatigue from telecom blocking and bad data.*")
 
             if not ops_df.empty:
-                req_cols = ["Records", "Calls", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "sp", "ev", "es", "ed", "ef", "eo", "ec", "D"]
+                req_cols = ["Records", "Calls", "KPI1-Conv.", "KPI2-Login", "hlrv", "twoxrv", "D+", "d_neutral", "D-", "NA", "AM", "DNC", "DX", "WN", "T", "sa", "sd", "sf", "sp", "ev", "es", "ed", "ef", "eo", "ec", "D"]
                 
                 # Only aggregate columns that actually exist in the global frame natively
                 avail_cols = [c for c in req_cols if c in ops_df.columns]
@@ -4561,8 +4561,8 @@ if "📞 Operations Command" in tab_map:
                 rendered_scorecard["Gross_Completion_%"] = rendered_scorecard["Gross_Completion"] * 100
                 rendered_scorecard["Net_Completion_%"] = rendered_scorecard["Net_Completion"] * 100
                 rendered_scorecard["Deliveries_%"] = (rendered_scorecard["Deliveries"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
-                rendered_scorecard["NA_%"] = (rendered_scorecard["NA"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
-                rendered_scorecard["Issues_%"] = (rendered_scorecard["Issues"] / rendered_scorecard["Calls"].replace(0, 1)) * 100
+                rendered_scorecard["Logins/Records (%)"] = (rendered_scorecard["KPI2-Login"] / rendered_scorecard["Records"].replace(0, 1)) * 100
+                rendered_scorecard["Conversions/Logins (%)"] = (rendered_scorecard["KPI1-Conv."] / rendered_scorecard["KPI2-Login"].replace(0, float('nan')) * 100).fillna(0)
 
                 # Render with color-coded styling
                 def _style_deliveries(val):
@@ -4571,11 +4571,6 @@ if "📞 Operations Command" in tab_map:
                     if val >= 15: return 'color: #facc15; font-weight: bold;'
                     if val >= 10: return 'color: #fb923c; font-weight: bold;'
                     return 'color: #f87171; font-weight: bold;'
-                
-                def _style_issues(val):
-                    if pd.isna(val): return ''
-                    if val > 10: return 'color: #f87171; font-weight: bold;'
-                    return ''
                 
                 def _style_delivery_rate(val):
                     if pd.isna(val): return ''
@@ -4592,33 +4587,32 @@ if "📞 Operations Command" in tab_map:
                 # Calculate Email & SMS funnel percentages
                 rendered_scorecard['Email Delivered'] = (rendered_scorecard['ed'] / (rendered_scorecard['ed'] + rendered_scorecard['ef']).replace(0, float('nan')) * 100).fillna(0)
                 rendered_scorecard['Email Open'] = (rendered_scorecard['eo'] / rendered_scorecard['ed'].replace(0, float('nan')) * 100).fillna(0)
-                rendered_scorecard['Email Clicked'] = (rendered_scorecard['ec'] / rendered_scorecard['eo'].replace(0, float('nan')) * 100).fillna(0)
                 rendered_scorecard['SMS Delivered'] = (rendered_scorecard['sd'] / (rendered_scorecard['sd'] + rendered_scorecard['sp'] + rendered_scorecard['sf']).replace(0, float('nan')) * 100).fillna(0)
 
-                display_sc = rendered_scorecard[['Core_Signature', 'Gross_Completion_%', 'Net_Completion_%', 'Calls', 'Deliveries_%', 'NA_%', 'Issues_%', 'Email Delivered', 'Email Open', 'Email Clicked', 'SMS Delivered']].rename(
+                display_sc = rendered_scorecard[['Core_Signature', 'Gross_Completion_%', 'Net_Completion_%', 'Calls', 'Deliveries_%', 'KPI2-Login', 'KPI1-Conv.', 'Logins/Records (%)', 'Conversions/Logins (%)', 'Email Delivered', 'Email Open', 'SMS Delivered']].rename(
                     columns={
                     'Core_Signature': 'Campaign',
                     'Gross_Completion_%': 'Gross %',
                     'Net_Completion_%': 'Net %',
                     'Deliveries_%': 'Deliveries %',
-                    'NA_%': 'No Answers %',
-                    'Issues_%': 'Issues %',
+                    'KPI2-Login': 'Logins',
+                    'KPI1-Conv.': 'Conversions',
                     }
                 )
 
                 styled_sc = display_sc.style.format({
                     'Calls': '{:,.0f}',
+                    'Logins': '{:,.0f}',
+                    'Conversions': '{:,.0f}',
                     'Deliveries %': '{:.1f}%',
-                    'No Answers %': '{:.1f}%',
-                    'Issues %': '{:.1f}%',
+                    'Logins/Records (%)': '{:.1f}%',
+                    'Conversions/Logins (%)': '{:.1f}%',
                     'Email Delivered': '{:.1f}%',
                     'Email Open': '{:.1f}%',
-                    'Email Clicked': '{:.1f}%',
                     'SMS Delivered': '{:.1f}%',
                 }).map(_style_deliveries, subset=['Deliveries %']
-                ).map(_style_issues, subset=['Issues %']
                 ).map(_style_delivery_rate, subset=['Email Delivered', 'SMS Delivered']
-                ).map(_style_engagement, subset=['Email Open', 'Email Clicked'])
+                ).map(_style_engagement, subset=['Email Open'])
 
                 st.dataframe(styled_sc, width='stretch', hide_index=True,
                     column_config={
