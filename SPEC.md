@@ -1,11 +1,11 @@
-# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.3)
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.4/2026)
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
-- **Architecture:** 4-Tier Modular Enterprise Platform (V3.3). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Railway cron. Async Report Queue for heavy analytics. Lazy Tab Computation guards for sub-second navigation.
-- **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`.
+- **Architecture:** 4-Tier Modular Enterprise Platform (V3.4). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Serverless GitHub Actions cron pipelines. Async Report Queue for heavy analytics. Lazy Tab Computation guards for sub-second navigation.
+- **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`, `github-actions`.
 - **UI Theme:** Material Design 3 Dark — Inter font (Google Fonts), Deep Purple primary (`#7C4DFF`), GitHub-dark backgrounds (`#0D1117`/`#161B22`), soft white text (`#E6EDF3`). Custom CSS injection via `st.markdown(unsafe_allow_html=True)` for metric cards with gradient/elevation, pill-style tabs/radio, rounded inputs/buttons with hover glow, and slim scrollbars. Config: `.streamlit/config.toml`.
-- **Deployment:** Railway (Docker) with PostgreSQL. Automated daily ops sync at 03:30 UTC.
+- **Deployment:** Railway (Docker) with PostgreSQL. Serverless daily ops sync & payload dispatches natively executed at 06:00 UTC (07:00 CET) via GitHub Actions CI/CD.
 
 ---
 
@@ -138,6 +138,11 @@ During ingestion, each component is extracted via token matching:
   - 🏦 Financial uploads occur inside the `📥 Financial Ingestion` workspace.
   - 📞 Operations uploads occur inside the `🗄️ Operations Ingestion` workspace.
 - **Analytical Auto-Hydration:** The dashboard computations (Monthly Summaries, Cohorts, Segmentations, etc.) are instantly generated from the PostgreSQL filtered `_master_df` using `@st.cache_data` wrappers to prevent blocking the main thread.
+
+### 4.2.1 🔐 Component State Anchoring & Pagination (2026 Standards)
+- **Immutable DOM Navigation:** All critical structural navigators (`st.selectbox`, `st.radio`) **must** possess an explicit `key="unique_id"` argument. This prevents catastrophic UI state drops and tab-resets during global DOM realignments triggered by sidebar widget executions.
+- **Server-Side Rendering Pagination:** Matrices over ~250,000 cells strictly mandate vertical pagination. Uses mathematically partitioned integers (`st.number_input`) to slice the backing Pandas dataframe `df.iloc[start:end]` to transmit a locked 1000-record threshold, protecting the Streamlit WebSocket payload limit from 300MB buffer crashes.
+- **React Lifecycle Integrity:** Authentication cookies bypass traditional caching wrappers, instantiating a naked `stx.CookieManager()` in the primary load pass to instantly survive F5 hard-refreshes before browser-server network latency destructs the session tree.
 
 ### 4.2 ⚙️ Admin Tier (4 Modules)
 - **Radio selector:** `🏢 Client Hub | 👥 User Management | 🧹 Data Maintenance | 📂 File Explorer`.

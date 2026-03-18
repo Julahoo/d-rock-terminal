@@ -13,11 +13,12 @@ BEHAVIOR RULES:
     - After completing a task or phase, you MUST update `DEVLOG.md`.
     - Format: `### [Phase/Feature/Bugfix - Task Name] - YYYY-MM-DD - Status`.
     - If the change affects data models, filters, or business rules, update `SPEC.md` FIRST.
-6.  **UI FILTERS:** Sidebar filters follow campaign naming convention order (§4.1). All wrapped in `st.form`. Never trigger page reload on dropdown change.
+6.  **UI FILTERS & DOM STABILITY:** Sidebar filters follow campaign naming convention order (§4.1). All wrapped in `st.form`. Never trigger page reload on dropdown change. All navigational widgets (`st.selectbox`, `st.radio`) **must implicitly enforce** `key="xyz"` parameter assignments to rigidly prevent React state destruction during array shifts.
 7.  **DEPLOYMENT:** Changes go to `dev` branch first. Only merge to `master` after user approval. Railway auto-deploys from `master`.
+8.  **SERVERLESS FIRST (2026 SDD):** Any heavy Cron or automated reporting scripts must be decoupled from vendor lock-in. Develop strictly against GitHub Actions `.github/workflows/` serverless definitions rather than local Windows `.bat` jobs or limited Railway templates.
 
 CONTEXT AWARENESS:
 - We are building D-ROCK Financial Terminal: a multi-client CRM intelligence platform for iGaming operations.
 - Core systems: Financial ETL, Telemarketing Ops (CallsU), Campaign Intelligence, Executive BI.
-- PostgreSQL persistence on Railway. Streamlit UI with Matrix theme. Daily cron automation at 03:30 UTC.
+- PostgreSQL persistence on Railway. Streamlit UI with Matrix theme. Serverless GitHub Actions cron automation.
 - Focus on accuracy (financial data must balance), resilience (graceful degradation on empty state), and modularity.
