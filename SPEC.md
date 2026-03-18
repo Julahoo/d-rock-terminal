@@ -232,10 +232,11 @@ During ingestion, each component is extracted via token matching:
 - **Email/SMS Funnel Metrics:** Renamed columns: ED (Email Delivered = `ed / (ed + ef)`), EO (Email Open = `eo / ed`), EC (Email Clicked = `ec / eo`), SD (SMS Delivered = `sd / (sd + sp + sf)`). Each displayed as percentage with color coding: ED/SD >90% green, 85–90% yellow, <85% red. EO/EC >10% green, 5–10% yellow, <5% red.
 - **Progress Bars:** Gross % and Net % rendered as `st.column_config.ProgressColumn`. Column order: Campaign, Gross %, Net %, Calls, then details.
 
-### 4.9 💰 Campaign True Cost Ledger
+### 4.9 💰 Campaign True Cost Ledger & Daily Detail
 - **"New Data"** replaces legacy "Total Records" label.
 - **Conv %** = `Conversions / New Data * 100` (displayed as percentage, not raw count).
 - **Contact Rate** = `D / (D + NA + Issues) * 100` (always positive percentage; raw disposition columns hidden from display).
+- **Server-Side Pagination:** Streamlit 300MB WebSocket payload limit structurally bypassed by chunking massive raw unaggregated matrices. Both grids use a centralized `st.number_input` parameter to slice exactly 1000 records per page server-side before transmitting the DOM.
 
 ### 4.10 📊 SLA Fulfillment Tracker
 - **Compact Card Layout:** Data grouped by brand, displayed as compact `st.metric` cards (4 per row) instead of verbose lists.

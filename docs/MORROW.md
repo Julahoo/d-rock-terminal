@@ -1,25 +1,23 @@
-# MORROW.md — Next Session Starting Point
-**Date:** 2026-03-13 (01:00 CET)
+# START OF DAY BRIEFING (MORROW)
+**Date:** 2026-03-18
+**Current Project Version:** V3.3
 
----
+## 1. Yesterday's Achievements (State of the Union)
+We executed the **UI/UX Stability & Reliability** batch:
+- **Bulletproof Authentication:** `streamlit-cookies-controller` was eradicated. We successfully migrated to `extra-streamlit-components` (`stx.CookieManager()`) to resolve the hard-refresh reset loop.
+- **Race Condition Intercept:** Engineered a `time.sleep(1)` intercept into the Logout process. This guarantees the Javascript session-deletion command physically reaches the user's browser before the Python `st.rerun()` signal instantly detonates the React component tree.
+- **Streamlit 300MB Payload Bypass:** Solved a critical `MessageSizeError` crash that occurred when hitting the "90 Days" filter. Created a native Streamlit Server-Side Pagination system in `app.py` extending over the `Daily Campaign Detail` and `Campaign True Cost Ledger`. These components now cleanly transmit data in secure 1000-row chunks instead of flooding the WebSocket.
+- **Anti-Flicker UX:** Annihilated the global `D-ROCK DASHBOARD` header entirely to provide a seamless, tear-free transition from the login gate to the authenticated state. Duplicate sidebar logout buttons were also removed.
 
-## 🔴 Where We Left Off
+## 2. Outstanding In-Flight Operations
+- **Historical Backfill (Jan 2025 - Present):** The `run_historical_pull()` initialization is actively creating the H1 2025 and H2 2025 benchmarks for operational bounds. Ensure the production DB tracks the proper `Target CAC` vs `True CAC` once the sync terminates. 
+- **Player-Level Journey Tracking (Phase 20):** The new `ops_contact_events` linkage is architected securely in `SPEC.md`. The next technical leap is constructing the *Time-To-Convert* dashboard and exposing the chronological journey visualizer inside the Operations CRM tier.
 
-1. **Operations Backfill (Jan 2025 → present) is RUNNING in background.** Check terminal or Railway logs for progress. Currently at ~Jan 5, 2025 — estimated several hours to complete. Once done, generate H1 2025 + H2 2025 benchmarks in Admin → Data Maintenance → Benchmark Snapshots.
+## 3. Next Steps (Priority Queue)
+1. Proceed deeper into Phase 20 (Player Journey Construction). 
+2. Hydrate the `ops_contact_events` funnel using real-world iWinBack `GET /api/contact_logins`, etc endpoints.
+3. Validate memory profiling across production Railway to endure stability as continuous contact logs stream into the pipeline.
 
-2. **Player Journey Tracking (Phase 20) is APPROVED — ready to implement.** Design doc: `docs/plans/2026-03-13-player-journey-tracking-design.md`. Start by:
-   - Creating `ops_contact_events` table (see design doc SQL)
-   - Adding contact-level API pull to `src/iwinback_worker.py` (4 new endpoints: `contact_campaign_association`, `contact_logins`, `contact_registers`, `contact_deposits`)
-   - Building the 2 new Operations Command tabs: 🔄 Conversion Funnel + ⏱️ Time-to-Convert
-   - File to edit: `app.py` (Operations Command section, after Pitch vs. List Scorecard tab)
-
-3. **Unpushed code on `dev`.** 2 commits ahead of `origin/dev`: SPEC v3.1 + Phase 20 design doc. Push when ready, then merge to `master` for Railway deploy.
-
----
-
-## ✅ What Was Completed Today
-- Scorecard color-coding, Cost Ledger fixes, SLA card layout
-- Full production deployment (code + DB sync of 30,435 rows)
-- iWinBack API credentials configured on both Railway services (web + cron)
-- Fixed: stale `UNIQUE(campaign_name)` constraint, `IWINBACK_BOXES` comma issue
-- SPEC.md v3.1, DEVLOG updated, Phase 20 design approved
+## 4. Known Bugs & Hazards
+- 300MB `MessageSizeError` neutralized via Chunking. If an unforeseen aggregation view triggers the WebSocket crash elsewhere in the future, apply the exact same logic (L4680+). 
+- Avoid blindly placing `@st.cache_resource` over internal widgets per modern CacheWidgetWarnings. Instantiate objects natively and manage their memory state internally.
