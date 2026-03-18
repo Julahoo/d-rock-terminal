@@ -690,7 +690,9 @@ def _apply_global_filters(
         if selected_sublifecycle != "All" and 'extracted_sublifecycle' in raw_ops.columns: ops_mask &= (raw_ops['extracted_sublifecycle'] == selected_sublifecycle)
         if selected_engagement != "All" and 'extracted_engagement' in raw_ops.columns: ops_mask &= (raw_ops['extracted_engagement'] == selected_engagement)
         if selected_campaign and 'campaign_name' in raw_ops.columns: ops_mask &= raw_ops['campaign_name'].astype(str).str.contains(selected_campaign, case=False, na=False)
-        if start_date_str and end_date_str and 'ops_date' in raw_ops.columns: ops_mask &= (raw_ops['ops_date'] >= start_date_str) & (raw_ops['ops_date'] <= end_date_str)
+        if start_date_str and end_date_str and 'ops_date' in raw_ops.columns: 
+            date_col = raw_ops['ops_date'].astype(str)
+            ops_mask &= (date_col >= start_date_str) & (date_col <= end_date_str)
         filtered_ops = raw_ops[ops_mask].copy()
     else:
         filtered_ops = pd.DataFrame()
@@ -1019,6 +1021,8 @@ with st.sidebar:
             if calc_start > calc_end:
                 calc_start = calc_end
             st.session_state["date_slider_val"] = (calc_start.date(), calc_end.date())
+            st.session_state["aw_start_date"] = calc_start.date()
+            st.session_state["aw_end_date"] = calc_end.date()
 
     def update_preset():
         st.session_state["date_preset"] = "Custom"
@@ -1066,6 +1070,11 @@ with st.sidebar:
     start_month = start_date_val.strftime("%Y-%m")
     end_month = end_date_val.strftime("%Y-%m")
 
+    # ── DETECT DATE CHANGES OUTSIDE THE FORM ──
+    if "last_applied_dates" not in st.session_state:
+        st.session_state["last_applied_dates"] = (start_date_str, end_date_str)
+    date_changed = st.session_state["last_applied_dates"] != (start_date_str, end_date_str)
+
     # --- 3. APPLY FILTERS TO TABS ---
     # MASSIVE PERFORMANCE BOOST: Only iterate 350k rows IF the sidebar actually changed. 
     # If the user just clicked a new Tab, retrieve the subset dataframes directly from memory.
@@ -1075,8 +1084,11 @@ with st.sidebar:
         needs_filtering = True
     elif _filters_submitted:
         needs_filtering = True
+    elif date_changed:
+        needs_filtering = True
         
     if needs_filtering:
+        st.session_state["last_applied_dates"] = (start_date_str, end_date_str)
         _mem_mb("START _apply_global_filters")
         filtered_ops, filtered_ops_snapshots, filtered_fin = _apply_global_filters(
             selected_client, selected_brand, selected_category, selected_country, 
