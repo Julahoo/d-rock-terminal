@@ -4109,7 +4109,28 @@ if "📞 Operations Command" in tab_map:
                             st.error(f"❌ **CONNECTION FAILED**: The Railway datacenter router is still dropping packets on Port 587 or the authentication was rejected.\n\n`{e}`\n\n**Action:** Open a quick ticket with Railway Support explicitly requesting them to lift the SMTP restriction on your account.")
                         finally:
                             socket.getaddrinfo = old_getaddrinfo # Always restore global socket routing
-        
+            
+            st.markdown("---")
+            if st.button("🚀 Dispatch Live Production Report", type="secondary"):
+                with st.spinner("Synthesizing Live Graphic Briefing and Dispatching SMTP Payload..."):
+                    try:
+                        import sys
+                        import os
+                        import subprocess
+                        
+                        # Use subprocess natively inside the cloud container
+                        report_path = os.path.join(os.path.dirname(__file__), 'scripts', 'jobs', 'automated_report.py')
+                        
+                        result = subprocess.run([sys.executable, report_path], capture_output=True, text=True, timeout=180)
+                        
+                        if result.returncode == 0:
+                            st.success("✅ **SUCCESS!** The Daily Operations Briefing was successfully compiled and instantly dispatched.")
+                            with st.expander("View Dispatch Logs", expanded=False):
+                                st.code(result.stdout)
+                        else:
+                            st.error(f"❌ **FAILURE:** The python dispatch script crashed during execution. If `Errno 110` timed out, your SMTP port is blocked.\n\n### Error Trace Log:\n```text\n{result.stderr}\n```")
+                    except Exception as e:
+                        st.error(f"❌ **CRITICAL FAILURE:** Failed to invoke subprocess. Error: {e}")
         if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
             ops_df = st.session_state["ops_df"]
             # Fetch SLAs from persistent DB (Cached 24h)
