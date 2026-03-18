@@ -104,8 +104,15 @@ def generate_morning_briefing():
     clients = ['Reliato', 'Limitless', 'Simplicity', 'LeoVegas', 'Offside', 'Powerplay', 'Magico Games/Interspin', 'Rhino']
     lifecycles = ['WB', 'RND']
     
-    # Base mapping for Magico DB naming quirk
-    df['client'] = df['client'].replace('Magico Games', 'Magico Games/Interspin')
+    # Normalize database string quirks to match the target report names natively
+    alias_map = {
+        'Simplicity Malta Limited': 'Simplicity',
+        'LeoVegas Group': 'LeoVegas',
+        'Offside Gaming': 'Offside',
+        'PowerPlay': 'Powerplay',
+        'Magico Games': 'Magico Games/Interspin'
+    }
+    df['client'] = df['client'].replace(alias_map)
     
     html_body = f'''
     <html>
