@@ -4076,61 +4076,6 @@ if "📞 Operations Command" in tab_map:
         st.markdown("#### > 📡 CALLSU & OPERATIONS COMMAND_")
         st.markdown("*Insight: Tracks True CAC, Lead Quality, and Contractual SLA Fulfillment.*")
         
-        with st.expander("☁️ Cloud Email Network Diagnostics (Railway Pro)", expanded=False):
-            st.markdown("Test if Railway Support has unblocked the outbound SMTP ports on your new Pro Account.")
-            if st.button("Probe Port 587 (SMTP)", type="primary"):
-                with st.spinner("Initiating TCP Handshake over Port 587 from Railway Cloud..."):
-                    import smtplib
-                    import os
-                    import socket
-                    
-                    smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
-                    smtp_port = int(os.getenv('SMTP_PORT', '587'))
-                    smtp_user = os.getenv('SMTP_USER', 'dani.fabregas@iwinback.com')
-                    smtp_pass = os.getenv('SMTP_PASS')
-                    
-                    if not smtp_pass:
-                        st.error("Missing `SMTP_PASS` in the active environment variables.")
-                    else:
-                        old_getaddrinfo = socket.getaddrinfo
-                        def ipv4_getaddrinfo(*args, **kwargs):
-                            responses = old_getaddrinfo(*args, **kwargs)
-                            return [r for r in responses if r[0] == socket.AF_INET]
-                        
-                        try:
-                            socket.getaddrinfo = ipv4_getaddrinfo # Force IPv4 routing over Docker IPv6 dead-ends
-                            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-                            server.set_debuglevel(1)
-                            server.starttls()
-                            server.login(smtp_user, smtp_pass)
-                            server.quit()
-                            st.success("✅ **SUCCESS!** The Railway Hardware Firewall is officially unblocked. Cloud Email Dispatch is fully viable.")
-                        except Exception as e:
-                            st.error(f"❌ **CONNECTION FAILED**: The Railway datacenter router is still dropping packets on Port 587 or the authentication was rejected.\n\n`{e}`\n\n**Action:** Open a quick ticket with Railway Support explicitly requesting them to lift the SMTP restriction on your account.")
-                        finally:
-                            socket.getaddrinfo = old_getaddrinfo # Always restore global socket routing
-            
-            st.markdown("---")
-            if st.button("🚀 Dispatch Live Production Report", type="secondary"):
-                with st.spinner("Synthesizing Live Graphic Briefing and Dispatching SMTP Payload..."):
-                    try:
-                        import sys
-                        import os
-                        import subprocess
-                        
-                        # Use subprocess natively inside the cloud container
-                        report_path = os.path.join(os.path.dirname(__file__), 'scripts', 'jobs', 'automated_report.py')
-                        
-                        result = subprocess.run([sys.executable, report_path], capture_output=True, text=True, timeout=180)
-                        
-                        if result.returncode == 0:
-                            st.success("✅ **SUCCESS!** The Daily Operations Briefing was successfully compiled and instantly dispatched.")
-                            with st.expander("View Dispatch Logs", expanded=False):
-                                st.code(result.stdout)
-                        else:
-                            st.error(f"❌ **FAILURE:** The python dispatch script crashed during execution. If `Errno 110` timed out, your SMTP port is blocked.\n\n### Error Trace Log:\n```text\n{result.stderr}\n```")
-                    except Exception as e:
-                        st.error(f"❌ **CRITICAL FAILURE:** Failed to invoke subprocess. Error: {e}")
         if "ops_df" in st.session_state and not st.session_state["ops_df"].empty:
             ops_df = st.session_state["ops_df"]
             # Fetch SLAs from persistent DB (Cached 24h)
