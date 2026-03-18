@@ -877,7 +877,7 @@ with st.sidebar:
         nav_options.append("⚙️ Admin")
 
     st.markdown("---")
-    view_mode = st.selectbox("🧭 Go to:", nav_options)
+    view_mode = st.selectbox("🧭 Go to:", nav_options, key="primary_view_mode")
 
     # --- 1. HYDRATE RAW DATA FROM CACHE (Phase 14, Option C: Conditional) ---
     # MEMORY OPTIMIZATION: @st.cache_resource returns SAME object (zero-copy) across all sessions.
@@ -1189,7 +1189,7 @@ with st.sidebar:
 #  System Settings View (Full-Screen, Superadmin Only)
 # ═══════════════════════════════════════════════════════════════════════════
 if view_mode == "⚙️ Admin":
-    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management", "🧹 Data Maintenance", "📂 File Explorer", "📧 Automated Reports"], horizontal=True)
+    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management", "🧹 Data Maintenance", "📂 File Explorer", "📧 Automated Reports"], horizontal=True, key="admin_module_nav")
     
     if admin_mode == "🏢 Client Hub":
         # Initialize router state
