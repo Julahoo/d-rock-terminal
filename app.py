@@ -4722,7 +4722,8 @@ if "📞 Operations Command" in tab_map:
             # Add disposition columns for Contact Rate calc
             for c in ['D', 'NA', 'AM', 'DNC', 'DX', 'WN', 'T']:
                 if c in ops_df.columns: ledger_agg_cols[c] = 'sum'
-            ledger_group = ['Campaign Name', 'ops_client', 'ops_brand', 'ops_date']
+            sig_cols = ["country", "extracted_lifecycle", "extracted_segment", "extracted_engagement"]
+            ledger_group = ['Campaign Name', 'ops_client', 'ops_brand', 'ops_date'] + sig_cols
             ledger_group = [c for c in ledger_group if c in ops_df.columns]
             ledger_df = ops_df.groupby(ledger_group, observed=True).agg(ledger_agg_cols).reset_index()
             ledger_df['True_CAC'] = (ledger_df['Total_Campaign_Cost'] / ledger_df['KPI1-Conv.']).replace([float('inf'), -float('inf')], 0).fillna(0)
@@ -4738,8 +4739,7 @@ if "📞 Operations Command" in tab_map:
             else:
                 ledger_df['Contact Rate'] = 0.0
             
-            # Additional signature columns needed for joining benchmarks
-            sig_cols = ["country", "extracted_lifecycle", "extracted_segment", "extracted_engagement"]
+            # Additional signature columns needed for joining benchmarks (already defined in groupby)
             display_cols = ["Campaign Name", "ops_client", "ops_brand", "ops_date", "Records", "Calls", "Contact Rate", "Conv %", "Total_Campaign_Cost", "True_CAC"]
             display_cols = [c for c in display_cols if c in ledger_df.columns]
                 
