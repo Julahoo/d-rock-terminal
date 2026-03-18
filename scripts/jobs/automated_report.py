@@ -64,7 +64,6 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     
     # Use Content-ID instead of massive inline Base64 strings to bypass Gmail strict sizing logic
     image_cid = make_msgid()
-    chart_images.append({'bytes': img_bytes, 'cid': image_cid})
     
     trend = "⬆️ UP" if avg_7 >= avg_30 else "⬇️ DOWN"
     
