@@ -1179,7 +1179,7 @@ with st.sidebar:
 #  System Settings View (Full-Screen, Superadmin Only)
 # ═══════════════════════════════════════════════════════════════════════════
 if view_mode == "⚙️ Admin":
-    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management", "🧹 Data Maintenance", "📂 File Explorer"], horizontal=True)
+    admin_mode = st.radio("Admin Modules:", ["🏢 Client Hub", "👥 User Management", "🧹 Data Maintenance", "📂 File Explorer", "📧 Automated Reports"], horizontal=True)
     
     if admin_mode == "🏢 Client Hub":
         # Initialize router state
@@ -1964,6 +1964,27 @@ if view_mode == "⚙️ Admin":
                 st.info("No completed half-year periods found in the data yet.")
         else:
             st.info("No operations data available to generate benchmarks from.")
+
+    elif admin_mode == "📧 Automated Reports":
+        st.markdown("## 📧 AUTOMATED REPORTING ENGINE")
+        st.markdown("*Manually trigger the 30-Day Morning Briefing HTML email via the active database connection.*")
+        st.markdown("---")
+        
+        st.info(f"Target Delivery Inbox: **dani.fabregas@iwinback.com** (via `{os.getenv('SMTP_USER', 'No SMTP User Configured')}`)")
+        
+        if st.button("🚀 Fire Live Sample Email Now", type="primary", use_container_width=True):
+            with st.spinner("Crunching 30 days of metrics, drawing 48 visual mean lines, and rendering Plotly Kaleido PNG exports..."):
+                try:
+                    import sys
+                    from pathlib import Path
+                    scripts_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "jobs")
+                    if scripts_path not in sys.path:
+                        sys.path.insert(0, scripts_path)
+                    import automated_report
+                    automated_report.generate_morning_briefing()
+                    st.success("✅ **Live HTML Sample Email successfully compiled and dispatched to the inbox via SMTP!**")
+                except Exception as e:
+                    st.error(f"❌ Failed to dispatch automated report engine pipeline: {e}")
 
     elif admin_mode == "📂 File Explorer":
         st.markdown("## 📂 FILE EXPLORER")
