@@ -4681,13 +4681,22 @@ if "📞 Operations Command" in tab_map:
 
                 # --- SERVER-SIDE PAGINATION ---
                 page_size_detail = 1000
-                total_detail_pages = max(1, (len(raw_display) + page_size_detail - 1) // page_size_detail)
                 
                 c_pag1, c_pag2, c_pag3 = st.columns([1, 2, 1])
+                with c_pag1:
+                    search_query_detail = st.text_input("🔍 Search", placeholder="Campaign Name...", key="search_daily_detail").strip()
+                    if search_query_detail:
+                        raw_display = raw_display[raw_display['Campaign Name'].str.contains(search_query_detail, case=False, na=False)]
+                
+                total_detail_pages = max(1, (len(raw_display) + page_size_detail - 1) // page_size_detail)
                 with c_pag2:
                     st.markdown(f"**Total Records:** `{len(raw_display):,}` | **Showing:** `{page_size_detail}` per page")
+                    
+                    current_val = int(st.session_state.get("pag_idx_daily_detail", 1))
+                    if current_val > total_detail_pages: current_val = total_detail_pages
+                        
                     current_page_detail = st.number_input(
-                        "Page", min_value=1, max_value=total_detail_pages, value=1, step=1, key="pag_daily_detail"
+                        "Page", min_value=1, max_value=total_detail_pages, value=current_val, step=1, key="pag_idx_daily_detail"
                     )
                 
                 # Slice the dataframe for the current page
@@ -4786,13 +4795,22 @@ if "📞 Operations Command" in tab_map:
 
             # --- SERVER-SIDE PAGINATION ---
             page_size_ledger = 1000
-            total_ledger_pages = max(1, (len(final_display_df) + page_size_ledger - 1) // page_size_ledger)
             
             c_pag1_l, c_pag2_l, c_pag3_l = st.columns([1, 2, 1])
+            with c_pag1_l:
+                search_query_ledger = st.text_input("🔍 Search", placeholder="Campaign Name...", key="search_true_cost_ledger").strip()
+                if search_query_ledger:
+                    final_display_df = final_display_df[final_display_df['Campaign Name'].str.contains(search_query_ledger, case=False, na=False)]
+            
+            total_ledger_pages = max(1, (len(final_display_df) + page_size_ledger - 1) // page_size_ledger)
             with c_pag2_l:
                 st.markdown(f"**Total Records:** `{len(final_display_df):,}` | **Showing:** `{page_size_ledger}` per page")
+                
+                current_val_l = int(st.session_state.get("pag_idx_true_cost_ledger", 1))
+                if current_val_l > total_ledger_pages: current_val_l = total_ledger_pages
+                
                 current_page_ledger = st.number_input(
-                    "Page", min_value=1, max_value=total_ledger_pages, value=1, step=1, key="pag_true_cost_ledger"
+                    "Page", min_value=1, max_value=total_ledger_pages, value=current_val_l, step=1, key="pag_idx_true_cost_ledger"
                 )
             
             # Slice the dataframe for the current page
