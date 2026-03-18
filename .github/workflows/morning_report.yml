@@ -1,0 +1,37 @@
+name: Morning Operations Report
+
+on:
+  schedule:
+    # 6:00 AM UTC equals 7:00 AM CET (Central European Time)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
+
+jobs:
+  dispatch_report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Daily Operations Briefing
+        env:
+          # Secure Production Credentials injected via GitHub Secrets
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: 'smtp.gmail.com'
+          SMTP_PORT: '587'
+        run: |
+          python scripts/jobs/automated_report.py
