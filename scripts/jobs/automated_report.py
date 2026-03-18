@@ -44,6 +44,7 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     
     avg_30 = df[metric_col].mean()
     avg_7 = df.tail(7)[metric_col].mean()
+    yesterday_val = df.iloc[-1][metric_col] if not df.empty else 0
     
     fig = go.Figure()
     # Bar chart for Volume, Line for the rest
@@ -61,6 +62,7 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     )
     
     img_bytes = fig.to_image(format="png", engine="kaleido")
+    
     # Use Content-ID instead of massive inline Base64 strings to bypass Gmail strict sizing logic
     # Explicitly enforce the domain to prevent Google from dropping Railway's internal localized server names as DMARC spoofing
     image_cid = make_msgid(domain='iwinback.com')
@@ -70,10 +72,11 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     html = f'''
     <div style="margin-bottom: 20px; font-family: sans-serif;">
         <img src="cid:{image_cid[1:-1]}" alt="{title}" style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
-        <table style="width: 100%; text-align: center; border-collapse: collapse; margin-top: 5px; background: #f9f9f9;">
+        <table style="width: 100%; text-align: center; border-collapse: collapse; margin-top: 5px; background: #f9f9f9; font-size: 14px;">
             <tr>
                 <td style="padding: 5px; border: 1px solid #ddd;">30-Day Avg: <b>{avg_30:,.0f}</b></td>
                 <td style="padding: 5px; border: 1px solid #ddd;">7-Day Avg: <b>{avg_7:,.0f}</b></td>
+                <td style="padding: 5px; border: 1px solid #ddd;">Yesterday: <b>{yesterday_val:,.0f}</b></td>
                 <td style="padding: 5px; border: 1px solid #ddd;">Trend: <b>{trend}</b></td>
             </tr>
         </table>
