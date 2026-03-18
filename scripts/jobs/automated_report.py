@@ -188,11 +188,25 @@ def generate_morning_briefing():
     for img in chart_images:
         html_part.add_related(img['bytes'], maintype='image', subtype='png', cid=img['cid'])
     
-    with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.send_message(msg)
-    print("✅ Live Sample Email successfully dispatched to dani.fabregas@iwinback.com!")
+    import socket
+    
+    # Temporarily monkey-patch socket mapping to force IPv4 routing
+    # This bypasses Railway Docker IPv6 dead-ends (Errno 101)
+    old_getaddrinfo = socket.getaddrinfo
+    def ipv4_getaddrinfo(*args, **kwargs):
+        responses = old_getaddrinfo(*args, **kwargs)
+        return [r for r in responses if r[0] == socket.AF_INET]
+    
+    socket.getaddrinfo = ipv4_getaddrinfo
+    
+    try:
+        with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        print("✅ Live Sample Email successfully dispatched to dani.fabregas@iwinback.com!")
+    finally:
+        socket.getaddrinfo = old_getaddrinfo # Ensure global safety restore
 
 if __name__ == "__main__":
     generate_morning_briefing()
