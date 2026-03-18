@@ -1047,7 +1047,6 @@ with st.sidebar:
     with _aw_c1:
         start_date_val = st.date_input(
             "Start",
-            value=st.session_state["date_slider_val"][0],
             min_value=min_db_date.date(),
             max_value=max_date.date(),
             key="aw_start_date",
@@ -1056,7 +1055,6 @@ with st.sidebar:
     with _aw_c2:
         end_date_val = st.date_input(
             "End",
-            value=st.session_state["date_slider_val"][1],
             min_value=min_db_date.date(),
             max_value=max_date.date(),
             key="aw_end_date",
