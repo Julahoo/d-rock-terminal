@@ -12,6 +12,10 @@ DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:supersecretpassword@lo
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
+# Fallback for local terminal execution (replaces docker-compose hostname with localhost)
+if "@db:" in DB_URL:
+    DB_URL = DB_URL.replace("@db:", "@localhost:")
+
 engine = create_engine(DB_URL)
 
 def init_db():
@@ -263,6 +267,14 @@ def init_db():
                 "UPDATE client_mapping SET brand_name = :n WHERE brand_code = :c",
                 {"n": name, "c": code}
             )
+            
+        # Ensure PowerPlay is correctly formatted in the registry
+        execute_query("""
+            INSERT INTO client_mapping (brand_code, brand_name, client_name, financial_format) 
+            VALUES ('POWERP', 'PowerPlay', 'PowerPlay Group', 'PowerPlay')
+            ON CONFLICT (brand_code) DO UPDATE 
+            SET financial_format = 'PowerPlay';
+        """)
     except Exception as e:
         pass
 
