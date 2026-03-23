@@ -533,7 +533,21 @@ def _normalise_campaign_columns(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 # ═══════════════════════════════════════════════════════════════════════════
 def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
     """Extract (brand_key, 'YYYY-MM') from a filename like
-    ``latribet_2025_08.csv`` or ``2026-02 latribet.xlsx``."""
+    ``latribet_2025_08.csv``, ``2026-02 latribet.xlsx``, or ``PowerPlay Winback & RND - Jan '26 commission report.xls``."""
+    name_lower = filename.lower()
+    
+    # PowerPlay Intercept: Extract year/month from "Jan '26" or similar
+    if "powerplay" in name_lower:
+        months_map = {"jan": "01", "feb": "02", "mar": "03", "apr": "04", "may": "05", "jun": "06", "jul": "07", "aug": "08", "sep": "09", "oct": "10", "nov": "11", "dec": "12"}
+        for m_str, m_num in months_map.items():
+            if m_str in name_lower:
+                import re
+                # Look for 2 digit year like '26 or 2026
+                yr_match = re.search(r"(?:'|20)(\d{2})\b", name_lower)
+                if yr_match:
+                    year = "20" + yr_match.group(1)
+                    return "powerplay", f"{year}-{m_num}"
+
     # Try original format first: brand_yyyy_mm.ext
     m = FILE_RE.match(filename)
     if m:
@@ -543,7 +557,7 @@ def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
         return brand, f"{year}-{month}"
 
     # Try yyyy-mm brand.ext format (strip extension, then match SHEET_RE)
-    stem = re.sub(r"\.(?:csv|xlsx)$", "", filename, flags=re.IGNORECASE)
+    stem = re.sub(r"\.(?:csv|xlsx|xls)$", "", filename, flags=re.IGNORECASE)
     m2 = SHEET_RE.match(stem.strip())
     if m2:
         year  = m2.group("year")
@@ -681,6 +695,81 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str, target_format
         for col in NUMERIC_COLS:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    elif target_format == "PowerPlay":
+        # ── PowerPlay path ───────────────────────────────────────────────
+        logger.info("[DeterministicRouter] %s → PowerPlay format applied", source_label)
+        
+        # Determine cohort/segment and country from the sheet name mapped in source_label
+        # source_label format during multisheet: "Power...report.xls:React - Feb 2025"
+        sheet_name = source_label.split(":")[-1] if ":" in source_label else "UNKNOWN"
+        
+        country_code = "Global"
+        if sheet_name.startswith("ROC"): country_code = "CA-ROC"
+        if sheet_name.startswith("ONT"): country_code = "CA-ONT"
+        
+        # Map IDs and Financials
+        if "Player Id" in df.columns: df.rename(columns={"Player Id": "id"}, inplace=True)
+        
+        # Scan for existing column names
+        revenue_col = "Total GGR \u20ac"
+        for c in df.columns:
+            if "Total GGR" in str(c): revenue_col = c
+            
+        ngr_col = "Total NGR \u20ac"
+        for c in df.columns:
+            if "Total NGR" in str(c): ngr_col = c
+            
+        dep_col = "Deposits \u20ac"
+        for c in df.columns:
+            if "Deposits" in str(c): dep_col = c
+            
+        # Rename identified columns
+        rename_map = {revenue_col: "revenue", ngr_col: "ngr"}
+        if dep_col in df.columns: rename_map[dep_col] = "deposits"
+        df.rename(columns=rename_map, inplace=True)
+        
+        # Drop missing IDs
+        if "id" in df.columns:
+            df = df.dropna(subset=["id"])
+        else:
+            return None
+            
+        # Hardcode missing required standard columns
+        df["bet"] = 0.0  # Turnover is completely absent
+        df["withdrawals"] = 0.0
+        
+        df["bet_casino"] = 0
+        df["revenue_casino"] = 0
+        df["ngr_casino"] = 0
+        df["bet_sports"] = 0
+        df["revenue_sports"] = 0
+        df["ngr_sports"] = 0
+        
+        df["deposit_count"] = 0
+        df["bonus_casino"] = 0
+        df["bonus_sports"] = 0
+        df["bonus_total"] = 0
+        df["tax_total"] = 0
+        
+        df["client"] = target_client
+        df["brand"] = target_brand
+        df["country"] = country_code
+        df["segment"] = sheet_name.split("-")[0].strip() if "-" in sheet_name else sheet_name
+        df["wb_tag"] = sheet_name
+        
+        df["reactivation_date"] = pd.NaT
+        df["campaign_start_date"] = pd.NaT
+        df["reactivation_days"] = pd.NA
+
+        # Ensure all numeric columns exist, otherwise fill 0
+        for col in NUMERIC_COLS:
+            if col not in df.columns:
+                df[col] = 0.0
+        
+        # Coerce numerics 
+        for col in NUMERIC_COLS:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
     else:
         # ── Unrecognised/Standard ────────────────────────────────────────
         logger.warning("[DeterministicRouter] %s – No valid parser mapped for format: %s", source_label, target_format)
@@ -808,18 +897,25 @@ def load_all_data_from_uploads(
         registry.mark_complete(brand=brand_key, report_month=report_month, file_path=source_label)
 
     for f in files:
-        is_xlsx = f.name.lower().endswith(".xlsx")
+        f_name_lower = f.name.lower()
+        is_excel = f_name_lower.endswith(".xlsx") or f_name_lower.endswith(".xls")
+        
+        # Check if the file is PowerPlay
+        is_powerplay = "powerplay" in f_name_lower
 
         # Try multi-sheet Excel first
-        if is_xlsx:
+        if is_excel:
             try:
-                xl = pd.ExcelFile(f, engine="openpyxl")
+                # Use default engine for .xls (xlrd) and openpyxl for .xlsx
+                eng = "openpyxl" if f_name_lower.endswith(".xlsx") else None
+                xl = pd.ExcelFile(f, engine=eng)
                 has_multi = any(SHEET_RE.match(s.strip()) for s in xl.sheet_names)
             except Exception:
                 has_multi = False
                 xl = None
 
-            if has_multi and xl:
+            # 1. Standard Multi-Sheet Processing
+            if has_multi and xl and not is_powerplay:
                 for sheet_name in xl.sheet_names:
                     sm = SHEET_RE.match(sheet_name.strip())
                     if not sm:
@@ -835,8 +931,32 @@ def load_all_data_from_uploads(
                         continue
                     _ingest_single(brand_key, report_month, raw, f"{f.name}:{sheet_name}")
                 continue  # Done with this file
+                
+            # 2. PowerPlay Custom Multi-Sheet Processing
+            elif is_powerplay and xl:
+                parsed = _parse_filename(f.name)
+                if not parsed:
+                    logger.warning("Could not parse PowerPlay filename: %s", f.name)
+                    continue
+                brand_key, report_month = parsed
+                
+                for sheet_name in xl.sheet_names:
+                    # Skip summary and non-data sheets
+                    invalid_sheets = ["Commission overview", "Sheet1"]
+                    if sheet_name.strip() in invalid_sheets:
+                        continue
+                        
+                    try:
+                        raw = xl.parse(sheet_name)
+                    except Exception:
+                        logger.exception("Failed to read PowerPlay sheet '%s'", sheet_name)
+                        continue
+                    
+                    # _ingest_single handles standardisation and DB routing
+                    _ingest_single(brand_key, report_month, raw, f"{f.name}:{sheet_name}")
+                continue # Done with this file
 
-        # Single-file path (CSV or single-sheet XLSX)
+        # Single-file path (CSV or single-sheet file)
         parsed = _parse_filename(f.name)
         if parsed is None:
             logger.warning("Skipping unrecognised file: %s", f.name)
@@ -844,7 +964,11 @@ def load_all_data_from_uploads(
 
         brand_key, report_month = parsed
         try:
-            raw = pd.read_excel(f, engine="openpyxl") if is_xlsx else pd.read_csv(f)
+            if is_excel:
+                eng = "openpyxl" if f_name_lower.endswith(".xlsx") else None
+                raw = pd.read_excel(f, engine=eng)
+            else:
+                raw = pd.read_csv(f)
         except Exception:
             logger.exception("Failed to read %s", f.name)
             continue
