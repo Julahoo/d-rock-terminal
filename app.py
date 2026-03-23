@@ -715,7 +715,9 @@ def _apply_global_filters(
         fin_mask = pd.Series(True, index=raw_fin.index)
         if selected_client != "All" and 'client' in raw_fin.columns: fin_mask &= (raw_fin['client'] == selected_client)
         if selected_brand != "All" and 'brand' in raw_fin.columns: fin_mask &= (raw_fin['brand'] == selected_brand)
-        if start_date_str and end_date_str and 'report_month' in raw_fin.columns: fin_mask &= (raw_fin['report_month'] >= start_month) & (raw_fin['report_month'] <= end_month)
+        if start_date_str and end_date_str and 'report_month' in raw_fin.columns: 
+            rm_col = raw_fin['report_month'].astype(str)
+            fin_mask &= (rm_col >= start_month) & (rm_col <= end_month)
         filtered_fin = raw_fin[fin_mask].copy()
     else:
         filtered_fin = pd.DataFrame()
@@ -1133,6 +1135,7 @@ with st.sidebar:
     if _rq_submit:
         job_id = _rq.submit(
             _available_reports[_rq_selection],
+            params={"start_month": start_month, "end_month": end_month},
             display_name=_rq_selection
         )
         st.success(f"✅ Queued: {_rq_selection} (#{job_id})")
@@ -1140,7 +1143,7 @@ with st.sidebar:
     # Show active/recent jobs
     _rq_jobs = _rq.get_all_jobs()
     if _rq_jobs:
-        for _j in _rq_jobs[:5]:
+        for _j in _rq_jobs[:1]:
             _status_icon = {"pending": "⏳", "running": "🔄", "done": "✅", "error": "❌"}.get(_j["status"], "❓")
             _time_str = _j["completed_at"] or _j["requested_at"]
             st.caption(f"{_status_icon} {_j['display_name']} — {_time_str}")
@@ -2572,18 +2575,17 @@ segmentation = pd.DataFrame()
 program_summary = pd.DataFrame()
 both_business = pd.DataFrame()
 
-if not _master_df.empty and view_mode in ["🏦 Financial", "📞 Operations"]:
+if not _master_df.empty:
     df = _master_df
-    financial_summary = _cached_monthly_summaries(df, start=start_month, end=end_month)
-    cohort_matrices = _cached_cohort_matrix()
-    
-    # Phase 14 Option B: Use TTL-cached wrappers instead of re-computing every rerun
-    segmentation = _cached_segmentation(df)
-    program_summary = _cached_program_summary(df)
-    
-    both_business = _cached_both_business(financial_summary)
-elif not _master_df.empty:
-    df = _master_df
+    if view_mode in ["🏦 Financial", "📞 Operations"]:
+        financial_summary = _cached_monthly_summaries(df, start=start_month, end=end_month)
+        cohort_matrices = _cached_cohort_matrix()
+        
+        # Phase 14 Option B: Use TTL-cached wrappers instead of re-computing every rerun
+        segmentation = _cached_segmentation(df)
+        program_summary = _cached_program_summary(df)
+        
+        both_business = _cached_both_business(financial_summary)
 
     # ══════════════════════════════════════════════════════════════════════
     #  BI Dashboard (Phase 9)

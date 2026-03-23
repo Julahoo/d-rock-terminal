@@ -66,7 +66,10 @@ def _compute_full_financial_export(params: dict) -> Any:
     )
     from src.exporter import export_to_excel
 
-    df = pd.read_sql("SELECT * FROM raw_financial_data", engine)
+    query = "SELECT * FROM raw_financial_data"
+    start, end = params.get("start_month"), params.get("end_month")
+    if start and end: query += f" WHERE report_month >= '{start}' AND report_month <= '{end}'"
+    df = pd.read_sql(query, engine)
     if df.empty:
         return None
     df.rename(columns={"player_id": "id"}, inplace=True)
@@ -87,7 +90,10 @@ def _compute_player_master_list(params: dict) -> Any:
     from src.database import engine
     from src.analytics import generate_player_master_list
 
-    df = pd.read_sql("SELECT * FROM raw_financial_data", engine)
+    query = "SELECT * FROM raw_financial_data"
+    start, end = params.get("start_month"), params.get("end_month")
+    if start and end: query += f" WHERE report_month >= '{start}' AND report_month <= '{end}'"
+    df = pd.read_sql(query, engine)
     if df.empty:
         return None
     df.rename(columns={"player_id": "id"}, inplace=True)
@@ -101,7 +107,10 @@ def _compute_cohort_matrix(params: dict) -> Any:
     from src.database import engine
     from src.analytics import generate_cohort_matrix
 
-    df = pd.read_sql("SELECT * FROM raw_financial_data", engine)
+    query = "SELECT * FROM raw_financial_data"
+    start, end = params.get("start_month"), params.get("end_month")
+    if start and end: query += f" WHERE report_month >= '{start}' AND report_month <= '{end}'"
+    df = pd.read_sql(query, engine)
     if df.empty:
         return None
     df.rename(columns={"player_id": "id"}, inplace=True)
@@ -115,7 +124,10 @@ def _compute_vip_churn_radar(params: dict) -> Any:
     from src.database import engine
     from src.analytics import generate_vip_churn_radar
 
-    df = pd.read_sql("SELECT * FROM raw_financial_data", engine)
+    query = "SELECT * FROM raw_financial_data"
+    start, end = params.get("start_month"), params.get("end_month")
+    if start and end: query += f" WHERE report_month >= '{start}' AND report_month <= '{end}'"
+    df = pd.read_sql(query, engine)
     if df.empty:
         return None
     df.rename(columns={"player_id": "id"}, inplace=True)
