@@ -539,9 +539,14 @@ def _auto_column_widths(ws, headers: list[str]) -> None:  # noqa: ANN001
 
 
 def _pretty_month(ym: str) -> str:
-    """Convert 'YYYY-MM' → 'Month YYYY'. (Kept for backwards compatibility in external scripts)"""
-    y, m = (int(x) for x in str(ym).split("-"))
-    return f"{calendar.month_name[m]} {y}"
+    """Convert 'YYYY-MM' → 'Month YYYY' or handle full timestamps gracefully."""
+    import pandas as pd
+    try:
+        dt = pd.to_datetime(str(ym))
+        if pd.isna(dt): return str(ym)
+        return dt.strftime('%B %Y')
+    except Exception:
+        return str(ym)
 
 def export_ops_to_excel(ops_df: pd.DataFrame) -> io.BytesIO:
     """Standalone export for Operations data."""
