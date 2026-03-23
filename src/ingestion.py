@@ -315,8 +315,21 @@ def load_all_data(
                 continue
 
             brand_key, report_month = parsed
+            
+            # Resolve brand/client/format from client_mapping
+            mapped = fin_map.get(brand_key.strip().lower(), {})
+            target_format = mapped.get('format', 'Standard')
+            target_client = mapped.get('client', 'UNKNOWN')
+            target_brand = mapped.get('brand', brand_key.title())
+            if target_client == 'LeoVegas Group': target_format = 'LeoVegas'
+            elif 'Offside' in target_client: target_format = 'Offside'
 
-            df = _read_and_clean(csv_path)
+            # Duplicate protection: skip if brand+month already in DB
+            if (target_brand, report_month) in existing_combos:
+                logger.info("Skipping duplicate CSV: %s %s (already in DB)", target_brand, report_month)
+                continue
+
+            df = _read_and_clean(csv_path, target_format, target_client, target_brand)
             if df is None or df.empty:
                 logger.warning("Empty or unreadable: %s", csv_path)
                 continue
@@ -665,7 +678,7 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str, target_format
     return df
 
 
-def _read_and_clean(csv_path: Path) -> Optional[pd.DataFrame]:
+def _read_and_clean(csv_path: Path, target_format: str = "Standard", target_client: str = "UNKNOWN", target_brand: str = "UNKNOWN") -> Optional[pd.DataFrame]:
     """Read a single CSV and normalise via the Smart Router."""
     try:
         df = pd.read_csv(csv_path)
@@ -673,7 +686,7 @@ def _read_and_clean(csv_path: Path) -> Optional[pd.DataFrame]:
         logger.exception("Failed to read %s", csv_path)
         return None
 
-    return _normalise_player_columns(df, csv_path.name)
+    return _normalise_player_columns(df, csv_path.name, target_format, target_client, target_brand)
 
 
 def _month_range(start: str, end: str) -> list[str]:
@@ -1031,9 +1044,7 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
         df["campaign_name"] = df["campaign"] + "_" + df["ops_date"]
         
         # Resolve 'records' fallback array logic
-        if "New Data" in df.columns and "# Records" in df.columns:
-            df["records"] = np.where(df["New Data"] > 0, df["New Data"], df["# Records"])
-        elif "New Data" in df.columns:
+        if "New Data" in df.columns:
             df["records"] = df["New Data"]
         elif "# Records" in df.columns:
             df["records"] = df["# Records"]
