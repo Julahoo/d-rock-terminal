@@ -25,8 +25,10 @@ def fetch_data(start_date, end_date):
     query = f"""
         SELECT 
             ops_date, ops_client as client, extracted_lifecycle as lifecycle,
-            SUM(records) as records, SUM(kpi2_logins) as logins, SUM(conversions) as conversions
-        FROM ops_telemarketing_data
+            SUM(CASE WHEN extracted_engagement = 'NLI' THEN "Records" ELSE 0 END) as records, 
+            SUM("KPI2-Login") as logins, 
+            SUM("KPI1-Conv.") as conversions
+        FROM ops_telemarketing_data_materialized
         WHERE ops_date >= '{start_date}' AND ops_date <= '{end_date}'
         GROUP BY ops_date, ops_client, extracted_lifecycle
     """
@@ -124,6 +126,9 @@ def generate_morning_briefing():
         <div style="max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
             <h1 style="color: #2c3e50; text-align: center;">📊 D-ROCK Morning Briefing</h1>
             <p style="text-align: center; color: #7f8c8d;">Operational Report for {start_date} to {end_date}</p>
+            <div style="background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 6px; padding: 12px 16px; margin: 0 0 20px 0; font-size: 13px;">
+                <b>⏱️ Point-in-Time Snapshot</b> — This report reflects data as ingested at the time of generation ({datetime.now().strftime('%b %d, %Y %H:%M UTC')}). Metrics such as Logins and Conversions may increase in subsequent exports due to delayed attribution from the iWinBack API (up to T+7 days).
+            </div>
             <hr style="border: 0; height: 1px; background: #eee; margin-bottom: 30px;">
     '''
     
