@@ -4,6 +4,15 @@
 
 ## LOG ENTRIES
 
+### [Feature - PowerPlay Financial Integration] - 2026-03-23 - COMPLETED
+- **Objectives:** Add support for the non-standard `PowerPlay Winback & RND - Jan '26 commission report.xls` format to the Financial Ingestion pipeline.
+- **Problem 1 (Multi-Sheet Chaos):** PowerPlay distributes Cohort data across 15 separate tabs without a clear `wb_tag` or `country` column. The file is also in binary `.xls` format instead of `.xlsx` or `.csv`.
+- **Problem 2 (Missing Metrics):** The PowerPlay dataset completely omits `Turnover` (Bet Amount), `Bonus`, and `Withdrawals`.
+- **Fix (Custom Ingestion Parser):** Upgraded `load_all_data_from_uploads` to detect `.xls` and bypass the `SHEET_RE` regex if the filename contains "powerplay". Built a custom `_normalise_player_columns(target_format="PowerPlay")` that extracts Geographic codes (`CA-ROC`, `CA-ONT`) and `wb_tag` segments directly from the individual sheet names. Forced `bet=0` to prevent downstream Pandas crashes in the Analytics Tabs.
+- **Commit Hash:** `a57cae7`
+- **Files Changed:** `src/ingestion.py`
+- **User Action Required:** Because local AI environments cannot connect to Railway PG production easily, the user must explicitly add (`POWERP`, `PowerPlay`, `PowerPlay Group`, `PowerPlay`) to the `client_mapping` via the UI **🏢 Client Hub -> Client Detail Profile** before uploading.
+
 ### [Hotfix - Automated Report Data Accuracy & Financial Ingestion UX] - 2026-03-23 - COMPLETED
 - **Problem 1 (Report Data Discrepancy):** The automated daily morning briefing (`scripts/jobs/automated_report.py`) was querying the raw `ops_telemarketing_data` table, which contains duplicate snapshot rows from multiple daily syncs. The SQL `GROUP BY` summed all snapshots, inflating Yesterday metrics (e.g., Reliato RND Volume: 123 reported vs 102 actual).
 - **Fix 1:** Switched the `fetch_data()` query to use the deduplicated `ops_telemarketing_data_materialized` view. Updated column names to match materialized view schema (`"Records"`, `"KPI2-Login"`, `"KPI1-Conv."`). Single fix resolved all Volume, Logins, and Conversions discrepancies across all clients and lifecycles.
