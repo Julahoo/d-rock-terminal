@@ -3026,7 +3026,7 @@ if not _master_df.empty:
                 st.markdown("*Insight: Identifies players active on both primary brands (Rojabet and Latribet) and their shared revenue footprint.*")
                 
                 from src.analytics import generate_overlap_stats
-                overlap_m = generate_overlap_stats(raw_fin)
+                overlap_m = generate_overlap_stats(fetch_financial_data())
                 
                 o1, o2 = st.columns(2)
                 with o1:
