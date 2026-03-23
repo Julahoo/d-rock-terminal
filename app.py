@@ -1535,7 +1535,7 @@ if view_mode == "⚙️ Admin":
                 
                 col_fin1, col_fin2 = st.columns([3, 1])
                 with col_fin1:
-                    fin_files = st.file_uploader("Upload Financial Files", accept_multiple_files=True, type=["csv", "xlsx"], key="client_fin_upload")
+                    fin_files = st.file_uploader("Upload Financial Files", accept_multiple_files=True, type=["csv", "xlsx", "xls"], key="client_fin_upload")
                 with col_fin2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("🔄 Force Refresh Cache", key="refresh_fin"):
@@ -2477,7 +2477,7 @@ if "📥 Financial Ingestion" in tab_map:
         st.markdown("#### 📁 File Dropzones")
         col_gfin1, col_gfin2 = st.columns([3, 1])
         with col_gfin1:
-            fin_files = st.file_uploader("Upload Financial Files (CSV/XLSX)", type=["csv", "xlsx"], key="global_fin_upload", accept_multiple_files=True)
+            fin_files = st.file_uploader("Upload Financial Files (CSV/Excel)", type=["csv", "xlsx", "xls"], key="global_fin_upload", accept_multiple_files=True)
         with col_gfin2:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🔄 Force Refresh Cache", key="global_refresh_fin"):
