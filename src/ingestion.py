@@ -533,14 +533,25 @@ def _normalise_campaign_columns(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 # ═══════════════════════════════════════════════════════════════════════════
 def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
     """Extract (brand_key, 'YYYY-MM') from a filename like
-    ``latribet_2025_08.csv``."""
+    ``latribet_2025_08.csv`` or ``2026-02 latribet.xlsx``."""
+    # Try original format first: brand_yyyy_mm.ext
     m = FILE_RE.match(filename)
-    if not m:
-        return None
-    brand = m.group("brand").lower()
-    year  = m.group("year")
-    month = m.group("month")
-    return brand, f"{year}-{month}"
+    if m:
+        brand = m.group("brand").lower()
+        year  = m.group("year")
+        month = m.group("month")
+        return brand, f"{year}-{month}"
+
+    # Try yyyy-mm brand.ext format (strip extension, then match SHEET_RE)
+    stem = re.sub(r"\.(?:csv|xlsx)$", "", filename, flags=re.IGNORECASE)
+    m2 = SHEET_RE.match(stem.strip())
+    if m2:
+        year  = m2.group("year")
+        month = m2.group("month")
+        brand = m2.group("brand").strip().lower()
+        return brand, f"{year}-{month}"
+
+    return None
 
 
 def _normalise_player_columns(df: pd.DataFrame, source_label: str, target_format: str = "Standard", target_client: str = "UNKNOWN", target_brand: str = "UNKNOWN") -> Optional[pd.DataFrame]:
@@ -718,6 +729,7 @@ def _pretty_month(ym: str) -> str:
 
 def load_all_data_from_uploads(
     files: list,
+    allow_overwrite: bool = False,
 ) -> tuple[pd.DataFrame, IngestionRegistry]:
     """Read player CSVs from Streamlit UploadedFile objects in-memory.
 
@@ -768,11 +780,22 @@ def load_all_data_from_uploads(
 
         # Duplicate protection
         if (target_brand, report_month) in existing_combos:
-            try:
-                import streamlit as st
-                st.warning(f"⚠️ Rejected '{source_label}': Data for {target_brand} ({report_month}) already exists.")
-            except: pass
-            return
+            if not allow_overwrite:
+                try:
+                    import streamlit as st
+                    st.warning(f"⚠️ Rejected '{source_label}': Data for {target_brand} ({report_month}) already exists. Enable 'Update existing data' to overwrite.")
+                except: pass
+                return
+            else:
+                # Delete existing data for this brand+month before re-ingesting
+                try:
+                    with db_engine.begin() as conn:
+                        conn.execute(text("DELETE FROM raw_financial_data WHERE brand = :b AND report_month = :m"), {"b": target_brand, "m": report_month})
+                    import streamlit as st
+                    st.info(f"🔄 Updating existing data for {target_brand} ({report_month})...")
+                except Exception as e:
+                    logger.exception("Failed to delete existing data for %s %s", target_brand, report_month)
+                    return
 
         df = _normalise_player_columns(raw, source_label, target_format, target_client, target_brand)
         if df is None or df.empty:

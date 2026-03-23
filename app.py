@@ -1543,10 +1543,13 @@ if view_mode == "⚙️ Admin":
                         fetch_config_tables.clear()
                         st.rerun()
 
+                if fin_files:
+                    overwrite_fin = st.checkbox("🔄 Update existing data (overwrite if brand+month already exists)", key="fin_overwrite")
+                
                 if st.button("Run Financial Ingestion", width='stretch') and fin_files:
                     from src.ingestion import load_all_data_from_uploads
                     with st.spinner("Processing..."):
-                        df, reg = load_all_data_from_uploads(fin_files)
+                        df, reg = load_all_data_from_uploads(fin_files, allow_overwrite=overwrite_fin if fin_files else False)
                         if not df.empty:
                             st.session_state["registry"] = reg
                             # Invalidate the global cache before rerunning
@@ -2482,10 +2485,13 @@ if "📥 Financial Ingestion" in tab_map:
                 fetch_config_tables.clear()
                 st.rerun()
 
+        if fin_files:
+            overwrite_gfin = st.checkbox("🔄 Update existing data (overwrite if brand+month already exists)", key="global_fin_overwrite")
+
         if st.button("Process Financial Data", width='stretch') and fin_files:
             with st.spinner("Saving securely to PostgreSQL..."):
                 from src.ingestion import load_all_data_from_uploads
-                df, reg = load_all_data_from_uploads(fin_files)
+                df, reg = load_all_data_from_uploads(fin_files, allow_overwrite=overwrite_gfin if fin_files else False)
                 st.session_state["registry"] = reg
                 
                 # Invalidate RAM cache since new data was appended to DB
