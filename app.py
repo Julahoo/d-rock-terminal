@@ -869,14 +869,17 @@ with st.sidebar:
     st.markdown("### 🦅 CallsU Command")
 
     nav_options = []
-    if st.session_state.get("user_role") != "Operations":
-        nav_options.append("📊 Dashboard")
-    if st.session_state.get("user_role") in ["Superadmin", "Admin", "Operations"]:
+    _user_role = st.session_state.get("user_role")
+    if _user_role == "Operations":
         nav_options.append("📞 Operations")
-    if st.session_state.get("user_role") in ["Superadmin", "Admin", "Financial"]: 
+    elif _user_role == "Financial":
         nav_options.append("🏦 Financial")
-    if st.session_state.get("user_role") in ["Superadmin", "Admin"]:
-        nav_options.append("⚙️ Admin")
+    else:
+        nav_options.append("📊 Dashboard")
+        nav_options.append("📞 Operations")
+        nav_options.append("🏦 Financial")
+        if _user_role in ["Superadmin", "Admin"]:
+            nav_options.append("⚙️ Admin")
 
     st.markdown("---")
     view_mode = st.selectbox("🧭 Go to:", nav_options, key="primary_view_mode")
@@ -1035,7 +1038,10 @@ with st.sidebar:
             st.session_state["date_slider_val"] = (_s, _e)
 
     if "date_preset" not in st.session_state:
-        st.session_state["date_preset"] = "Last 30 Days"
+        if st.session_state.get("user_role") == "Financial":
+            st.session_state["date_preset"] = "Last Month"
+        else:
+            st.session_state["date_preset"] = "Last 30 Days"
         update_slider()
 
     options = ["Custom", "Yesterday", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "Current Month", "Last Month"]
