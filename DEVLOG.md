@@ -4,6 +4,17 @@
 
 ## LOG ENTRIES
 
+### [Hotfix - Automated Report Data Accuracy & Financial Ingestion UX] - 2026-03-23 - COMPLETED
+- **Problem 1 (Report Data Discrepancy):** The automated daily morning briefing (`scripts/jobs/automated_report.py`) was querying the raw `ops_telemarketing_data` table, which contains duplicate snapshot rows from multiple daily syncs. The SQL `GROUP BY` summed all snapshots, inflating Yesterday metrics (e.g., Reliato RND Volume: 123 reported vs 102 actual).
+- **Fix 1:** Switched the `fetch_data()` query to use the deduplicated `ops_telemarketing_data_materialized` view. Updated column names to match materialized view schema (`"Records"`, `"KPI2-Login"`, `"KPI1-Conv."`). Single fix resolved all Volume, Logins, and Conversions discrepancies across all clients and lifecycles.
+- **Feature 1 (Point-in-Time Disclaimer):** Added a `⏱️ Point-in-Time Snapshot` banner to the email HTML template, reminding recipients that metrics reflect data at the time of ingestion and may increase in later exports due to delayed attribution from the iWinBack API (up to T+7 days).
+- **Problem 2 (Filename Format):** Users uploading financial files named `2026-02 latribet.xlsx` (yyyy-mm brand format) were silently rejected because `_parse_filename()` only matched `brand_yyyy_mm.ext` format.
+- **Fix 2:** Extended `_parse_filename()` in `src/ingestion.py` to also match the `yyyy-mm brand.ext` format by stripping the file extension and matching against `SHEET_RE`. Both `2026-02 latribet.xlsx` and `latribet_2026_02.csv` now work.
+- **Feature 2 (Update Existing Data):** Added `allow_overwrite` parameter to `load_all_data_from_uploads()`. When True and a duplicate `(brand, report_month)` combo is detected, existing DB rows are DELETEd before re-ingestion. Added `🔄 Update existing data` checkbox to both Financial Ingestion UI locations in `app.py`. If unchecked, duplicates are rejected with a warning message guiding the user to enable the toggle.
+- **Commit Hashes:** `31ffa51` (report fix + disclaimer), `9864167` (filename format + overwrite toggle).
+- **Files Changed:** `scripts/jobs/automated_report.py`, `src/ingestion.py`, `app.py`.
+- **Cross-Validation:** Verified source CSV (`campaignsummaryv3_Mar-22-2026`) against production materialized view. Records column matches (Reliato RND: 102 ✅). Logins/Conversions delta attributed to delayed attribution timing (T+7 backfill window), documented via the new email disclaimer.
+
 ### [Feature & Bugfix Batch - Automation + UI Stability] - 2026-03-18 - COMPLETED
 - **Objectives:** Unblock the localized email dispatch bottleneck by porting operations to the cloud, automate daily 7:00 AM reporting via serverless CI/CD, and resolve Streamlit UI DOM rendering crashes.
 - **Problem 1 (The Local Block):** Railway's Docker environment structurally blocked all outbound Port 587 (SMTP) packets, forcing the batch email generator to run manually from the user's laptop.

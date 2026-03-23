@@ -1,8 +1,8 @@
-# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.4/2026)
+# D-ROCK FINANCIAL TERMINAL - TECHNICAL SPECIFICATION (v3.5/2026)
 
 ## 1. CORE PRINCIPLES & ARCHITECTURE
 - **Goal:** Full-stack CRM intelligence platform for multi-client iGaming operations. Automates financial ETL, telemarketing ops tracking (CallsU), campaign naming convention enforcement, and executive business intelligence.
-- **Architecture:** 4-Tier Modular Enterprise Platform (V3.4). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Serverless GitHub Actions cron pipelines. Async Report Queue for heavy analytics. Lazy Tab Computation guards for sub-second navigation.
+- **Architecture:** 4-Tier Modular Enterprise Platform (V3.5). ETL Pipeline → PostgreSQL persistence → Streamlit UI with RBAC. Daily automation via Serverless GitHub Actions cron pipelines. Async Report Queue for heavy analytics. Lazy Tab Computation guards for sub-second navigation.
 - **Tech Stack:** Python 3.10+, `pandas`, `SQLAlchemy`, `psycopg2`, `openpyxl`/`xlsxwriter`, `streamlit`, `plotly`, `github-actions`.
 - **UI Theme:** Material Design 3 Dark — Inter font (Google Fonts), Deep Purple primary (`#7C4DFF`), GitHub-dark backgrounds (`#0D1117`/`#161B22`), soft white text (`#E6EDF3`). Custom CSS injection via `st.markdown(unsafe_allow_html=True)` for metric cards with gradient/elevation, pill-style tabs/radio, rounded inputs/buttons with hover glow, and slim scrollbars. Config: `.streamlit/config.toml`.
 - **Deployment:** Railway (Docker) with PostgreSQL. Serverless daily ops sync & payload dispatches natively executed at 06:00 UTC (07:00 CET) via GitHub Actions CI/CD.
@@ -138,6 +138,8 @@ During ingestion, each component is extracted via token matching:
   - 🏦 Financial uploads occur inside the `📥 Financial Ingestion` workspace.
   - 📞 Operations uploads occur inside the `🗄️ Operations Ingestion` workspace.
 - **Analytical Auto-Hydration:** The dashboard computations (Monthly Summaries, Cohorts, Segmentations, etc.) are instantly generated from the PostgreSQL filtered `_master_df` using `@st.cache_data` wrappers to prevent blocking the main thread.
+- **Dual Filename Format Support:** `_parse_filename()` accepts both `brand_yyyy_mm.ext` (e.g., `latribet_2026_02.csv`) and `yyyy-mm brand.ext` (e.g., `2026-02 latribet.xlsx`). The second format strips the extension and matches against `SHEET_RE`.
+- **Update Existing Data Toggle:** A `🔄 Update existing data` checkbox appears when files are uploaded for Financial Ingestion. When enabled, existing `(brand, report_month)` data is DELETEd from `raw_financial_data` before re-ingesting the new file. When disabled, duplicates are rejected with a warning.
 
 ### 4.2.1 🔐 Component State Anchoring & Pagination (2026 Standards)
 - **Immutable DOM Navigation:** All critical structural navigators (`st.selectbox`, `st.radio`) **must** possess an explicit `key="unique_id"` argument. This prevents catastrophic UI state drops and tab-resets during global DOM realignments triggered by sidebar widget executions.
@@ -285,7 +287,13 @@ During ingestion, each component is extracted via token matching:
 ### 5.4 Duplicate Prevention
 - DB-level guard: `SELECT 1 FROM ops_telemarketing_data WHERE ops_date = :d LIMIT 1` per date before requesting exports.
 
-### 5.5 Credential Storage
+### 5.5 Automated Morning Report (`scripts/jobs/automated_report.py`)
+- **Data Source:** Queries `ops_telemarketing_data_materialized` (deduplicated view), NOT the raw `ops_telemarketing_data` table. This ensures Yesterday metrics match the spreadsheet export values.
+- **Metrics:** Volume (NLI Records), Logins, Conversions — computed per client × lifecycle with Yesterday, 7-Day Avg, and 30-Day Avg rolling windows.
+- **Email Disclaimer:** A `⏱️ Point-in-Time Snapshot` banner appears at the top of every email, notifying recipients that data reflects ingestion time and may drift from later exports due to delayed attribution (up to T+7 days) from the iWinBack API.
+- **Schedule:** 06:00 UTC (07:00 CET) via GitHub Actions Serverless CI/CD pipeline (`.github/workflows/morning_report.yml`).
+
+### 5.6 Credential Storage
 ```
 # .env format
 IWINBACK_BOXES=bhfs2,bxq4c,bb4p7,baj7f,bdka4
@@ -294,7 +302,7 @@ IWINBACK_{box}_TOKEN=<bearer_token>
 ```
 - Credentials set on **both** Railway services: `d-rock-terminal` (web app) and `cron-job`.
 
-### 5.6 Contact-Level Journey APIs (Phase 20)
+### 5.7 Contact-Level Journey APIs (Phase 20)
 - **`GET /api/contact_campaign_association/client_reporting`** — Links `contact_id` to `campaign_id`, `brand_id`, `account_number`.
 - **`GET /api/contact_logins`** — Login events with `contact_id`, `login_at`, `type`, `domain`.
 - **`GET /api/contact_registers`** — Registration events with `contact_id`, `account_number`.
@@ -302,6 +310,6 @@ IWINBACK_{box}_TOKEN=<bearer_token>
 - **Backfill:** Historical pull from 2025-01-01 to present, chunked by month.
 - **Daily Cron:** Alongside `campaign_summary_v3`, pulls yesterday's events and upserts into `ops_contact_events`.
 
-### 5.7 Historical Data Coverage
+### 5.8 Historical Data Coverage
 - **Operations data (`campaign_summary_v3`):** Backfilled from 2025-01-01 → present across all 5 boxes.
 - **Benchmark periods:** H1 2025 (Jan–Jun 2025), H2 2025 (Jul–Dec 2025), H1 2026 (in progress).
