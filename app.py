@@ -672,6 +672,13 @@ def _apply_global_filters(
     start_date_str, end_date_str, start_month, end_month
 ):
     import pandas as pd
+
+    def _clean_categories(df):
+        if df.empty: return df
+        for col in df.select_dtypes(['category']).columns:
+            df[col] = df[col].cat.remove_unused_categories()
+        return df
+
     # Fetch directly from sub-cache to bypass MD5 Hash Serialization Penalty on Streamlit backend
     raw_ops = fetch_ops_data()
     raw_ops_snapshots = fetch_ops_snapshots_data()
@@ -693,7 +700,7 @@ def _apply_global_filters(
         if start_date_str and end_date_str and 'ops_date' in raw_ops.columns: 
             date_col = raw_ops['ops_date'].astype(str)
             ops_mask &= (date_col >= start_date_str) & (date_col <= end_date_str)
-        filtered_ops = raw_ops[ops_mask].copy()
+        filtered_ops = _clean_categories(raw_ops[ops_mask].copy())
     else:
         filtered_ops = pd.DataFrame()
 
@@ -707,7 +714,7 @@ def _apply_global_filters(
             # Avoid overwriting the entire column type natively to prevent fragmentation
             date_col = raw_ops_snapshots['ops_date'].astype(str)
             snap_mask &= (date_col >= start_date_str) & (date_col <= end_date_str)
-        filtered_ops_snapshots = raw_ops_snapshots[snap_mask].copy()
+        filtered_ops_snapshots = _clean_categories(raw_ops_snapshots[snap_mask].copy())
     else:
         filtered_ops_snapshots = pd.DataFrame()
 
@@ -718,7 +725,7 @@ def _apply_global_filters(
         if start_date_str and end_date_str and 'report_month' in raw_fin.columns: 
             rm_col = raw_fin['report_month'].astype(str)
             fin_mask &= (rm_col >= start_month) & (rm_col <= end_month)
-        filtered_fin = raw_fin[fin_mask].copy()
+        filtered_fin = _clean_categories(raw_fin[fin_mask].copy())
     else:
         filtered_fin = pd.DataFrame()
 
@@ -1190,8 +1197,15 @@ with st.sidebar:
         with st.spinner("Clearing secure session..."):
             cookie_manager.delete("auth_session")
             import time
-            time.sleep(1) # CRITICAL: Give JS time to delete the browser cookie
-            st.session_state.clear()
+            time.sleep(1)  # CRITICAL: Give JS time to delete the browser cookie
+            # Wipe ALL session state and force a fresh login gate cycle
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            # Preserve the hydration flag so the anti-flicker hack does NOT
+            # pause and re-read the (potentially still-present) cookie.
+            # Instead the login form renders immediately.
+            st.session_state["authenticated"] = False
+            st.session_state["auth_hydration_run"] = True
             st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════
