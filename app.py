@@ -3099,9 +3099,9 @@ if not _master_df.empty:
                 from src.analytics import generate_geographic_summary
                 geo_df = generate_geographic_summary(df)
             
-                if not geo_df.empty and len(geo_df[geo_df["country"] != "Global"]) > 0:
-                    # Filter out the 'Global' fallback from Offside Gaming for the visual
-                    visual_geo = geo_df[geo_df["country"] != "Global"].copy()
+                if not geo_df.empty and len(geo_df[geo_df["country"] != "Unknown"]) > 0:
+                    # Filter out the 'Unknown' fallback from Offside Gaming for the visual
+                    visual_geo = geo_df[geo_df["country"] != "Unknown"].copy()
                 
                     # 1. The Treemap
                     fig_tree = px.treemap(
@@ -3146,8 +3146,14 @@ if not _master_df.empty:
             filtered_both = both_business
         
             if not filtered_both.empty:
-                bb_latest = filtered_both.iloc[-1]
-                bb_prev = filtered_both.iloc[-2] if len(filtered_both) > 1 else None
+                true_latest = _get_true_latest(filtered_both)
+                if true_latest:
+                    val_idx = filtered_both[filtered_both["month"] == true_latest].index[0]
+                    bb_latest = filtered_both.iloc[val_idx]
+                    bb_prev = filtered_both.iloc[val_idx - 1] if val_idx > 0 else None
+                else:
+                    bb_latest = filtered_both.iloc[-1]
+                    bb_prev = filtered_both.iloc[-2] if len(filtered_both) > 1 else None
 
                 def _bb_delta(col: str):
                     if bb_prev is not None and col in filtered_both.columns:
@@ -3239,11 +3245,10 @@ if not _master_df.empty:
                         aff1, aff2 = st.columns([1, 1.5])
 
                         with aff1:
-                            fig_donut = px.pie(
+                            fig_bar = px.bar(
                                 affinity_df,
-                                names="Affinity",
-                                values="Players",
-                                hole=0.6,
+                                x="Affinity",
+                                y="Players",
                                 color="Affinity",
                                 color_discrete_map={
                                     "Omnichannel": "#FFD700", 
@@ -3252,14 +3257,14 @@ if not _master_df.empty:
                                     "Inactive": "#555555"
                                 }
                             )
-                            fig_donut.update_layout(
+                            fig_bar.update_layout(
                                 paper_bgcolor="rgba(0,0,0,0)",
                                 plot_bgcolor="rgba(0,0,0,0)",
                                 font_color="#00FF41",
                                 margin=dict(t=30, l=0, r=0, b=0),
-                                showlegend=True
+                                showlegend=False
                             )
-                            st.plotly_chart(fig_donut, width='stretch')
+                            st.plotly_chart(fig_bar, width='stretch')
 
                         with aff2:
                             st.dataframe(
@@ -3376,9 +3381,14 @@ if not _master_df.empty:
                     st.metric("Turnover Per Player",
                               f"${bb_latest['turnover_per_player']:,.2f}")
                 with rv2:
-                    top10 = financial_summary[
-                        financial_summary["brand"] == "Combined"
-                    ].sort_values("month").iloc[-1].get("top_10_pct_ggr_share", 0)
+                    comb_all = financial_summary[financial_summary["brand"] == "Combined"].sort_values("month")
+                    cl_month = _get_true_latest(comb_all)
+                    if cl_month:
+                        cl_latest = comb_all[comb_all["month"] == cl_month].iloc[0]
+                    else:
+                        cl_latest = comb_all.iloc[-1] if not comb_all.empty else pd.Series()
+                        
+                    top10 = cl_latest.get("top_10_pct_ggr_share", 0)
                     st.metric("Whale Dependency (Top 10% GGR)",
                               f"{top10:.2f}%")
 

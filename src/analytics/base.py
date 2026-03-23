@@ -1370,6 +1370,7 @@ def generate_geographic_summary(df: pd.DataFrame) -> pd.DataFrame:
         agg_dict["deposits"] = "sum"
 
     geo = df.groupby("country", sort=False).agg(agg_dict).reset_index()
+    geo["country"] = geo["country"].replace("Global", "Unknown")
     
     rename_cols = {
         "id": "total_players",
