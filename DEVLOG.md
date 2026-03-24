@@ -9,6 +9,7 @@
 - **Problem 1 (Multi-Sheet Chaos):** PowerPlay distributes Cohort data across 15 separate tabs without a clear `wb_tag` or `country` column. The file is also in binary `.xls` format instead of `.xlsx` or `.csv`.
 - **Problem 2 (Missing Metrics):** The PowerPlay dataset completely omits `Turnover` (Bet Amount), `Bonus`, and `Withdrawals`.
 - **Fix (Custom Ingestion Parser):** Upgraded `load_all_data_from_uploads` to detect `.xls` and bypass the `SHEET_RE` regex if the filename contains "powerplay". Built a custom `_normalise_player_columns(target_format="PowerPlay")` that extracts Geographic codes (`CA-ROC`, `CA-ONT`) and `wb_tag` segments directly from the individual sheet names. Forced `bet=0` to prevent downstream Pandas crashes in the Analytics Tabs.
+- **Universal Upgrade (Magico Games / Interspin):** Refactored the 'powerplay' filename bypass into a DB-driven schema check (`is_multisheet_schema = (target_format == 'PowerPlay')`). This natively supports Interspin's identical multi-sheet layout, ignores 'Total Deposits #' counts, and bypasses summary tabs like 'Cross Sell' and 'Sheet2'.
 - **Commit Hash:** `a57cae7`
 - **Files Changed:** `src/ingestion.py`
 - **User Action Required:** Because local AI environments cannot connect to Railway PG production easily, the user must explicitly add (`POWERP`, `PowerPlay`, `PowerPlay Group`, `PowerPlay`) to the `client_mapping` via the UI **🏢 Client Hub -> Client Detail Profile** before uploading.

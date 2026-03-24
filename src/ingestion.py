@@ -534,6 +534,8 @@ def _normalise_campaign_columns(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
     """Extract (brand_key, 'YYYY-MM') from a filename like
     ``latribet_2025_08.csv``, ``2026-02 latribet.xlsx``, or ``PowerPlay Winback & RND - Jan '26 commission report.xls``."""
+    import re
+    
     name_lower = filename.lower()
     
     # PowerPlay Intercept: Extract year/month from "Jan '26" or similar
@@ -541,7 +543,6 @@ def _parse_filename(filename: str) -> Optional[tuple[str, str]]:
         months_map = {"jan": "01", "feb": "02", "mar": "03", "apr": "04", "may": "05", "jun": "06", "jul": "07", "aug": "08", "sep": "09", "oct": "10", "nov": "11", "dec": "12"}
         for m_str, m_num in months_map.items():
             if m_str in name_lower:
-                import re
                 # Look for 2 digit year like '26 or 2026
                 yr_match = re.search(r"(?:'|20)(\d{2})\b", name_lower)
                 if yr_match:
@@ -721,7 +722,8 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str, target_format
             
         dep_col = "Deposits \u20ac"
         for c in df.columns:
-            if "Deposits" in str(c): dep_col = c
+            if "Deposits" in str(c) and "#" not in str(c):
+                dep_col = c
             
         # Rename identified columns
         rename_map = {revenue_col: "revenue", ngr_col: "ngr"}
@@ -899,9 +901,21 @@ def load_all_data_from_uploads(
     for f in files:
         f_name_lower = f.name.lower()
         is_excel = f_name_lower.endswith(".xlsx") or f_name_lower.endswith(".xls")
+
+        # Filename parsing must happen first to identify the format
+        parsed = _parse_filename(f.name)
+        if not parsed:
+            logger.warning("Skipping unrecognised file: %s", f.name)
+            continue
+            
+        brand_key, report_month = parsed
         
-        # Check if the file is PowerPlay
-        is_powerplay = "powerplay" in f_name_lower
+        # Identify format from registry mappings
+        mapped_info = fin_map.get(brand_key.strip().lower(), {})
+        target_format = mapped_info.get('format', 'Standard')
+        
+        # Trigger explicit universal multi-sheet bypass for PowerPlay-schema clients
+        is_multisheet_schema = (target_format == "PowerPlay")
 
         # Try multi-sheet Excel first
         if is_excel:
@@ -914,55 +928,43 @@ def load_all_data_from_uploads(
                 has_multi = False
                 xl = None
 
-            # 1. Standard Multi-Sheet Processing
-            if has_multi and xl and not is_powerplay:
+            # 1. Standard Multi-Sheet Processing (Tab names must match yyyy-mm Brand)
+            if has_multi and xl and not is_multisheet_schema:
                 for sheet_name in xl.sheet_names:
                     sm = SHEET_RE.match(sheet_name.strip())
                     if not sm:
                         logger.info("Skipping non-data sheet: '%s' in %s", sheet_name, f.name)
                         continue
-                    year, month = sm.group("year"), sm.group("month")
-                    brand_key = sm.group("brand").strip().lower()
-                    report_month = f"{year}-{month}"
+                    sheet_year, sheet_month = sm.group("year"), sm.group("month")
+                    sheet_brand_key = sm.group("brand").strip().lower()
+                    sheet_report_month = f"{sheet_year}-{sheet_month}"
                     try:
                         raw = xl.parse(sheet_name)
                     except Exception:
                         logger.exception("Failed to read sheet '%s' in %s", sheet_name, f.name)
                         continue
-                    _ingest_single(brand_key, report_month, raw, f"{f.name}:{sheet_name}")
+                    _ingest_single(sheet_brand_key, sheet_report_month, raw, f"{f.name}:{sheet_name}")
                 continue  # Done with this file
                 
-            # 2. PowerPlay Custom Multi-Sheet Processing
-            elif is_powerplay and xl:
-                parsed = _parse_filename(f.name)
-                if not parsed:
-                    logger.warning("Could not parse PowerPlay filename: %s", f.name)
-                    continue
-                brand_key, report_month = parsed
-                
+            # 2. Universal PowerPlay/Interspin Custom Multi-Sheet Processing
+            elif is_multisheet_schema and xl:
                 for sheet_name in xl.sheet_names:
-                    # Skip summary and non-data sheets
-                    invalid_sheets = ["Commission overview", "Sheet1"]
+                    # Skip summary and non-data sheets from various clients
+                    invalid_sheets = ["Commission overview", "Sheet1", "Sheet2", "Cross Sell"]
                     if sheet_name.strip() in invalid_sheets:
                         continue
                         
                     try:
                         raw = xl.parse(sheet_name)
                     except Exception:
-                        logger.exception("Failed to read PowerPlay sheet '%s'", sheet_name)
+                        logger.exception("Failed to read Custom Multi-Sheet tab '%s'", sheet_name)
                         continue
                     
                     # _ingest_single handles standardisation and DB routing
                     _ingest_single(brand_key, report_month, raw, f"{f.name}:{sheet_name}")
                 continue # Done with this file
 
-        # Single-file path (CSV or single-sheet file)
-        parsed = _parse_filename(f.name)
-        if parsed is None:
-            logger.warning("Skipping unrecognised file: %s", f.name)
-            continue
-
-        brand_key, report_month = parsed
+        # 3. Single-file path (CSV or single-sheet file)
         try:
             if is_excel:
                 eng = "openpyxl" if f_name_lower.endswith(".xlsx") else None
