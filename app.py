@@ -1576,7 +1576,7 @@ if view_mode == "⚙️ Admin":
                     with st.form("add_client_tag_form"):
                         new_tag = st.text_input("Ops Tag (e.g., ROJB, LV)")
                         new_brand = st.text_input("Brand Name (e.g., Rojabet, Leovegas)")
-                        new_format = st.selectbox("Financial Format", ["Standard", "LeoVegas", "Offside"])
+                        new_format = st.selectbox("Financial Format", ["Standard", "LeoVegas", "Offside", "PowerPlay", "Interspin"])
                         if st.form_submit_button("Register Tag"):
                             execute_query("""INSERT INTO client_mapping (brand_code, brand_name, client_name, financial_format) 
                                              VALUES (:t, :b, :c, :f) 

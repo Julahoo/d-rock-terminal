@@ -696,9 +696,9 @@ def _normalise_player_columns(df: pd.DataFrame, source_label: str, target_format
         for col in NUMERIC_COLS:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    elif target_format == "PowerPlay":
-        # ── PowerPlay path ───────────────────────────────────────────────
-        logger.info("[DeterministicRouter] %s → PowerPlay format applied", source_label)
+    elif target_format in ("PowerPlay", "Interspin"):
+        # ── PowerPlay & Interspin path ───────────────────────────────────
+        logger.info("[DeterministicRouter] %s → %s schema format applied", source_label, target_format)
         
         # Determine cohort/segment and country from the sheet name mapped in source_label
         # source_label format during multisheet: "Power...report.xls:React - Feb 2025"
@@ -914,8 +914,8 @@ def load_all_data_from_uploads(
         mapped_info = fin_map.get(brand_key.strip().lower(), {})
         target_format = mapped_info.get('format', 'Standard')
         
-        # Trigger explicit universal multi-sheet bypass for PowerPlay-schema clients
-        is_multisheet_schema = (target_format == "PowerPlay")
+        # Trigger explicit universal multi-sheet bypass for PowerPlay/Interspin-schema clients
+        is_multisheet_schema = (target_format in ("PowerPlay", "Interspin"))
 
         # Try multi-sheet Excel first
         if is_excel:
