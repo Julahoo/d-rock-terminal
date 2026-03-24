@@ -4378,7 +4378,7 @@ if "📞 Operations Command" in tab_map:
                 
                 # Filter down to the last 52 weeks and apply the exact same sidebar filters to keep it contextually relevant!
                 macro_df = raw_ops[(pd.to_datetime(raw_ops['ops_date']) >= _52_weeks_ago)].copy()
-                if selected_client != "Global": macro_df = macro_df[macro_df['ops_client'] == selected_client]
+                if selected_client != "All": macro_df = macro_df[macro_df['ops_client'] == selected_client]
                 if selected_brand != "All": macro_df = macro_df[macro_df['ops_brand'] == selected_brand]
                 if selected_country != "All": macro_df = macro_df[macro_df['ops_country'] == selected_country]
                 if selected_lifecycle != "All": macro_df = macro_df[macro_df['extracted_lifecycle'] == selected_lifecycle]
