@@ -4366,8 +4366,85 @@ if "📞 Operations Command" in tab_map:
             o5.metric("Global True CAC", f"${true_cac:,.2f}")
             
             st.markdown("---")
-
             
+            # --- 📅 52-Week Historical Trends ---
+            st.markdown("### 📅 52-Week Historical Trends")
+            st.markdown("*Insight: A high-level macro view of Volume and Performance pacing over the past year.*")
+            
+            if not raw_ops.empty and 'ops_date' in raw_ops.columns:
+                from datetime import datetime as _dt
+                _now_date = pd.to_datetime(_dt.now().date())
+                _52_weeks_ago = _now_date - pd.Timedelta(weeks=52)
+                
+                # Filter down to the last 52 weeks and apply the exact same sidebar filters to keep it contextually relevant!
+                macro_df = raw_ops[(pd.to_datetime(raw_ops['ops_date']) >= _52_weeks_ago)].copy()
+                if selected_client != "Global": macro_df = macro_df[macro_df['ops_client'] == selected_client]
+                if selected_brand != "All": macro_df = macro_df[macro_df['ops_brand'] == selected_brand]
+                if selected_country != "All": macro_df = macro_df[macro_df['ops_country'] == selected_country]
+                if selected_lifecycle != "All": macro_df = macro_df[macro_df['extracted_lifecycle'] == selected_lifecycle]
+                
+                if not macro_df.empty:
+                    # Parse dates strictly
+                    macro_df['ops_date'] = pd.to_datetime(macro_df['ops_date'])
+                    
+                    # Columns to aggregate
+                    agg_dict_macro = {'Records': 'sum'}
+                    if 'Calls' in macro_df.columns: agg_dict_macro['Calls'] = 'sum'
+                    if 'ev' in macro_df.columns: agg_dict_macro['ev'] = 'sum'
+                    if 'sa' in macro_df.columns: agg_dict_macro['sa'] = 'sum'
+                    if 'KPI1-Conv.' in macro_df.columns: agg_dict_macro['KPI1-Conv.'] = 'sum'
+                    if 'KPI2-Login' in macro_df.columns: agg_dict_macro['KPI2-Login'] = 'sum'
+                    if 'Total_Campaign_Cost' in macro_df.columns: agg_dict_macro['Total_Campaign_Cost'] = 'sum'
+                    
+                    # Resample weekly
+                    weekly_trends = macro_df.set_index('ops_date').resample('W-MON').agg(agg_dict_macro).reset_index()
+                    weekly_trends.fillna(0, inplace=True)
+                    
+                    weekly_trends.rename(columns={'ev': 'Emails', 'sa': 'SMS', 'KPI1-Conv.': 'Conversions', 'KPI2-Login': 'Logins'}, inplace=True)
+                    
+                    if 'Conversions' in weekly_trends.columns and 'Total_Campaign_Cost' in weekly_trends.columns:
+                        weekly_trends['CPC'] = (weekly_trends['Total_Campaign_Cost'] / weekly_trends['Conversions'].replace(0, 1)).round(2)
+                    
+                    # --- Volume Chart ---
+                    vol_cols = ['Records']
+                    for hc in ['Calls', 'Emails', 'SMS']:
+                        if hc in weekly_trends.columns: vol_cols.append(hc)
+                        
+                    fig_macro_vol = px.line(weekly_trends, x='ops_date', y=vol_cols,
+                                            labels={'value': 'Volume', 'ops_date': 'Week Of'}, title="52-Week Volume Trends")
+                    fig_macro_vol.update_traces(mode='lines+markers', hovertemplate='<b>%{x}</b><br>%{y:,.0f}<extra></extra>')
+                    fig_macro_vol.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", margin=dict(t=40, b=40, l=40, r=40))
+                    for trace in fig_macro_vol.data:
+                        if trace.name != 'Records': trace.line.dash = 'dot'
+                    
+                    # --- Performance Chart ---
+                    import plotly.graph_objects as go
+                    perf_cols = []
+                    for hc in ['Conversions', 'Logins']:
+                        if hc in weekly_trends.columns: perf_cols.append(hc)
+                        
+                    fig_macro_perf = go.Figure()
+                    for pc in perf_cols:
+                        color = "#22c55e" if pc == "Conversions" else "#eab308"
+                        fig_macro_perf.add_trace(go.Scatter(x=weekly_trends['ops_date'], y=weekly_trends[pc], name=pc, mode='lines+markers', line=dict(color=color, width=3)))
+                    
+                    if 'CPC' in weekly_trends.columns:
+                        fig_macro_perf.add_trace(go.Scatter(x=weekly_trends['ops_date'], y=weekly_trends['CPC'], name='CPC ($)', mode='lines+markers', line=dict(color='#ef4444', dash='dash'), yaxis='y2'))
+                        
+                    fig_macro_perf.update_layout(
+                        title="52-Week Performance Trends",
+                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
+                        yaxis=dict(title="Count"),
+                        yaxis2=dict(title="Cost ($)", overlaying="y", side="right", showgrid=False),
+                        margin=dict(t=40, b=40, l=40, r=40),
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+                    )
+                    
+                    st.plotly_chart(fig_macro_vol, width='stretch')
+                    st.plotly_chart(fig_macro_perf, width='stretch')
+                    
+                    st.markdown("---")
+
             st.markdown("### 📈 Daily SLA Trends & Performance")
             
             # --- SLA BREACH WATCHDOG ---

@@ -22,14 +22,16 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.database import engine
 
 def fetch_data(start_date, end_date):
+    # Apply strict NLI engagement filter universally across all metrics to prevent log/conv inflation
     query = f"""
         SELECT 
             ops_date, ops_client as client, extracted_lifecycle as lifecycle,
-            SUM(CASE WHEN extracted_engagement = 'NLI' THEN "Records" ELSE 0 END) as records, 
+            SUM("Records") as records, 
             SUM("KPI2-Login") as logins, 
             SUM("KPI1-Conv.") as conversions
         FROM ops_telemarketing_data_materialized
         WHERE ops_date >= '{start_date}' AND ops_date <= '{end_date}'
+        AND extracted_engagement = 'NLI'
         GROUP BY ops_date, ops_client, extracted_lifecycle
     """
     return pd.read_sql(query, engine)
@@ -107,7 +109,6 @@ def generate_morning_briefing():
     slas = fetch_slas()
     
     clients = ['Reliato', 'Limitless', 'Simplicity', 'LeoVegas', 'Offside', 'Powerplay', 'Magico Games/Interspin', 'Rhino']
-    lifecycles = ['WB', 'RND']
     
     # Normalize database string quirks to match the target report names natively
     alias_map = {
@@ -153,7 +154,10 @@ def generate_morning_briefing():
         {sla_html}
         '''
         
-        for lc in lifecycles:
+        # Dynamically discover all unique lifecycles present in the 30-day snapshot for this specific client (e.g., WB, RND, SL, AFF)
+        active_lifecycles = sorted([lc for lc in client_df['lifecycle'].dropna().unique() if str(lc).strip().upper() != 'UNKNOWN'])
+        
+        for lc in active_lifecycles:
             lc_df = client_df[client_df['lifecycle'] == lc].copy()
             if lc_df.empty:
                 continue
