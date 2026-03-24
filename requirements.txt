@@ -10,3 +10,4 @@ extra-streamlit-components
 numpy
 psutil==5.9.8
 kaleido==0.2.1
+xlrd>=2.0.1
