@@ -59,9 +59,12 @@ def run_daily_sync():
         except Exception as gap_err:
             log_msg(f"⚠️ Gap detection failed (non-fatal): {gap_err}")
 
-        # ── Daily Pull: Yesterday ──
-        log_msg(f"\n📥 PULLING DAILY DATA: {yesterday_str}")
-        success = run_historical_pull(start_date=yesterday_str, end_date=yesterday_str)
+        # ── Rolling Tail Pull: T-14 to T-1 ──
+        target_start_dt = yesterday_dt - timedelta(days=13)
+        target_start_str = target_start_dt.strftime("%Y-%m-%d")
+        
+        log_msg(f"\n📥 PULLING ROLLING 14-DAY TAIL: {target_start_str} to {yesterday_str}")
+        success = run_historical_pull(start_date=target_start_str, end_date=yesterday_str)
         
         if success:
             log_msg("✅ DAILY API PULL COMPLETED SUCCESSFULLY.")

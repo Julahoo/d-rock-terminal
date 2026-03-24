@@ -215,21 +215,8 @@ def run_historical_pull(start_date, end_date):
     base_dir = "data/raw/callsu_daily"
 
     def process_day(target_date):
-        """Process a single date across all boxes."""
-        # DB-level duplicate guard
-        try:
-            with db_engine.connect() as conn:
-                result = conn.execute(
-                    text("SELECT 1 FROM ops_telemarketing_data WHERE ops_date = :d LIMIT 1"),
-                    {"d": target_date},
-                )
-                if result.fetchone():
-                    log_msg(f"⏭️ Skipping {target_date} — data already exists in database")
-                    return True
-        except Exception as e:
-            log_msg(f"⚠️ DB check failed for {target_date}, proceeding: {e}")
-
-        log_msg(f"\n📅 Processing: {target_date}")
+        """Process a single date across all boxes. Now natively supports rolling tail overwrites."""
+        log_msg(f"\n📅 Processing: {target_date} (Rolling Update Enabled)")
 
         # Save folder
         month_folder = target_date[:7]
@@ -243,6 +230,10 @@ def run_historical_pull(start_date, end_date):
             buf = _export_from_box(session, box, target_date)
             if buf:
                 all_buffers.append((box["id"], buf))
+            
+            # Add delay between individual box pulls to prevent platform pollution
+            log_msg(f"   ⏳ Spacing pulls: Sleeping for 15 seconds before next box...")
+            time.sleep(15)
 
         if not all_buffers:
             log_msg(f"   ⚠️ No data returned for {target_date} from any box")
@@ -273,6 +264,16 @@ def run_historical_pull(start_date, end_date):
         except Exception as e:
             log_msg(f"   ⚠️ Failed saving combined file: {e}")
 
+        # Pre-Ingestion Housekeeping: Purge any existing data for this date to allow delayed attribution updates
+        try:
+            with db_engine.begin() as conn:
+                conn.execute(text("DELETE FROM ops_telemarketing_data WHERE ops_date = :d"), {"d": target_date})
+                # Note: We must carefully preserve snapshots for historical delta mapping, so we ONLY delete from ops_telemarketing_data.
+                # ops_telemarketing_snapshots explicitly collects a cumulative log of state over time.
+                log_msg(f"   🧹 Purged legacy records for {target_date} to apply rolling tail updates...")
+        except Exception as e:
+            log_msg(f"   ⚠️ Database purge failed for {target_date}, might cause duplicates: {e}")
+
         # Ingest via existing ops pipeline
         try:
             with open(combined_path, "rb") as f:
@@ -287,6 +288,11 @@ def run_historical_pull(start_date, end_date):
     retry_queue = []
     for target_date in date_list:
         success = process_day(target_date)
+        
+        # Add delay between daily sweeps
+        log_msg(f"   ⏳ Spacing pulls: Sleeping for 30 seconds before next date...")
+        time.sleep(30)
+        
         if not success:
             retry_queue.append(target_date)
 

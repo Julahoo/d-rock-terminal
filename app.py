@@ -4491,7 +4491,7 @@ if "📞 Operations Command" in tab_map:
 
             if not ops_df.empty and 'ops_date' in ops_df.columns:
                 # Group by exact daily date directly from globally filtered ops_df
-                latest_snaps = ops_df.sort_values('snapshot_timestamp').drop_duplicates(subset=['Campaign Name', 'ops_date'], keep='last') if 'snapshot_timestamp' in ops_df.columns else ops_df
+                latest_snaps = ops_df.sort_values('snapshot_timestamp').drop_duplicates(subset=['campaign_name', 'ops_date'], keep='last') if 'snapshot_timestamp' in ops_df.columns else ops_df
                 
                 u_sigs = latest_snaps['campaign_signature'].unique() if 'campaign_signature' in latest_snaps.columns else []
                 active_sig = u_sigs[0] if len(u_sigs) == 1 else None
