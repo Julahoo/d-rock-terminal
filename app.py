@@ -4367,83 +4367,157 @@ if "📞 Operations Command" in tab_map:
             
             st.markdown("---")
             
-            # --- 📅 52-Week Historical Trends ---
-            st.markdown("### 📅 52-Week Historical Trends")
-            st.markdown("*Insight: A high-level macro view of Volume and Performance pacing over the past year.*")
+            # --- 📅 52-Week Lifecycle Conversion Forensics (SPEC §4.8) ---
+            st.markdown("### 📅 52-Week Lifecycle Conversion Forensics")
+            st.markdown("*Apples-to-Apples: Conversions segregated by Lifecycle with Contact Rate & Data Age correlation overlays. Complete weeks only (Fri→Thu).*")
             
             if not raw_ops.empty and 'ops_date' in raw_ops.columns:
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, timedelta as _td
+                import plotly.graph_objects as go
+                
                 _now_date = pd.to_datetime(_dt.now().date())
                 _52_weeks_ago = _now_date - pd.Timedelta(weeks=52)
                 
-                # Filter down to the last 52 weeks and apply the exact same sidebar filters to keep it contextually relevant!
-                macro_df = raw_ops[(pd.to_datetime(raw_ops['ops_date']) >= _52_weeks_ago)].copy()
-                if selected_client != "All": macro_df = macro_df[macro_df['ops_client'] == selected_client]
-                if selected_brand != "All": macro_df = macro_df[macro_df['ops_brand'] == selected_brand]
-                if selected_country != "All": macro_df = macro_df[macro_df['ops_country'] == selected_country]
-                if selected_lifecycle != "All": macro_df = macro_df[macro_df['extracted_lifecycle'] == selected_lifecycle]
+                # --- Build the macro dataset from raw_ops (UNFILTERED by date, but filtered by sidebar) ---
+                macro_df = raw_ops.copy()
+                macro_df['ops_date'] = pd.to_datetime(macro_df['ops_date'], errors='coerce')
+                macro_df = macro_df[macro_df['ops_date'] >= _52_weeks_ago]
                 
-                if not macro_df.empty:
-                    # Parse dates strictly
-                    macro_df['ops_date'] = pd.to_datetime(macro_df['ops_date'])
+                # Apply sidebar filters (except lifecycle — we segregate by lifecycle here)
+                if selected_client != "All" and 'ops_client' in macro_df.columns: macro_df = macro_df[macro_df['ops_client'] == selected_client]
+                if selected_brand != "All" and 'ops_brand' in macro_df.columns: macro_df = macro_df[macro_df['ops_brand'] == selected_brand]
+                if selected_country != "All" and 'country' in macro_df.columns: macro_df = macro_df[macro_df['country'] == selected_country]
+                
+                if not macro_df.empty and 'extracted_lifecycle' in macro_df.columns:
+                    # --- Friday-to-Thursday Complete Week Boundaries ---
+                    # Find the most recent completed Thursday
+                    today_weekday = _now_date.weekday()  # Mon=0, Fri=4, Thu=3
+                    if today_weekday >= 3:  # Thu or later
+                        last_thursday = _now_date - _td(days=(today_weekday - 3))
+                    else:
+                        last_thursday = _now_date - _td(days=(today_weekday + 4))
                     
-                    # Columns to aggregate
-                    agg_dict_macro = {'Records': 'sum'}
-                    if 'Calls' in macro_df.columns: agg_dict_macro['Calls'] = 'sum'
-                    if 'ev' in macro_df.columns: agg_dict_macro['ev'] = 'sum'
-                    if 'sa' in macro_df.columns: agg_dict_macro['sa'] = 'sum'
-                    if 'KPI1-Conv.' in macro_df.columns: agg_dict_macro['KPI1-Conv.'] = 'sum'
-                    if 'KPI2-Login' in macro_df.columns: agg_dict_macro['KPI2-Login'] = 'sum'
-                    if 'Total_Campaign_Cost' in macro_df.columns: agg_dict_macro['Total_Campaign_Cost'] = 'sum'
+                    # Only include data up to the last completed Thursday
+                    macro_df = macro_df[macro_df['ops_date'] <= last_thursday]
                     
-                    # Resample weekly
-                    weekly_trends = macro_df.set_index('ops_date').resample('W-MON').agg(agg_dict_macro).reset_index()
-                    weekly_trends.fillna(0, inplace=True)
-                    
-                    weekly_trends.rename(columns={'ev': 'Emails', 'sa': 'SMS', 'KPI1-Conv.': 'Conversions', 'KPI2-Login': 'Logins'}, inplace=True)
-                    
-                    if 'Conversions' in weekly_trends.columns and 'Total_Campaign_Cost' in weekly_trends.columns:
-                        weekly_trends['CPC'] = (weekly_trends['Total_Campaign_Cost'] / weekly_trends['Conversions'].replace(0, 1)).round(2)
-                    
-                    # --- Volume Chart ---
-                    vol_cols = ['Records']
-                    for hc in ['Calls', 'Emails', 'SMS']:
-                        if hc in weekly_trends.columns: vol_cols.append(hc)
+                    if not macro_df.empty:
+                        # Assign weekly period label (Friday start = W-FRI)
+                        macro_df['week_start'] = macro_df['ops_date'] - pd.to_timedelta((macro_df['ops_date'].dt.weekday - 4) % 7, unit='D')
                         
-                    fig_macro_vol = px.line(weekly_trends, x='ops_date', y=vol_cols,
-                                            labels={'value': 'Volume', 'ops_date': 'Week Of'}, title="52-Week Volume Trends")
-                    fig_macro_vol.update_traces(mode='lines+markers', hovertemplate='<b>%{x}</b><br>%{y:,.0f}<extra></extra>')
-                    fig_macro_vol.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41", margin=dict(t=40, b=40, l=40, r=40))
-                    for trace in fig_macro_vol.data:
-                        if trace.name != 'Records': trace.line.dash = 'dot'
-                    
-                    # --- Performance Chart ---
-                    import plotly.graph_objects as go
-                    perf_cols = []
-                    for hc in ['Conversions', 'Logins']:
-                        if hc in weekly_trends.columns: perf_cols.append(hc)
+                        # Discover active lifecycles with meaningful conversion data
+                        active_lcs = [lc for lc in macro_df['extracted_lifecycle'].unique() 
+                                      if lc not in ('UNKNOWN', None, '') and pd.notna(lc)]
                         
-                    fig_macro_perf = go.Figure()
-                    for pc in perf_cols:
-                        color = "#22c55e" if pc == "Conversions" else "#eab308"
-                        fig_macro_perf.add_trace(go.Scatter(x=weekly_trends['ops_date'], y=weekly_trends[pc], name=pc, mode='lines+markers', line=dict(color=color, width=3)))
-                    
-                    if 'CPC' in weekly_trends.columns:
-                        fig_macro_perf.add_trace(go.Scatter(x=weekly_trends['ops_date'], y=weekly_trends['CPC'], name='CPC ($)', mode='lines+markers', line=dict(color='#ef4444', dash='dash'), yaxis='y2'))
+                        if active_lcs:
+                            # Color palette for lifecycles
+                            _lc_colors = {'RND': '#22c55e', 'WB': '#eab308', 'SL': '#3b82f6', 'CS': '#a855f7', 
+                                          'ACQ': '#ef4444', 'ROC': '#06b6d4', 'FD': '#f97316', 'OTD': '#ec4899',
+                                          'CHU': '#8b5cf6', 'LFC': '#14b8a6', 'LOADER': '#64748b'}
+                            
+                            # ═══ CHART 1: Conversions by Lifecycle ═══
+                            fig_conv = go.Figure()
+                            for lc in sorted(active_lcs):
+                                lc_df = macro_df[macro_df['extracted_lifecycle'] == lc]
+                                conv_col = 'conversions' if 'conversions' in lc_df.columns else 'KPI1-Conv.'
+                                weekly = lc_df.groupby('week_start').agg({conv_col: 'sum'}).reset_index()
+                                weekly.columns = ['week_start', 'conversions']
+                                color = _lc_colors.get(lc, '#94a3b8')
+                                fig_conv.add_trace(go.Scatter(
+                                    x=weekly['week_start'], y=weekly['conversions'],
+                                    name=lc, mode='lines+markers',
+                                    line=dict(color=color, width=2),
+                                    hovertemplate=f'<b>{lc}</b><br>Week: %{{x}}<br>Conversions: %{{y:,.0f}}<extra></extra>'
+                                ))
+                            
+                            fig_conv.update_layout(
+                                title="52-Week Conversions by Lifecycle (Complete Weeks Only)",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
+                                xaxis=dict(title="Week Of (Fri→Thu)"),
+                                yaxis=dict(title="Conversions"),
+                                margin=dict(t=40, b=60, l=60, r=40),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                                height=400
+                            )
+                            
+                            # ═══ CHART 2: Contact Rate % & Data Age Correlation ═══
+                            # Aggregate across all lifecycles for combined correlation view
+                            calls_col = 'calls' if 'calls' in macro_df.columns else 'Calls'
+                            d_col = 'd_neutral' if 'd_neutral' in macro_df.columns else 'D'
+                            conv_col_2 = 'conversions' if 'conversions' in macro_df.columns else 'KPI1-Conv.'
+                            
+                            agg_cols = {conv_col_2: 'sum', calls_col: 'sum', d_col: 'sum'}
+                            if 'campaign_data_age_days' in macro_df.columns:
+                                # Only average rows where age was actually computed (not -1)
+                                valid_age = macro_df[macro_df['campaign_data_age_days'] >= 0]
+                                if not valid_age.empty:
+                                    age_weekly = valid_age.groupby('week_start').agg({'campaign_data_age_days': 'mean'}).reset_index()
+                                    age_weekly.columns = ['week_start', 'avg_data_age']
+                                else:
+                                    age_weekly = pd.DataFrame()
+                            else:
+                                age_weekly = pd.DataFrame()
+                            
+                            corr_weekly = macro_df.groupby('week_start').agg(agg_cols).reset_index()
+                            corr_weekly.columns = ['week_start', 'conversions', 'calls', 'd_contacts']
+                            corr_weekly['contact_rate_pct'] = (corr_weekly['d_contacts'] / corr_weekly['calls'].replace(0, 1) * 100).round(2)
+                            corr_weekly['cpc'] = 0.0
+                            
+                            if 'total_cost' in macro_df.columns or 'Total_Campaign_Cost' in macro_df.columns:
+                                cost_col = 'total_cost' if 'total_cost' in macro_df.columns else 'Total_Campaign_Cost'
+                                cost_weekly = macro_df.groupby('week_start').agg({cost_col: 'sum'}).reset_index()
+                                corr_weekly['cpc'] = (cost_weekly[cost_col] / corr_weekly['conversions'].replace(0, 1)).round(2)
+                            
+                            fig_corr = go.Figure()
+                            
+                            # Primary Y: Contact Rate %
+                            fig_corr.add_trace(go.Scatter(
+                                x=corr_weekly['week_start'], y=corr_weekly['contact_rate_pct'],
+                                name='Contact Rate %', mode='lines+markers',
+                                line=dict(color='#22c55e', width=3),
+                                hovertemplate='<b>Contact Rate</b><br>%{y:.1f}%<extra></extra>'
+                            ))
+                            
+                            # Primary Y: CPC
+                            if corr_weekly['cpc'].sum() > 0:
+                                fig_corr.add_trace(go.Scatter(
+                                    x=corr_weekly['week_start'], y=corr_weekly['cpc'],
+                                    name='CPC ($)', mode='lines+markers',
+                                    line=dict(color='#ef4444', dash='dash', width=2),
+                                    hovertemplate='<b>CPC</b><br>$%{y:,.2f}<extra></extra>'
+                                ))
+                            
+                            # Secondary Y: Avg Data Age
+                            if not age_weekly.empty:
+                                fig_corr.add_trace(go.Scatter(
+                                    x=age_weekly['week_start'], y=age_weekly['avg_data_age'],
+                                    name='Avg Data Age (Days)', mode='lines+markers',
+                                    line=dict(color='#3b82f6', dash='dot', width=2),
+                                    yaxis='y2',
+                                    hovertemplate='<b>Data Age</b><br>%{y:.1f} days<extra></extra>'
+                                ))
+                            
+                            fig_corr.update_layout(
+                                title="52-Week Correlation: Contact Rate, CPC & Data Age",
+                                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
+                                xaxis=dict(title="Week Of (Fri→Thu)"),
+                                yaxis=dict(title="Rate % / Cost ($)"),
+                                yaxis2=dict(title="Avg Data Age (Days)", overlaying="y", side="right", showgrid=False),
+                                margin=dict(t=40, b=60, l=60, r=60),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                                height=400
+                            )
+                            
+                            # Render both charts with identical frame sizing
+                            st.plotly_chart(fig_conv, use_container_width=True)
+                            st.plotly_chart(fig_corr, use_container_width=True)
+                            
+                        else:
+                            st.info("No active lifecycles with data found in the 52-week window.")
+                    else:
+                        st.info("No complete weeks available in the 52-week window.")
                         
-                    fig_macro_perf.update_layout(
-                        title="52-Week Performance Trends",
-                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
-                        yaxis=dict(title="Count"),
-                        yaxis2=dict(title="Cost ($)", overlaying="y", side="right", showgrid=False),
-                        margin=dict(t=40, b=40, l=40, r=40),
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
-                    )
-                    
-                    st.plotly_chart(fig_macro_vol, width='stretch')
-                    st.plotly_chart(fig_macro_perf, width='stretch')
-                    
                     st.markdown("---")
+
 
             st.markdown("### 📈 Daily SLA Trends & Performance")
             

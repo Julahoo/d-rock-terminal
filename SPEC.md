@@ -12,7 +12,7 @@
 ## 2. DATA MODELS (PostgreSQL Persistence Layer)
 
 ### 2.1 Database Tables (Single Source of Truth)
-- **`ops_telemarketing_data`:** Core telemarketing operational records. Key columns: `campaign_name`, `ops_client`, `ops_brand`, `ops_date`, `records`, `calls`, `conversions`, `total_cost`, `true_cac`, dispositions (`d_plus`, `d_minus`, `d_neutral`, `am`, `dnc`, `na`, `dx`, `wn`, `t`), channel metrics (`sa`, `sd`, `sf`, `sp`, `ev`, `es`, `ed`, `eo`, `ec`, `ef`), optouts, and **8 campaign naming convention components:** `country`, `extracted_lifecycle`, `extracted_segment`, `extracted_engagement`, `extracted_product`, `extracted_language`, `extracted_sublifecycle`. Note: `campaign_name` is NOT unique — multiple rows per campaign per date.
+- **`ops_telemarketing_data`:** Core telemarketing operational records. Key columns: `campaign_name`, `ops_client`, `ops_brand`, `ops_date`, `records`, `calls`, `conversions`, `total_cost`, `true_cac`, `campaign_data_age_days` (Days between campaign name date and ops dialect date), dispositions, channel metrics, optouts, and 8 campaign naming convention components.
 - **`ops_telemarketing_snapshots`:** Mirror of `ops_telemarketing_data` for daily snapshots used by Dashboard Pulse matrices and benchmarks. Same column schema.
 - **`raw_financial_data`:** Core financial records populated from ingestion. Columns: `player_id`, `client`, `brand`, `country`, `wb_tag`, `segment`, `bet`, `revenue`, `ngr`, casino/sports splits, `deposits`, `withdrawals`, `bonus_*`, `tax_total`, `report_month`, `reactivation_date`, `campaign_start_date`, `reactivation_days`.
 - **`client_mapping`:** The Universal Brand Translator registry. Columns: `brand_code` (Ops Tag), `brand_name`, `client_name`, `financial_format` (Enum: Standard, LeoVegas, Offside). Used to normalize incoming data and intercept/quarantine orphaned tags.
@@ -104,6 +104,7 @@ During ingestion, each component is extracted via token matching:
 - **Lifecycle:** Token in `[RND, WB, CS, ROC, FD, OTD, CHU, ACQ, SL, LFC, LOADER]`. Default: `UNKNOWN`.
 - **Sublifecycle:** Token in `[J1, J2, J3, BULK]`. Default: `UNKNOWN`.
 - **Engagement:** Token in `[NLI, LI]`. Default: `UNKNOWN`.
+- **Date:** Final token (e.g., `2026-03-24`). Used mathematically during dataset generation to populate `campaign_data_age_days` (Ops Date - Campaign Date).
 - **Missing fields:** Default to `"UNKNOWN"`. UNKNOWN values excluded from sidebar dropdowns but included when filter = "All".
 
 ---
@@ -227,6 +228,12 @@ During ingestion, each component is extracted via token matching:
 - **Chart 3 — Login % Trend (Column 2/3):**
   - Yellow line: Daily `Logins%` (`KPI2-Login / Records * 100`).
   - Dashed yellow line: `target_li` benchmark from `granular_benchmarks`.
+
+### 4.8 📅 52-Week Lifecycle Conversion Forensics
+- **Location:** `📞 Operations Command` tab.
+- **Apples-to-Apples Focus:** Abandons raw volume aggregations in favor of strict, legend-toggled Conversion tracking segregated natively by active `lifecycle`.
+- **Timeframe Boundaries:** Enforces strict "Completed Weeks Only" logic spanning Friday-to-Thursday. The mathematically incomplete current week is proactively excised from the dataframe to prevent artificial drop-offs in the final plot.
+- **Correlation Overlay:** Utilizes Plotly dual Y-axes to directly map Conversion counts against operational health indicators: `Contact Rate %` and `Avg Data Age (Days)`.
 - **Chart 4 — Conversion % Trend (Column 3/3):**
   - Green line: Daily `Conv%` (`KPI1-Conv. / Records * 100`).
   - Dashed green line: `target_conv` benchmark from `granular_benchmarks`.

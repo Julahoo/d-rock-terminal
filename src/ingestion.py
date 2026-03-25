@@ -1229,6 +1229,28 @@ def load_operations_data_from_uploads(files: list) -> pd.DataFrame:
         df["d_total"] = df["d_neutral"]
         cols_to_keep.append("d_total")
         
+        # ── Phase 6.1: Materialize Campaign Data Age (SPEC §4.8) ──
+        # Extract the date embedded in the campaign naming convention (last tokens)
+        # Example: BRAND-CL-ES-CAS-HIGH-WB-J1-NLI-2026-03-24 → "2026-03-24"
+        def _extract_campaign_date(row_tokens):
+            """Scan tokens from right to find a YYYY MM DD triplet."""
+            vals = [str(t).strip() for t in row_tokens if str(t).strip()]
+            # Try to reconstruct a date from the last 3 tokens (YYYY, MM, DD)
+            if len(vals) >= 3:
+                candidate = f"{vals[-3]}-{vals[-2]}-{vals[-1]}"
+                try:
+                    return pd.to_datetime(candidate, format="%Y-%m-%d")
+                except (ValueError, TypeError):
+                    pass
+            return pd.NaT
+        
+        df["_campaign_date"] = [_extract_campaign_date(row) for row in tokens_df.values]
+        df["_ops_date_dt"] = pd.to_datetime(df["ops_date"], errors="coerce")
+        df["campaign_data_age_days"] = (df["_ops_date_dt"] - df["_campaign_date"]).dt.days
+        df["campaign_data_age_days"] = df["campaign_data_age_days"].fillna(-1).astype(int)
+        df.drop(columns=["_campaign_date", "_ops_date_dt"], inplace=True, errors="ignore")
+        cols_to_keep.append("campaign_data_age_days")
+        
         # Filter cleanly to DB payload
         batch_df = df[[c for c in cols_to_keep if c in df.columns]].copy()
         
