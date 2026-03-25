@@ -4,6 +4,21 @@
 
 ## LOG ENTRIES
 
+### [Feature & Hotfix Batch - Phase 6 Operations Command & Daily Briefing] - 2026-03-24 - COMPLETED
+- **Objectives:** Enhance the Reactivation Dashboard with 52-week macro trends, correct Daily Email data drift, and stabilize multi-sheet Python parsing collisions.
+- **Problem 1 (Interspin Dictionary Collision):** The universal ingestion regex mapped Interspin `2026-02 interspin.xlsx` sheets down to the generic formatting route because the backend database erroneously possessed a duplicate `brand_code: PP` (legacy PowerPlay) mapped to an inactive client ID `6`.
+- **Fix 1:** Obliterated the redundant client via `DELETE FROM client_mapping WHERE id=6;`. Decoupled Interspin formats natively into the `is_multisheet_schema` routing engine, ensuring both Interspin and PowerPlay parse robustly through the multi-sheet iterator without format tearing.
+- **Problem 2 (Daily Briefing Logins/Conversions Inflation):** The automated morning briefing SQL query correctly applied the `CASE WHEN extracted_engagement = 'NLI'` constraint to the Volume column but leaked all `LI` engagements into the Logins and Conversions metric sweeps. The email artificially inflated Yesterday's totals.
+- **Fix 2:** Rewrote the `automated_report.py` database generation frame. Annihilated the `CASE WHEN` isolation and forced an absolute `AND extracted_engagement = 'NLI'` across the entire SQL boundary, permanently binding the email to output genuine NLI-only conversions directly matching the UI table.
+- **Problem 3 (Static Email Loop Disappearance):** The email loop strictly iterated on hardcoded array `lifecycles = ['WB', 'RND']`. If Safari (`SL`) generated records, they simply never appeared.
+- **Fix 3:** Replaced the hardcoded matrix with a real-time dynamic Pandas extraction loop (`client_df['lifecycle'].dropna().unique()`), empowering the system to natively capture any new acquisition type scaling globally.
+- **Problem 4 (SLA Tab UI Vanishing Act):** The Daily charts visually crashed and vanished because a newly introduced Snapshot logic trigger ran a `drop_duplicates` constraint explicitly searching for an uppercase `"Campaign Name"` column parameter instead of `"campaign_name"`. The user mistakenly believed the new 52-week charts had actively overwritten the Daily charts.
+- **Fix 4:** Hot-patched the Streamlit dictionary lookup parameter to the normalized lowercase format, instantly restoring the Streamlit drawing loop without silent `KeyError` failure.
+- **Problem 5 (52-Week Macro Eradication):** The newly constructed 52-Week plot charts evaluated `if selected_client != "Global"` against a sidebar component whose absolute bottom floor baseline was defined as `"All"`. The application attempted to literally filter the entire database specifically looking for a literal string client named `"All"`, immediately zeroing out all visuals.
+- **Fix 5:** Aligned the fallback boolean trap logic to target the native `"All"` variable.
+- **Commit Hashes:** `1aa89a2`, `a71d012`, `be768d0`, `9f8b4ec`
+- **Files Changed:** `src/ingestion.py`, `app.py`, `scripts/jobs/automated_report.py`
+
 ### [Feature - PowerPlay Financial Integration] - 2026-03-23 - COMPLETED
 - **Objectives:** Add support for the non-standard `PowerPlay Winback & RND - Jan '26 commission report.xls` format to the Financial Ingestion pipeline.
 - **Problem 1 (Multi-Sheet Chaos):** PowerPlay distributes Cohort data across 15 separate tabs without a clear `wb_tag` or `country` column. The file is also in binary `.xls` format instead of `.xlsx` or `.csv`.

@@ -27,3 +27,15 @@ registry.json
 # Keep the folder structures intact in Git without the files
 !data/raw/.gitkeep
 !data/campaigns/.gitkeep
+
+# 🛑 LOCAL TESTING SCRIPTS (SECRETS RISK) 🛑
+*.bat
+*.vbs
+scripts/jobs/execute_backfill.py
+scripts/jobs/master_fix.py
+data/add_powerplay.py
+data/test_leo.py
+data/update_jan_feb.py
+data/update_mar11.py
+data/update_march.py
+tests/test_new_data_fallback.py
