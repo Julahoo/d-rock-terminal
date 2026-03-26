@@ -4414,7 +4414,7 @@ if "📞 Operations Command" in tab_map:
                                           'ACQ': '#ef4444', 'ROC': '#06b6d4', 'FD': '#f97316', 'OTD': '#ec4899',
                                           'CHU': '#8b5cf6', 'LFC': '#14b8a6', 'LOADER': '#64748b'}
                             
-                            # ═══ CHART 1: Conversions by Lifecycle ═══
+                            # ═══ CHART 1: Conversions by Lifecycle (Stacked Area) ═══
                             fig_conv = go.Figure()
                             for lc in sorted(active_lcs):
                                 lc_df = macro_df[macro_df['extracted_lifecycle'] == lc]
@@ -4424,8 +4424,9 @@ if "📞 Operations Command" in tab_map:
                                 color = _lc_colors.get(lc, '#94a3b8')
                                 fig_conv.add_trace(go.Scatter(
                                     x=weekly['week_start'], y=weekly['conversions'],
-                                    name=lc, mode='lines+markers',
-                                    line=dict(color=color, width=2),
+                                    name=lc, mode='lines',
+                                    line=dict(color=color, width=1),
+                                    stackgroup='one',
                                     hovertemplate=f'<b>{lc}</b><br>Week: %{{x}}<br>Conversions: %{{y:,.0f}}<extra></extra>'
                                 ))
                             
