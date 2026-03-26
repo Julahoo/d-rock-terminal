@@ -4430,6 +4430,18 @@ if "📞 Operations Command" in tab_map:
                                     hovertemplate=f'<b>{lc}</b><br>Week: %{{x}}<br>Conversions: %{{y:,.0f}}<extra></extra>'
                                 ))
                             
+                            # Add invisible TOTAL trace for the unified tooltip
+                            conv_col_total = 'conversions' if 'conversions' in macro_df.columns else 'KPI1-Conv.'
+                            total_weekly = macro_df.groupby('week_start').agg({conv_col_total: 'sum'}).reset_index()
+                            total_weekly.columns = ['week_start', 'conversions']
+                            fig_conv.add_trace(go.Scatter(
+                                x=total_weekly['week_start'], y=total_weekly['conversions'],
+                                name='📊 TOTAL', mode='lines',
+                                line=dict(color='rgba(0,0,0,0)', width=0),
+                                showlegend=False,
+                                hovertemplate='<b>TOTAL: %{y:,.0f}</b><extra></extra>'
+                            ))
+                            
                             fig_conv.update_layout(
                                 title="52-Week Conversions by Lifecycle (Complete Weeks Only)",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
