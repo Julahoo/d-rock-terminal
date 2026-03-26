@@ -4434,7 +4434,7 @@ if "📞 Operations Command" in tab_map:
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
                                 xaxis=dict(title="Week Of (Fri→Thu)"),
                                 yaxis=dict(title="Conversions"),
-                                margin=dict(t=40, b=60, l=60, r=40),
+                                margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                                 height=400
                             )
@@ -4502,7 +4502,7 @@ if "📞 Operations Command" in tab_map:
                                 xaxis=dict(title="Week Of (Fri→Thu)"),
                                 yaxis=dict(title="Rate % / Cost ($)"),
                                 yaxis2=dict(title="Avg Data Age (Days)", overlaying="y", side="right", showgrid=False),
-                                margin=dict(t=40, b=60, l=60, r=60),
+                                margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                                 height=400
                             )
