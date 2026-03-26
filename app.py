@@ -4437,6 +4437,7 @@ if "📞 Operations Command" in tab_map:
                                 yaxis=dict(title="Conversions"),
                                 margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                                hovermode='x unified',
                                 height=400
                             )
                             
