@@ -4442,12 +4442,16 @@ if "📞 Operations Command" in tab_map:
                                 hovertemplate='<b>TOTAL: %{y:,.0f}</b><extra></extra>'
                             ))
                             
+                            # --- Coordinate X-Axis and Margins for perfect alignment ---
+                            x_min = macro_df['week_start'].min()
+                            x_max = macro_df['week_start'].max()
+                            
                             fig_conv.update_layout(
                                 title="52-Week Conversions by Lifecycle (Complete Weeks Only)",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
-                                xaxis=dict(title="Week Of (Fri→Thu)"),
-                                yaxis=dict(title="Conversions"),
-                                margin=dict(t=40, b=60, l=80, r=120),
+                                xaxis=dict(title="Week Of (Fri→Thu)", range=[x_min, x_max]),
+                                yaxis=dict(title="Conversions", automargin=False),
+                                margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                                 hovermode='x unified',
                                 height=400
@@ -4515,10 +4519,10 @@ if "📞 Operations Command" in tab_map:
                             fig_corr.update_layout(
                                 title="52-Week: Logins, CPC & Data Age",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
-                                xaxis=dict(title="Week Of (Fri→Thu)"),
-                                yaxis=dict(title="Logins"),
-                                yaxis2=dict(overlaying="y", side="right", showgrid=False, showticklabels=False),
-                                margin=dict(t=40, b=60, l=80, r=120),
+                                xaxis=dict(title="Week Of (Fri→Thu)", range=[x_min, x_max]),
+                                yaxis=dict(title="Logins", automargin=False),
+                                yaxis2=dict(overlaying="y", side="right", showgrid=False, automargin=False),
+                                margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                                 height=400
                             )
