@@ -4453,15 +4453,14 @@ if "📞 Operations Command" in tab_map:
                                 height=400
                             )
                             
-                            # ═══ CHART 2: Contact Rate % & Data Age Correlation ═══
-                            # Aggregate across all lifecycles for combined correlation view
-                            calls_col = 'calls' if 'calls' in macro_df.columns else 'Calls'
-                            d_col = 'd_neutral' if 'd_neutral' in macro_df.columns else 'D'
+                            # ═══ CHART 2: Logins, CPC & Data Age ═══
                             conv_col_2 = 'conversions' if 'conversions' in macro_df.columns else 'KPI1-Conv.'
+                            logins_col = 'kpi2_logins' if 'kpi2_logins' in macro_df.columns else 'KPI2-Login'
                             
-                            agg_cols = {conv_col_2: 'sum', calls_col: 'sum', d_col: 'sum'}
+                            agg_cols_2 = {conv_col_2: 'sum'}
+                            if logins_col in macro_df.columns: agg_cols_2[logins_col] = 'sum'
+                            
                             if 'campaign_data_age_days' in macro_df.columns:
-                                # Only average rows where age was actually computed (not -1)
                                 valid_age = macro_df[macro_df['campaign_data_age_days'] >= 0]
                                 if not valid_age.empty:
                                     age_weekly = valid_age.groupby('week_start').agg({'campaign_data_age_days': 'mean'}).reset_index()
@@ -4471,11 +4470,12 @@ if "📞 Operations Command" in tab_map:
                             else:
                                 age_weekly = pd.DataFrame()
                             
-                            corr_weekly = macro_df.groupby('week_start').agg(agg_cols).reset_index()
-                            corr_weekly.columns = ['week_start', 'conversions', 'calls', 'd_contacts']
-                            corr_weekly['contact_rate_pct'] = (corr_weekly['d_contacts'] / corr_weekly['calls'].replace(0, 1) * 100).round(2)
-                            corr_weekly['cpc'] = 0.0
+                            corr_weekly = macro_df.groupby('week_start').agg(agg_cols_2).reset_index()
+                            rename_map = {'week_start': 'week_start', conv_col_2: 'conversions'}
+                            if logins_col in agg_cols_2: rename_map[logins_col] = 'logins'
+                            corr_weekly.columns = list(rename_map.values())
                             
+                            corr_weekly['cpc'] = 0.0
                             if 'total_cost' in macro_df.columns or 'Total_Campaign_Cost' in macro_df.columns:
                                 cost_col = 'total_cost' if 'total_cost' in macro_df.columns else 'Total_Campaign_Cost'
                                 cost_weekly = macro_df.groupby('week_start').agg({cost_col: 'sum'}).reset_index()
@@ -4483,13 +4483,14 @@ if "📞 Operations Command" in tab_map:
                             
                             fig_corr = go.Figure()
                             
-                            # Primary Y: Contact Rate %
-                            fig_corr.add_trace(go.Scatter(
-                                x=corr_weekly['week_start'], y=corr_weekly['contact_rate_pct'],
-                                name='Contact Rate %', mode='lines+markers',
-                                line=dict(color='#22c55e', width=3),
-                                hovertemplate='<b>Contact Rate</b><br>%{y:.1f}%<extra></extra>'
-                            ))
+                            # Primary Y: Logins
+                            if 'logins' in corr_weekly.columns:
+                                fig_corr.add_trace(go.Scatter(
+                                    x=corr_weekly['week_start'], y=corr_weekly['logins'],
+                                    name='Logins', mode='lines+markers',
+                                    line=dict(color='#eab308', width=3),
+                                    hovertemplate='<b>Logins</b><br>%{y:,.0f}<extra></extra>'
+                                ))
                             
                             # Primary Y: CPC
                             if corr_weekly['cpc'].sum() > 0:
@@ -4511,10 +4512,10 @@ if "📞 Operations Command" in tab_map:
                                 ))
                             
                             fig_corr.update_layout(
-                                title="52-Week Correlation: Contact Rate, CPC & Data Age",
+                                title="52-Week: Logins, CPC & Data Age",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
                                 xaxis=dict(title="Week Of (Fri→Thu)"),
-                                yaxis=dict(title="Rate % / Cost ($)"),
+                                yaxis=dict(title="Logins / Cost ($)"),
                                 yaxis2=dict(title="Avg Data Age (Days)", overlaying="y", side="right", showgrid=False),
                                 margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
