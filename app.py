@@ -4492,12 +4492,13 @@ if "📞 Operations Command" in tab_map:
                                     hovertemplate='<b>Logins</b><br>%{y:,.0f}<extra></extra>'
                                 ))
                             
-                            # Primary Y: CPC
+                            # Secondary Y: CPC
                             if corr_weekly['cpc'].sum() > 0:
                                 fig_corr.add_trace(go.Scatter(
                                     x=corr_weekly['week_start'], y=corr_weekly['cpc'],
                                     name='CPC ($)', mode='lines+markers',
                                     line=dict(color='#ef4444', dash='dash', width=2),
+                                    yaxis='y2',
                                     hovertemplate='<b>CPC</b><br>$%{y:,.2f}<extra></extra>'
                                 ))
                             
@@ -4515,8 +4516,8 @@ if "📞 Operations Command" in tab_map:
                                 title="52-Week: Logins, CPC & Data Age",
                                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#00FF41",
                                 xaxis=dict(title="Week Of (Fri→Thu)"),
-                                yaxis=dict(title="Logins / Cost ($)"),
-                                yaxis2=dict(title="Avg Data Age (Days)", overlaying="y", side="right", showgrid=False),
+                                yaxis=dict(title="Logins"),
+                                yaxis2=dict(title="CPC ($) / Data Age (Days)", overlaying="y", side="right", showgrid=False),
                                 margin=dict(t=40, b=60, l=80, r=60),
                                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                                 height=400
