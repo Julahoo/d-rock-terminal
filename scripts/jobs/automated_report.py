@@ -109,6 +109,9 @@ def generate_executive_summary(client_df, client_name, sla_limit, end_date):
         date_range = pd.date_range(end_date - timedelta(days=55), end_date)
         daily = lc_df.groupby('ops_date')[['records', 'logins', 'conversions', 'total_cost']].sum().reindex(date_range).fillna(0)
         
+        if daily.sum().sum() == 0:
+            continue
+        
         y_val = daily.iloc[-1]
         l7_val = daily.iloc[-7:].sum()
         w8_avg = daily.sum() / 8.0
@@ -124,6 +127,7 @@ def generate_executive_summary(client_df, client_name, sla_limit, end_date):
             dow = dow_4w_vals[col]
             l7 = l7_val[col]
             w8 = w8_avg[col]
+            daily_avg = daily[col].sum() / 56.0
             
             def get_var(v, b, inv_cost):
                 if b == 0:
@@ -152,13 +156,14 @@ def generate_executive_summary(client_df, client_name, sla_limit, end_date):
                 if is_cost: insight_bullets.append(f"<li>🚨 <b>{label}</b> for <code>{lc}</code> is trending abnormally high ({txt_dow}).</li>")
                 else: insight_bullets.append(f"<li>⚠️ <b>{label}</b> volume for <code>{lc}</code> is down {abs(diff_dow)*100:.0f}% vs historical DOW avg.</li>")
             
-            fv_y = f"${y:,.0f}" if is_cost else f"{y:,.0f}"
-            fv_dow = f"${dow:,.0f}" if is_cost else f"{dow:,.0f}"
-            fv_l7 = f"${l7:,.0f}" if is_cost else f"{l7:,.0f}"
-            fv_w8 = f"${w8:,.0f}" if is_cost else f"{w8:,.0f}"
+            fv_y = f"€{y:,.0f}" if is_cost else f"{y:,.0f}"
+            fv_daily_avg = f"€{daily_avg:,.0f}" if is_cost else f"{daily_avg:,.0f}"
+            fv_dow = f"€{dow:,.0f}" if is_cost else f"{dow:,.0f}"
+            fv_l7 = f"€{l7:,.0f}" if is_cost else f"{l7:,.0f}"
+            fv_w8 = f"€{w8:,.0f}" if is_cost else f"{w8:,.0f}"
             
             th_lc = f"<td rowspan='4' style='vertical-align: middle; font-weight: bold; border: 1px solid #ddd; background: #fafbfc;'>{lc}</td>" if i == 0 else ""
-            table_rows += f"<tr>{th_lc}<td style='border: 1px solid #ddd; padding: 6px;'><b>{label}</b></td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_y}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_dow} <span style='color:{c_dow}'><b>{txt_dow}</b></span></td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_l7}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_w8} <span style='color:{c_w8}'><b>{txt_w8}</b></span></td></tr>"
+            table_rows += f"<tr>{th_lc}<td style='border: 1px solid #ddd; padding: 6px;'><b>{label}</b></td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_y}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right; color: #586069;'>{fv_daily_avg}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_dow} <span style='color:{c_dow}'><b>{txt_dow}</b></span></td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_l7}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_w8} <span style='color:{c_w8}'><b>{txt_w8}</b></span></td></tr>"
         
         z_scores_heatmap.append(lc_z)
         text_heatmap.append(lc_txt)
@@ -184,6 +189,7 @@ def generate_executive_summary(client_df, client_name, sla_limit, end_date):
                 <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Lifecycle</th>
                 <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Metric</th>
                 <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Yesterday</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Daily Avg.</th>
                 <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 4W DOWAvg</th>
                 <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Last 7 Days</th>
                 <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 8W WklyAvg</th>
