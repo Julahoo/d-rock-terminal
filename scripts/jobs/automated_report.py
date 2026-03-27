@@ -198,7 +198,7 @@ def generate_morning_briefing():
     msg['Subject'] = f"📊 Automated D-ROCK Briefing - {datetime.now().strftime('%b %d, %Y')}"
     msg['From'] = smtp_user
     
-    receivers = ["dani.fabregas@iwinback.com", "julija.stanojevic@callsu.net", "lyork@iwinback.com"]
+    receivers = ["dani.fabregas@iwinback.com", "julija.stanojevic@callsu.net"]
     msg['To'] = ", ".join(receivers)
     
     msg.set_content("Please enable HTML to view this report.")
