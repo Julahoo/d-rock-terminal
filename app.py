@@ -4612,7 +4612,7 @@ if "📞 Operations Command" in tab_map:
                     
                 daily_trends = latest_snaps.groupby('ops_date', observed=True).agg(agg_dict).reset_index().sort_values('ops_date')
 
-                def display_trend_charts(df_filtered):
+                def display_trend_charts(df_filtered, is_weekly=False):
                     if len(df_filtered) > 0:
                         # ---- FULL-WIDTH: Global Volume Trends ----
                         active_b = ops_df['ops_brand'].unique() if not ops_df.empty else []
@@ -4628,7 +4628,7 @@ if "📞 Operations Command" in tab_map:
                             except: pass
                             
                             if sla_min > 0:
-                                df_filtered['SLA Minimum'] = sla_min / 30.0
+                                df_filtered['SLA Minimum'] = (sla_min / 30.0) * (7.0 if is_weekly else 1.0)
                                 vol_y_cols.append('SLA Minimum')
                                     
                         # Add Average Line
@@ -4727,8 +4727,36 @@ if "📞 Operations Command" in tab_map:
                     else:
                         st.info("Not enough data to display trend charts for the selected range.")
 
-                # Render directly without tabs
-                display_trend_charts(daily_trends)
+                daily_tab, weekly_tab = st.tabs(["📅 Daily Trends", "📆 Weekly Trends"])
+                
+                with daily_tab:
+                    display_trend_charts(daily_trends, is_weekly=False)
+                
+                with weekly_tab:
+                    from datetime import datetime as _dt, timedelta as _td
+                    _now_date = pd.to_datetime(_dt.now().date())
+                    today_weekday = _now_date.weekday()
+                    if today_weekday >= 3:
+                        last_thursday = _now_date - _td(days=(today_weekday - 3))
+                    else:
+                        last_thursday = _now_date - _td(days=(today_weekday + 4))
+                    
+                    macro_df = latest_snaps[latest_snaps['ops_date'] <= last_thursday].copy()
+                    
+                    if not macro_df.empty:
+                        macro_df['week_start'] = macro_df['ops_date'] - pd.to_timedelta((macro_df['ops_date'].dt.weekday - 4) % 7, unit='D')
+                        
+                        w_agg_dict = {'Records': 'sum'}
+                        if 'Calls' in macro_df.columns: w_agg_dict['Calls'] = 'sum'
+                        if 'KPI1-Conv.' in macro_df.columns: w_agg_dict['KPI1-Conv.'] = 'sum'
+                        if 'KPI2-Login' in macro_df.columns: w_agg_dict['KPI2-Login'] = 'sum'
+                        
+                        weekly_trends = macro_df.groupby('week_start', observed=True).agg(w_agg_dict).reset_index().sort_values('week_start')
+                        weekly_trends = weekly_trends.rename(columns={'week_start': 'ops_date'})
+                        
+                        display_trend_charts(weekly_trends, is_weekly=True)
+                    else:
+                        st.info("No complete weeks available for the selected range.")
 
             # --- 🎯 Pitch vs. List Scorecard ---
             st.markdown("---")

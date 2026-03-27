@@ -218,15 +218,16 @@ During ingestion, each component is extracted via token matching:
 - **CRM Intelligence:** Global selectbox, 👑 Crown Jewels vs ⚠️ Bonus Abusers leaderboards, Churn Targeting generator. Note: Smart Campaign Profiling expands to a responsive 2-row grid to accommodate the 6 distinct active VIP heuristics.
 
 ### 4.7 📈 Operations Efficiency Trends
-- **Layout:** Full-width "Global Volume Trends" chart on top, followed by a 3-column row of dedicated KPI charts below.
+- **Layout:** Rendered via two distinct structural tabs (`st.tabs`): **"📅 Daily Trends"** and **"📆 Weekly Trends"**. Both tabs share identical 4-chart visualization layouts (a full-width Global Volume Trend chart on top, followed by a 3-column row for KPI volume and percentages).
+- **Data Flow (Weekly):** The weekly variation strictly enforces a "Completed Weeks Only" logic spanning Friday-to-Thursday, slicing off incomplete current weeks to prevent UI data drop-offs. Data aggregates `sum(Volume)` per `week_start`, dynamically deriving accurate averages.
 - **Chart 1 — Global Volume Trends (Full Width):**
-  - Line chart: Daily `Records` count.
-  - Dashed overlay: `SLA Minimum` (daily = monthly / 30) when a single brand is active.
-  - Dashed overlay: `Average Volume` (mean of Records over the filtered range).
+  - Line chart: Daily (or Weekly) `Records` count.
+  - Dashed overlay: `SLA Minimum` (monthly / 30, scaled dynamically for weekly context) when a single brand is active.
+  - Dashed overlay: `Average Volume` (mean of Records over the filtered sequence).
 - **Chart 2 — Raw KPI Volume (Column 1/3):**
   - Grouped bar chart: Green bars for `#KPI1-Conv.`, Yellow bars for `#KPI2-Login`.
 - **Chart 3 — Login % Trend (Column 2/3):**
-  - Yellow line: Daily `Logins%` (`KPI2-Login / Records * 100`).
+  - Yellow line: `Logins%` (`KPI2-Login / Records * 100`).
   - Dashed yellow line: `target_li` benchmark from `granular_benchmarks`.
 
 ### 4.8 📅 52-Week Lifecycle Conversion Forensics
