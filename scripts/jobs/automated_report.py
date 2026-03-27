@@ -28,7 +28,8 @@ def fetch_data(start_date, end_date):
             ops_date, ops_client as client, extracted_lifecycle as lifecycle,
             SUM("Records") as records, 
             SUM("KPI2-Login") as logins, 
-            SUM("KPI1-Conv.") as conversions
+            SUM("KPI1-Conv.") as conversions,
+            SUM("Total_Campaign_Cost") as total_cost
         FROM ops_telemarketing_data_materialized
         WHERE ops_date >= '{start_date}' AND ops_date <= '{end_date}'
         AND extracted_engagement = 'NLI'
@@ -88,6 +89,128 @@ def create_chart_base64(df, date_col, metric_col, title, color):
     '''
     return html, {'bytes': img_bytes, 'cid': image_cid}
 
+def generate_executive_summary(client_df, client_name, sla_limit, end_date):
+    lifecycles = sorted([lc for lc in client_df['lifecycle'].dropna().unique() if str(lc).strip().upper() != 'UNKNOWN'])
+    if not lifecycles: return "", None
+    
+    metrics = [('records', 'New Data', False), ('logins', 'Logins', False), ('conversions', 'Conversions', False), ('total_cost', 'Total Cost', True)]
+    
+    z_scores_heatmap = []
+    text_heatmap = []
+    insight_bullets = []
+    
+    target_weekday = end_date.weekday()
+    table_rows = ""
+    
+    for lc in lifecycles:
+        lc_df = client_df[client_df['lifecycle'] == lc].copy()
+        lc_df['ops_date'] = pd.to_datetime(lc_df['ops_date'])
+        
+        date_range = pd.date_range(end_date - timedelta(days=55), end_date)
+        daily = lc_df.groupby('ops_date')[['records', 'logins', 'conversions', 'total_cost']].sum().reindex(date_range).fillna(0)
+        
+        y_val = daily.iloc[-1]
+        l7_val = daily.iloc[-7:].sum()
+        w8_avg = daily.sum() / 8.0
+        
+        dow_dates = [pd.Timestamp(end_date - timedelta(days=7*i)) for i in range(1, 5)]
+        dow_4w_vals = daily.reindex(dow_dates).fillna(0).mean()
+        
+        lc_z = []
+        lc_txt = []
+        
+        for i, (col, label, is_cost) in enumerate(metrics):
+            y = y_val[col]
+            dow = dow_4w_vals[col]
+            l7 = l7_val[col]
+            w8 = w8_avg[col]
+            
+            def get_var(v, b, inv_cost):
+                if b == 0:
+                    if v == 0: return 0.0, "0%", "black"
+                    return 1.0, "+100%", "green" if not inv_cost else "red"
+                diff = (v - b) / b
+                if abs(diff) < 0.01: return 0.0, "0%", "black"
+                
+                color = "green" if diff > 0 else "red"
+                if inv_cost: color = "red" if diff > 0 else "green"
+                sign = "↑" if diff > 0 else "↓"
+                return diff, f"{sign} {abs(diff)*100:.0f}%", color
+                
+            diff_dow, txt_dow, c_dow = get_var(y, dow, is_cost)
+            diff_w8, txt_w8, c_w8 = get_var(l7, w8, is_cost)
+            
+            hm_score = -diff_dow if is_cost else diff_dow
+            if abs(hm_score) < 0.01: hm_score = 0.0
+            lc_z.append(max(min(hm_score, 0.5), -0.5))
+            
+            sign_char = "+" if diff_dow > 0 else ""
+            txt_cell = f"{sign_char}{diff_dow*100:.0f}%" if abs(diff_dow) >= 0.01 else "0%"
+            lc_txt.append(txt_cell)
+            
+            if hm_score <= -0.15: # 15% worse than benchmark
+                if is_cost: insight_bullets.append(f"<li>🚨 <b>{label}</b> for <code>{lc}</code> is trending abnormally high ({txt_dow}).</li>")
+                else: insight_bullets.append(f"<li>⚠️ <b>{label}</b> volume for <code>{lc}</code> is down {abs(diff_dow)*100:.0f}% vs historical DOW avg.</li>")
+            
+            fv_y = f"${y:,.0f}" if is_cost else f"{y:,.0f}"
+            fv_dow = f"${dow:,.0f}" if is_cost else f"{dow:,.0f}"
+            fv_l7 = f"${l7:,.0f}" if is_cost else f"{l7:,.0f}"
+            fv_w8 = f"${w8:,.0f}" if is_cost else f"{w8:,.0f}"
+            
+            th_lc = f"<td rowspan='4' style='vertical-align: middle; font-weight: bold; border: 1px solid #ddd; background: #fafbfc;'>{lc}</td>" if i == 0 else ""
+            table_rows += f"<tr>{th_lc}<td style='border: 1px solid #ddd; padding: 6px;'><b>{label}</b></td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_y}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_dow} <span style='color:{c_dow}'><b>{txt_dow}</b></span></td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_l7}</td><td style='border: 1px solid #ddd; padding: 6px; text-align: right;'>{fv_w8} <span style='color:{c_w8}'><b>{txt_w8}</b></span></td></tr>"
+        
+        z_scores_heatmap.append(lc_z)
+        text_heatmap.append(lc_txt)
+        
+    mtd_records = client_df[pd.to_datetime(client_df['ops_date']).dt.month == end_date.month]['records'].sum()
+    if sla_limit > 0:
+        prorated_sla = (sla_limit / 30.0) * end_date.day 
+        pacing_pct = (mtd_records / prorated_sla) if prorated_sla > 0 else 1.0
+        if pacing_pct < 1.0: insight_bullets.append(f"<li>⚠️ <b>SLA Pacing:</b> {client_name} is currently tracking at {pacing_pct*100:.0f}% of the contractual monthly minimum.</li>")
+        else: insight_bullets.insert(0, f"<li>✅ <b>SLA Pacing:</b> {client_name} is safely tracking over the contractual minimum ({pacing_pct*100:.0f}% pacing).</li>")
+            
+    if not insight_bullets: insight_bullets.append("<li>✅ <b>Working as expected.</b> All metrics performing near or above 4-week historical baselines.</li>")
+        
+    ul_insights = "<ul style='padding-left: 20px; line-height: 1.5;'>" + "".join(insight_bullets) + "</ul>"
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=z_scores_heatmap, x=[m[1] for m in metrics], y=lifecycles, text=text_heatmap, texttemplate="%{text}", textfont=dict(size=14, color="white"),
+        colorscale=[[0.0, '#ef4444'], [0.45, '#1f2937'], [0.55, '#1f2937'], [1.0, '#22c55e']], zmin=-0.5, zmax=0.5, showscale=False, xgap=2, ygap=2
+    ))
+    fig.update_layout(paper_bgcolor='#0D1117', plot_bgcolor='#0D1117', font=dict(color="white"), xaxis=dict(side="top"), margin=dict(t=30, b=10, l=40, r=10), height=35 * len(lifecycles) + 40, width=500)
+    
+    img_bytes = fig.to_image(format="png", engine="kaleido")
+    cid = make_msgid(domain='iwinback.com')
+    
+    html = f'''
+    <div style="background: #fff; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #24292e; font-size: 16px; border-bottom: 1px solid #eaecef; padding-bottom: 8px;">🤖 Executive Summary & Insights</h3>
+        <div style="font-size: 14px; color: #24292e;">{ul_insights}</div>
+        
+        <h4 style="color: #24292e; margin-bottom: 6px; margin-top: 20px;">📈 Execution Variance Heatmap</h4>
+        <div style="font-size: 12px; color: #586069; margin-bottom: 12px;">(vs 4-Week Baseline. Green = Outperforming | Red = Underperforming)</div>
+        <img src="cid:{cid[1:-1]}" alt="Heatmap" style="max-width: 100%; border-radius: 4px;">
+        
+        <br><br>
+        <details>
+            <summary style="cursor: pointer; font-weight: bold; color: #0366d6; font-size: 14px; padding: 6px; background: #f6f8fa; border-radius: 4px; display: inline-block;">▶ 📊 View Exact Trend Matrices (Click to Expand)</summary>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; color: #24292e;">
+                <tr style="background: #f6f8fa; color: #24292e;">
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Lifecycle</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Metric</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Yesterday</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 4W DOWAvg</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Last 7 Days</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 8W WklyAvg</th>
+                </tr>
+                {table_rows}
+            </table>
+        </details>
+    </div>
+    '''
+    return html, {'bytes': img_bytes, 'cid': cid}
+
 def generate_morning_briefing():
     """Generates the HTML email and dispatches it via SMTP."""
     smtp_host = os.getenv("SMTP_HOST")
@@ -100,7 +223,8 @@ def generate_morning_briefing():
         return
 
     end_date = datetime.now().date() - timedelta(days=1)
-    start_date = end_date - timedelta(days=29) # 30 days total
+    start_date = end_date - timedelta(days=55) # 56 days total for 8-week baseline
+    chart_start_date = end_date - timedelta(days=29) # 30 days for detailed visual charts
     
     chart_images = []
     
@@ -126,7 +250,7 @@ def generate_morning_briefing():
     <body>
         <div style="max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
             <h1 style="color: #2c3e50; text-align: center;">📊 D-ROCK Morning Briefing</h1>
-            <p style="text-align: center; color: #7f8c8d;">Operational Report for {start_date} to {end_date}</p>
+            <p style="text-align: center; color: #7f8c8d;">Operational Report for {chart_start_date} to {end_date}</p>
             <div style="background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 6px; padding: 12px 16px; margin: 0 0 20px 0; font-size: 13px;">
                 <b>⏱️ Point-in-Time Snapshot</b> — This report reflects data as ingested at the time of generation ({datetime.now().strftime('%b %d, %Y %H:%M UTC')}). Metrics such as Logins and Conversions may increase in subsequent exports due to delayed attribution from the iWinBack API (up to T+7 days).
             </div>
@@ -136,35 +260,37 @@ def generate_morning_briefing():
     for client in clients:
         client_df = df[df['client'] == client].copy()
         
-        # SLA Calculation
-        total_30_volume = client_df['records'].sum()
+        # Get SLA Limit
         sla_row = slas[slas['client'] == client]
         sla_limit = sla_row['sla_limit'].values[0] if not sla_row.empty else 0
         
-        if sla_limit > 0:
-            if total_30_volume >= sla_limit:
-                sla_html = f'<div style="background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin-bottom: 20px;"><b>✅ SLA OK:</b> {client} hit {total_30_volume:,.0f} New Data vs SLA limit of {sla_limit:,.0f}</div>'
-            else:
-                sla_html = f'<div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; margin-bottom: 20px;"><b>⚠️ SLA MISSED:</b> {client} hit {total_30_volume:,.0f} New Data vs SLA limit of {sla_limit:,.0f}</div>'
-        else:
-            sla_html = f'<div style="background: #e2e3e5; color: #383d41; padding: 10px; border-radius: 5px; margin-bottom: 20px;"><b>ℹ️ No Contractual SLA configured for {client}</b> (Volume: {total_30_volume:,.0f})</div>'
-
-        html_body += f'''
-        <h2 style="color: #2980b9; margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 5px;">🏢 {client}</h2>
-        {sla_html}
-        '''
+        # Generate new Executive Summary (Heatmap, Insights, Toggled Tables)
+        exec_html, exec_img = generate_executive_summary(client_df, client, sla_limit, end_date)
         
-        # Dynamically discover all unique lifecycles present in the 30-day snapshot for this specific client (e.g., WB, RND, SL, AFF)
-        active_lifecycles = sorted([lc for lc in client_df['lifecycle'].dropna().unique() if str(lc).strip().upper() != 'UNKNOWN'])
+        if exec_html:
+            html_body += f'''
+            <h2 style="color: #2980b9; margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 5px;">🏢 {client}</h2>
+            {exec_html}
+            '''
+            chart_images.append(exec_img)
+        else:
+            html_body += f'''
+            <h2 style="color: #2980b9; margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 5px;">🏢 {client}</h2>
+            <div style="background: #e2e3e5; color: #383d41; padding: 10px; border-radius: 5px; margin-bottom: 20px;"><b>ℹ️ No active campaigns for {client} in this period.</b></div>
+            '''
+            continue # Skip rendering detailed charts if no data
+            
+        # Subset data back to 30 days so the detailed timeline charts remain untouched
+        chart_df = client_df[pd.to_datetime(client_df['ops_date']).dt.date >= chart_start_date].copy()
+        active_lifecycles = sorted([lc for lc in chart_df['lifecycle'].dropna().unique() if str(lc).strip().upper() != 'UNKNOWN'])
         
         for lc in active_lifecycles:
-            lc_df = client_df[client_df['lifecycle'] == lc].copy()
-            if lc_df.empty:
-                continue
-                
+            lc_df = chart_df[chart_df['lifecycle'] == lc].copy()
+            if lc_df.empty: continue
+            
             # Date padding
             lc_df['ops_date'] = pd.to_datetime(lc_df['ops_date'])
-            date_range = pd.date_range(start=start_date, end=end_date)
+            date_range = pd.date_range(start=chart_start_date, end=end_date)
             lc_df.set_index('ops_date', inplace=True)
             lc_df = lc_df.reindex(date_range).fillna(0).reset_index()
             lc_df.rename(columns={'index': 'ops_date'}, inplace=True)

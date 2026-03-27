@@ -295,8 +295,9 @@ During ingestion, each component is extracted via token matching:
 - DB-level guard: `SELECT 1 FROM ops_telemarketing_data WHERE ops_date = :d LIMIT 1` per date before requesting exports.
 
 ### 5.5 Automated Morning Report (`scripts/jobs/automated_report.py`)
-- **Data Source:** Queries `ops_telemarketing_data_materialized` (deduplicated view), NOT the raw `ops_telemarketing_data` table. This ensures Yesterday metrics match the spreadsheet export values.
-- **Metrics:** Volume (NLI Records), Logins, Conversions — computed per client × lifecycle with Yesterday, 7-Day Avg, and 30-Day Avg rolling windows.
+- **Data Source:** Queries `ops_telemarketing_data_materialized` (deduplicated view), NOT the raw `ops_telemarketing_data` table. Pulls a 56-day baseline to facilitate moving averages.
+- **Executive Summary Engine:** Generates a top-level Plotly Variance Heatmap per client, scoring `Records`, `Logins`, `Conversions`, and `Total Cost` against a dynamic 4-Week Day-of-Week historical baseline. Includes programmatic text-insights flagging severe variances, SLA pacing against `contractual_volumes`, and an HTML `<details>` toggled matrix showing the exact numerical variance (Yesterday vs 4W DOW Avg, and Last 7D vs 8W Rolling Avg).
+- **Timeline Charts:** Below the summary slide, detailed 30-day timeline charts render Volume, Logins, and Conversions per active lifecycle.
 - **Email Disclaimer:** A `⏱️ Point-in-Time Snapshot` banner appears at the top of every email, notifying recipients that data reflects ingestion time and may drift from later exports due to delayed attribution (up to T+7 days) from the iWinBack API.
 - **Schedule:** 06:00 UTC (07:00 CET) via GitHub Actions Serverless CI/CD pipeline (`.github/workflows/morning_report.yml`).
 
