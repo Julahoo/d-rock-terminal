@@ -174,42 +174,25 @@ def generate_executive_summary(client_df, client_name, sla_limit, end_date):
         
     ul_insights = "<ul style='padding-left: 20px; line-height: 1.5;'>" + "".join(insight_bullets) + "</ul>"
     
-    fig = go.Figure(data=go.Heatmap(
-        z=z_scores_heatmap, x=[m[1] for m in metrics], y=lifecycles, text=text_heatmap, texttemplate="%{text}", textfont=dict(size=14, color="white"),
-        colorscale=[[0.0, '#ef4444'], [0.45, '#1f2937'], [0.55, '#1f2937'], [1.0, '#22c55e']], zmin=-0.5, zmax=0.5, showscale=False, xgap=2, ygap=2
-    ))
-    fig.update_layout(paper_bgcolor='#0D1117', plot_bgcolor='#0D1117', font=dict(color="white"), xaxis=dict(side="top"), margin=dict(t=30, b=10, l=40, r=10), height=35 * len(lifecycles) + 40, width=500)
-    
-    img_bytes = fig.to_image(format="png", engine="kaleido")
-    cid = make_msgid(domain='iwinback.com')
-    
     html = f'''
     <div style="background: #fff; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
         <h3 style="margin-top: 0; color: #24292e; font-size: 16px; border-bottom: 1px solid #eaecef; padding-bottom: 8px;">🤖 Executive Summary & Insights</h3>
         <div style="font-size: 14px; color: #24292e;">{ul_insights}</div>
         
-        <h4 style="color: #24292e; margin-bottom: 6px; margin-top: 20px;">📈 Execution Variance Heatmap</h4>
-        <div style="font-size: 12px; color: #586069; margin-bottom: 12px;">(vs 4-Week Baseline. Green = Outperforming | Red = Underperforming)</div>
-        <img src="cid:{cid[1:-1]}" alt="Heatmap" style="max-width: 100%; border-radius: 4px;">
-        
-        <br><br>
-        <details>
-            <summary style="cursor: pointer; font-weight: bold; color: #0366d6; font-size: 14px; padding: 6px; background: #f6f8fa; border-radius: 4px; display: inline-block;">▶ 📊 View Exact Trend Matrices (Click to Expand)</summary>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; color: #24292e;">
-                <tr style="background: #f6f8fa; color: #24292e;">
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Lifecycle</th>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Metric</th>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Yesterday</th>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 4W DOWAvg</th>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Last 7 Days</th>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 8W WklyAvg</th>
-                </tr>
-                {table_rows}
-            </table>
-        </details>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; color: #24292e;">
+            <tr style="background: #f6f8fa; color: #24292e;">
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Lifecycle</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Metric</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Yesterday</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 4W DOWAvg</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Last 7 Days</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">vs 8W WklyAvg</th>
+            </tr>
+            {table_rows}
+        </table>
     </div>
     '''
-    return html, {'bytes': img_bytes, 'cid': cid}
+    return html, None
 
 def generate_morning_briefing():
     """Generates the HTML email and dispatches it via SMTP."""
@@ -272,45 +255,12 @@ def generate_morning_briefing():
             <h2 style="color: #2980b9; margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 5px;">🏢 {client}</h2>
             {exec_html}
             '''
-            chart_images.append(exec_img)
         else:
             html_body += f'''
             <h2 style="color: #2980b9; margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 5px;">🏢 {client}</h2>
             <div style="background: #e2e3e5; color: #383d41; padding: 10px; border-radius: 5px; margin-bottom: 20px;"><b>ℹ️ No active campaigns for {client} in this period.</b></div>
             '''
             continue # Skip rendering detailed charts if no data
-            
-        # Subset data back to 30 days so the detailed timeline charts remain untouched
-        chart_df = client_df[pd.to_datetime(client_df['ops_date']).dt.date >= chart_start_date].copy()
-        active_lifecycles = sorted([lc for lc in chart_df['lifecycle'].dropna().unique() if str(lc).strip().upper() != 'UNKNOWN'])
-        
-        for lc in active_lifecycles:
-            lc_df = chart_df[chart_df['lifecycle'] == lc].copy()
-            if lc_df.empty: continue
-            
-            # Date padding
-            lc_df['ops_date'] = pd.to_datetime(lc_df['ops_date'])
-            date_range = pd.date_range(start=chart_start_date, end=end_date)
-            lc_df.set_index('ops_date', inplace=True)
-            lc_df = lc_df.reindex(date_range).fillna(0).reset_index()
-            lc_df.rename(columns={'index': 'ops_date'}, inplace=True)
-            
-            html_body += f'<h3 style="color: #34495e; background: #ecf0f1; padding: 8px; border-radius: 4px;">Lifecycle: {lc}</h3>'
-            
-            # 1. Volume
-            vol_html, vol_img = create_chart_base64(lc_df, 'ops_date', 'records', f"{client} {lc} - Volume", "#3498db")
-            html_body += vol_html
-            chart_images.append(vol_img)
-            
-            # 2. Logins
-            log_html, log_img = create_chart_base64(lc_df, 'ops_date', 'logins', f"{client} {lc} - Logins", "#2ecc71")
-            html_body += log_html
-            chart_images.append(log_img)
-            
-            # 3. Conversions
-            con_html, con_img = create_chart_base64(lc_df, 'ops_date', 'conversions', f"{client} {lc} - Conversions", "#9b59b6")
-            html_body += con_html
-            chart_images.append(con_img)
             
     html_body += '''
         </div>
@@ -324,7 +274,7 @@ def generate_morning_briefing():
     msg['Subject'] = f"📊 Automated D-ROCK Briefing - {datetime.now().strftime('%b %d, %Y')}"
     msg['From'] = smtp_user
     
-    receivers = ["dani.fabregas@iwinback.com", "julija.stanojevic@callsu.net"]
+    receivers = ["dani.fabregas@iwinback.com"]
     msg['To'] = ", ".join(receivers)
     
     msg.set_content("Please enable HTML to view this report.")
