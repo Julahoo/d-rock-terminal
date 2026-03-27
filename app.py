@@ -4741,7 +4741,9 @@ if "📞 Operations Command" in tab_map:
                     else:
                         last_thursday = _now_date - _td(days=(today_weekday + 4))
                     
-                    macro_df = latest_snaps[latest_snaps['ops_date'] <= last_thursday].copy()
+                    macro_df = latest_snaps.copy()
+                    macro_df['ops_date'] = pd.to_datetime(macro_df['ops_date'], errors='coerce')
+                    macro_df = macro_df[macro_df['ops_date'] <= last_thursday]
                     
                     if not macro_df.empty:
                         macro_df['week_start'] = macro_df['ops_date'] - pd.to_timedelta((macro_df['ops_date'].dt.weekday - 4) % 7, unit='D')
