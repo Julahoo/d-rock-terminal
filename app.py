@@ -4322,30 +4322,89 @@ if "📞 Operations Command" in tab_map:
             st.caption("*Average daily volume injected over the trailing 90 days, sorted by highest volume.*")
             try:
                 # We use raw_ops which ignores sidebar filters for this global overview
+                import numpy as np
                 if 'raw_ops' in locals() and not raw_ops.empty and 'ops_date' in raw_ops.columns:
-                    _90d_ago = pd.to_datetime('today') - pd.Timedelta(days=90)
                     _raw_ops_dt = raw_ops.copy()
                     _raw_ops_dt['ops_date'] = pd.to_datetime(_raw_ops_dt['ops_date'], errors='coerce')
+                    
+                    _max_date = _raw_ops_dt['ops_date'].max()
+                    if pd.notna(_max_date):
+                        _date_str = _max_date.strftime('%d%b').upper()
+                        _yest_df = _raw_ops_dt[_raw_ops_dt['ops_date'] == _max_date]
+                    else:
+                        _date_str = "N/A"
+                        _yest_df = pd.DataFrame()
+                        
+                    st.markdown(f"##### 📅 Daily Data ({_date_str})")
+                    
+                    _90d_ago = pd.to_datetime('today').normalize() - pd.Timedelta(days=90)
                     _90d_df = _raw_ops_dt[_raw_ops_dt['ops_date'] >= _90d_ago]
+                    
                     if not _90d_df.empty:
                         _avg_90d = _90d_df.groupby('ops_client', observed=True)['Records'].sum() / 90.0
-                        _avg_90d = _avg_90d.reset_index().rename(columns={'ops_client': 'Client', 'Records': 'Daily Avg (90d)'})
-                        _avg_90d = _avg_90d[_avg_90d['Client'] != 'UNKNOWN']
-                        _avg_90d['Daily Avg (90d)'] = _avg_90d['Daily Avg (90d)'].round(0).astype(int)
-                        _avg_90d = _avg_90d.sort_values(by='Daily Avg (90d)', ascending=False)
-                        st.dataframe(
-                            _avg_90d, 
-                            use_container_width=True, 
-                            hide_index=True,
-                            column_config={
-                                "Client": "Client Parameter",
-                                "Daily Avg (90d)": st.column_config.NumberColumn("Daily Avg (New Data)", format="%d")
-                            }
-                        )
+                        _yest_sum = _yest_df.groupby('ops_client', observed=True)['Records'].sum() if not _yest_df.empty else pd.Series(dtype=float)
+                        
+                        _table = pd.DataFrame({
+                            '90-day average': _avg_90d,
+                            'Yesterday': _yest_sum
+                        }).fillna(0).reset_index()
+                        
+                        _table.rename(columns={'ops_client': 'Client Name'}, inplace=True)
+                        _table = _table[~_table['Client Name'].isin(['UNKNOWN', 'N/A', ''])]
+                        
+                        _table['Difference'] = 0.0
+                        mask = _table['90-day average'] > 0
+                        _table.loc[mask, 'Difference'] = (_table.loc[mask, 'Yesterday'] - _table.loc[mask, '90-day average']) / _table.loc[mask, '90-day average']
+                        
+                        _table = _table.sort_values(by='Client Name')
+                        
+                        _table['Note'] = _table['Difference'].apply(lambda d: "Bulk campaigns" if d <= -0.50 else "")
+                        
+                        _tot_90d = _table['90-day average'].sum()
+                        _tot_yest = _table['Yesterday'].sum()
+                        _tot_diff = (_tot_yest - _tot_90d) / _tot_90d if _tot_90d > 0 else 0
+                        
+                        _table['90-day average'] = _table['90-day average'].round(0).astype(int)
+                        _table['Yesterday'] = _table['Yesterday'].round(0).astype(int)
+                        
+                        _total_row = pd.DataFrame([{
+                            'Client Name': 'Total',
+                            '90-day average': int(round(_tot_90d, 0)),
+                            'Yesterday': int(round(_tot_yest, 0)),
+                            'Difference': _tot_diff,
+                            'Note': ''
+                        }])
+                        
+                        _table = pd.concat([_table, _total_row], ignore_index=True)
+                        
+                        # Blank out zeroes for aesthetic
+                        _table.loc[_table['90-day average'] == 0, '90-day average'] = pd.NA
+                        _table.loc[_table['Yesterday'] == 0, 'Yesterday'] = pd.NA
+                        _table.loc[pd.isna(_table['90-day average']), 'Difference'] = pd.NA
+                        
+                        def _color_diff(val):
+                            if pd.isna(val): return ""
+                            if val > 0: return "background-color: #d9ead3; color: black;"
+                            if val < 0: return "background-color: #f4cccc; color: black;"
+                            return ""
+                            
+                        # Formatting
+                        style_format = {
+                            '90-day average': "{:.0f}",
+                            'Yesterday': "{:.0f}",
+                            'Difference': "{:.0%}"
+                        }
+                        
+                        if hasattr(_table.style, "map"):
+                            _styled = _table.style.format(style_format, na_rep="").map(_color_diff, subset=['Difference'])
+                        else:
+                            _styled = _table.style.format(style_format, na_rep="").applymap(_color_diff, subset=['Difference'])
+                            
+                        st.dataframe(_styled, use_container_width=True, hide_index=True)
                     else:
                         st.info("No data in the last 90 days.")
             except Exception as e:
-                st.caption(f"Could not load 90-day averages: {e}")
+                st.caption(f"Could not load daily data table: {e}")
 
             # --- Upgraded Top Level Metrics & Charts ---
             st.markdown("##### 💸 True CAC & Telecom Burn")
