@@ -4317,6 +4317,36 @@ if "📞 Operations Command" in tab_map:
             else:
                 st.info("No Volume SLAs configured in System Settings.")
 
+            st.markdown("---")
+            st.markdown("##### 📅 90-Day Global Volume (New Data) Averages")
+            st.caption("*Average daily volume injected over the trailing 90 days, sorted by highest volume.*")
+            try:
+                # We use raw_ops which ignores sidebar filters for this global overview
+                if 'raw_ops' in locals() and not raw_ops.empty and 'ops_date' in raw_ops.columns:
+                    _90d_ago = pd.to_datetime('today') - pd.Timedelta(days=90)
+                    _raw_ops_dt = raw_ops.copy()
+                    _raw_ops_dt['ops_date'] = pd.to_datetime(_raw_ops_dt['ops_date'], errors='coerce')
+                    _90d_df = _raw_ops_dt[_raw_ops_dt['ops_date'] >= _90d_ago]
+                    if not _90d_df.empty:
+                        _avg_90d = _90d_df.groupby('ops_client', observed=True)['Records'].sum() / 90.0
+                        _avg_90d = _avg_90d.reset_index().rename(columns={'ops_client': 'Client', 'Records': 'Daily Avg (90d)'})
+                        _avg_90d = _avg_90d[_avg_90d['Client'] != 'UNKNOWN']
+                        _avg_90d['Daily Avg (90d)'] = _avg_90d['Daily Avg (90d)'].round(0).astype(int)
+                        _avg_90d = _avg_90d.sort_values(by='Daily Avg (90d)', ascending=False)
+                        st.dataframe(
+                            _avg_90d, 
+                            use_container_width=True, 
+                            hide_index=True,
+                            column_config={
+                                "Client": "Client Parameter",
+                                "Daily Avg (90d)": st.column_config.NumberColumn("Daily Avg (New Data)", format="%d")
+                            }
+                        )
+                    else:
+                        st.info("No data in the last 90 days.")
+            except Exception as e:
+                st.caption(f"Could not load 90-day averages: {e}")
+
             # --- Upgraded Top Level Metrics & Charts ---
             st.markdown("##### 💸 True CAC & Telecom Burn")
             total_spend = ops_df["Total_Campaign_Cost"].sum()
