@@ -1,20 +1,19 @@
 """
 One-Time Migration: Add campaign_data_age_days to ops_telemarketing_data
 ========================================================================
-Adds the column, then backfills all existing rows by parsing the campaign date 
-from the last 3 tokens of the campaign_name (YYYY-MM-DD split by '-').
+Adds the column, then backfills ALL existing rows using a single server-side
+SQL UPDATE that executes entirely within PostgreSQL — no row-by-row Python loop.
 
-Usage: python scripts/jobs/migrate_data_age.py
+Usage: railway run python scripts/jobs/migrate_data_age.py
 """
-import os, sys, re
-import pandas as pd
+import os, sys
 from sqlalchemy import text
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 from src.database import engine as db_engine
 
 def run():
-    print("🔧 Adding campaign_data_age_days column if not exists...")
+    print("🔧 Step 1: Adding campaign_data_age_days column if not exists...")
     with db_engine.begin() as conn:
         conn.execute(text("""
             ALTER TABLE ops_telemarketing_data
@@ -22,53 +21,30 @@ def run():
         """))
     print("✅ Column exists.")
 
-    print("📥 Fetching existing rows for backfill...")
-    df = pd.read_sql("""
-        SELECT id, campaign_name, ops_date
-        FROM ops_telemarketing_data
-        WHERE campaign_data_age_days IS NULL OR campaign_data_age_days = -1
-        LIMIT 500000
-    """, db_engine)
-
-    if df.empty:
-        print("✅ Nothing to backfill.")
-        return
-
-    print(f"📊 Processing {len(df):,} rows...")
-
-    def _extract_campaign_date(cname):
-        """Extract date from campaign naming convention: ...YYYY-MM-DD"""
-        # The campaign_name has format: OriginalCampaign_ops_date
-        # We need the original campaign's date, embedded in the first part
-        original = str(cname).rsplit("_", 1)[0]  # Strip the appended ops_date
-        tokens = original.upper().replace("_", "-").split("-")
-        if len(tokens) >= 3:
-            candidate = f"{tokens[-3]}-{tokens[-2]}-{tokens[-1]}"
-            try:
-                return pd.to_datetime(candidate, format="%Y-%m-%d")
-            except (ValueError, TypeError):
-                pass
-        return pd.NaT
-
-    df["_campaign_date"] = df["campaign_name"].apply(_extract_campaign_date)
-    df["_ops_dt"] = pd.to_datetime(df["ops_date"], errors="coerce")
-    df["age"] = (df["_ops_dt"] - df["_campaign_date"]).dt.days
-    df["age"] = df["age"].fillna(-1).astype(int)
-
-    # Batch update
-    updated = 0
+    print("⚡ Step 2: Server-side batch UPDATE (no Python loop)...")
+    print("   Parsing campaign dates from the last 3 tokens of campaign_name...")
+    
     with db_engine.begin() as conn:
-        for _, row in df.iterrows():
-            conn.execute(text("""
-                UPDATE ops_telemarketing_data
-                SET campaign_data_age_days = :age
-                WHERE id = :id
-            """), {"age": int(row["age"]), "id": int(row["id"])})
-            updated += 1
-            if updated % 10000 == 0:
-                print(f"   ⏳ {updated:,}/{len(df):,} rows updated...")
-
-    print(f"✅ Backfill complete: {updated:,} rows updated.")
+        # The campaign_name format is: OriginalCampaign_YYYY-MM-DD
+        # The appended suffix after '_' is the ops_date. The original campaign
+        # contains the campaign date as the last 3 dash-separated tokens (YYYY-MM-DD).
+        # We extract them using split_part and regexp matching, all server-side.
+        result = conn.execute(text("""
+            UPDATE ops_telemarketing_data
+            SET campaign_data_age_days = (
+                ops_date::date - (
+                    -- Extract the original campaign (before the last '_YYYY-MM-DD' suffix)
+                    -- Then find the date embedded in it (last 3 dash tokens = YYYY-MM-DD)
+                    CASE 
+                        WHEN campaign_name ~ '.*-[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                        THEN (regexp_match(campaign_name, '([0-9]{4}-[0-9]{2}-[0-9]{2})_[0-9]{4}-[0-9]{2}-[0-9]{2}$'))[1]::date
+                        ELSE NULL
+                    END
+                )
+            )
+            WHERE campaign_data_age_days = -1 OR campaign_data_age_days IS NULL
+        """))
+        print(f"✅ Backfill complete: {result.rowcount:,} rows updated.")
 
 if __name__ == "__main__":
     run()

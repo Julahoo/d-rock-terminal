@@ -1195,7 +1195,10 @@ with st.sidebar:
 
     if st.session_state.get("logout_triggered"):
         with st.spinner("Clearing secure session..."):
-            cookie_manager.delete("auth_session")
+            try:
+                cookie_manager.delete("auth_session")
+            except KeyError:
+                pass  # Cookie already absent or deleted
             import time
             time.sleep(1)  # CRITICAL: Give JS time to delete the browser cookie
             # Wipe ALL session state and force a fresh login gate cycle

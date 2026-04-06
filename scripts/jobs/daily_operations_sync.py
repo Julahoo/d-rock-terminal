@@ -21,6 +21,9 @@ def run_daily_sync():
     log_msg("=====================================================")
     log_msg(f"🕒 DAILY AUTOMATION TRIGGERED AT: {datetime.now(timezone.utc).isoformat()} (UTC)")
     
+    log_msg("🛑 OPERATION ABORTED: v3 Operations pull has been temporarily disabled.")
+    sys.exit(0)
+
     try:
         import pandas as pd
         from src.database import engine as db_engine
